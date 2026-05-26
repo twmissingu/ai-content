@@ -12,12 +12,14 @@
 import json
 import os
 import subprocess
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 import uvicorn
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -32,12 +34,24 @@ from config.settings import (
     FAILED_DIR,
     KB_DIR,
     PENDING_DIR,
+    PROCESSED_DIR,
+    PROJECT_ROOT,
     REVIEW_DIR,
     STATUS_DIR,
-    PROJECT_ROOT,
 )
 
-app = FastAPI(title="稿定 Dashboard", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start background scanner on startup."""
+    thread = threading.Thread(target=_scan_loop, daemon=True, name="action-scanner")
+    thread.start()
+    print("[scanner] Background action scanner started (10s interval)")
+    yield
+    _SCANNER_RUNNING = False
+    print("[scanner] Background action scanner stopped")
+
+
+app = FastAPI(title="稿定 Dashboard", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -304,6 +318,76 @@ def update_config(update: ConfigUpdate):
     tmp.write_text(json.dumps(config, ensure_ascii=False, indent=2))
     os.rename(tmp, path)
     return {"status": "ok", "key": update.key, "value": update.value}
+
+
+# ── Background action scanner ─────────────────────────────────────
+_SCANNER_RUNNING = True
+
+DISPATCH_MAP = {
+    "approve": ["python3", str(PROJECT_ROOT / "skills/publisher.py")],
+    "reject": ["python3", str(PROJECT_ROOT / "skills/writer.py"), "--rewrite"],
+    "rewrite": ["python3", str(PROJECT_ROOT / "skills/writer.py"), "--rewrite"],
+}
+
+
+def _dispatch_action(action: dict, file_path: Path) -> bool:
+    """Dispatch an action to the appropriate agent script."""
+    action_type = action.get("action")
+    target_id = action.get("target_id", "")
+
+    if action_type == "confirm":
+        # Write a .confirmed flag so Writer cron picks it up
+        flag_file = PROJECT_ROOT / "queue/topics" / f"{target_id}.confirmed"
+        flag_file.write_text(json.dumps(action, ensure_ascii=False, indent=2))
+        return True
+
+    cmd = DISPATCH_MAP.get(action_type)
+    if not cmd:
+        print(f"[scanner] Unknown action type: {action_type}")
+        return False
+
+    full_cmd = cmd + [target_id]
+    print(f"[scanner] Dispatching: {' '.join(full_cmd)}")
+    try:
+        result = subprocess.run(
+            full_cmd,
+            capture_output=True, text=True, timeout=300,
+            cwd=PROJECT_ROOT,
+        )
+        if result.returncode != 0:
+            print(f"[scanner] Dispatch failed (rc={result.returncode}): {result.stderr[:200]}")
+            return False
+        print(f"[scanner] OK: {result.stdout[:100]}")
+        return True
+    except subprocess.TimeoutExpired:
+        print(f"[scanner] Timeout: {action_type}/{target_id}")
+        return False
+    except Exception as e:
+        print(f"[scanner] Error: {e}")
+        return False
+
+
+def _scan_loop():
+    """Background thread: poll queue/actions/ every 10s."""
+    while _SCANNER_RUNNING:
+        try:
+            files = sorted(ACTIONS_DIR.glob("*.json"), key=os.path.getmtime)
+            for f in files:
+                try:
+                    action = json.loads(f.read_text())
+                    ok = _dispatch_action(action, f)
+                    if ok:
+                        os.rename(f, PROCESSED_DIR / f.name)
+                except (json.JSONDecodeError, OSError) as e:
+                    print(f"[scanner] Error processing {f.name}: {e}")
+                    # Move to failed
+                    os.rename(f, PROCESSED_DIR / f.name)
+        except Exception as e:
+            print(f"[scanner] Loop error: {e}")
+        time.sleep(10)
+
+
+
 
 
 # ── Routes: Health ─────────────────────────────────────────────────

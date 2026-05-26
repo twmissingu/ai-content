@@ -18,6 +18,7 @@ from typing import Any, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.settings import (
+    ACTIONS_DIR,
     DOMAIN,
     KB_DIR,
     LENGTH,
@@ -73,12 +74,55 @@ def _read_topic(topic_id: Optional[str] = None) -> dict:
         path = PENDING_DIR / f"{topic_id}.json"
         if path.exists():
             return json.loads(path.read_text())
+        # Maybe it's a topic_ prefix
+        for f in PENDING_DIR.glob(f"topic_*{topic_id}*.json"):
+            return json.loads(f.read_text())
 
     # Find the highest-scored unconfirmed topic
     files = sorted(PENDING_DIR.glob("topic_*.json"), key=os.path.getmtime, reverse=True)
     if not files:
         raise SystemExit("No topics found in queue/pending/")
     return json.loads(files[0].read_text())
+
+
+def _read_article_for_rewrite(target_id: str) -> tuple[str, dict, str]:
+    """Read the original article + meta + reject reason for rewrite mode.
+
+    target_id format: {timestamp}-{type}  (e.g. "20260525_093000-wechat")
+    Returns (article_content, meta_dict, reject_reason).
+    """
+    meta_path = REVIEW_DIR / f"{target_id}.meta.json"
+    article_path = REVIEW_DIR / f"{target_id}.md"
+
+    # Try alternate patterns
+    if not meta_path.exists():
+        for f in REVIEW_DIR.glob(f"*{target_id}*.meta.json"):
+            meta_path = f
+            article_path = REVIEW_DIR / f.stem.replace(".meta", "") + ".md"
+            break
+
+    if not meta_path.exists():
+        print(f"[writer] Rewrite target not found: {target_id}")
+        # Fall back to reading from pending/
+        topic = _read_topic(target_id)
+        return "", topic, ""
+
+    meta = json.loads(meta_path.read_text())
+    content = article_path.read_text(encoding="utf-8") if article_path.exists() else ""
+
+    # Try to find the reject action for the reason
+    reject_reason = ""
+    for f in sorted(ACTIONS_DIR.glob(f"reject_*{target_id}*.json"),
+                     key=os.path.getmtime, reverse=True):
+        try:
+            action_data = json.loads(f.read_text())
+            reject_reason = action_data.get("reason", "") or ""
+            if reject_reason:
+                break
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    return content, meta, reject_reason
 
 
 def _fetch_source(url: str) -> str:
@@ -368,36 +412,58 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
 
 # ── Main pipeline ──────────────────────────────────────────────────
 def main():
-    # Read topic
     topic_id = sys.argv[1] if len(sys.argv) > 1 else None
     rewrite_mode = "--rewrite" in sys.argv
-    rewrite_target = None
-    if rewrite_mode and topic_id:
-        rewrite_target = topic_id
+    rewrite_target = topic_id if rewrite_mode else None
 
-    _write_status(0, "初始化", 0, "读取选题配置")
-    topic = _read_topic(topic_id)
-    print(f"[writer] Starting pipeline for: {topic['title']}")
-    print(f"[writer] Rewrite mode: {rewrite_mode}")
+    # ── Mode: Rewrite ──────────────────────────────────────────────
+    if rewrite_mode and rewrite_target:
+        print(f"[writer] Rewrite mode: {rewrite_target}")
+        _write_status(0, "初始化", 0, f"重写模式: {rewrite_target}")
+        original_text, topic, reject_reason = _read_article_for_rewrite(rewrite_target)
+        if reject_reason:
+            print(f"[writer] Reject reason: {reject_reason}")
+            topic["reject_reason"] = reject_reason
 
-    source_material = ""
-    critique_scores: list[int] = []
-    title_candidates: list[dict] = []
-    images: list[str] = []
+        # Use the original topic title + reject reason as prompt context
+        topic_title = topic.get("topic", rewrite_target)
+        source_url = topic.get("source_url", "")
+        source_material = original_text
 
-    # Stage 1: Fetch source
-    _write_status(1, "抓原文", 5, "抓取原文素材")
-    source_url = topic.get("url", "")
-    if source_url:
-        source_material = _fetch_source(source_url)
+        _write_status(1, "抓原文", 5, "读取原文素材")
+        if source_url and not original_text:
+            source_material = _fetch_source(source_url)
+        else:
+            source_material = original_text or "无原文素材"
+
+        # Stage 2: Rewrite with feedback
+        _write_status(2, "LLM初稿", 20, "根据反馈重写")
+        prompt_extra = ""
+        if reject_reason:
+            prompt_extra = f"\n\n驳回原因（必须针对性改进）: {reject_reason}"
+        text = _draft(
+            {"title": topic_title, "description": topic.get("topic", "") + prompt_extra},
+            source_material,
+        )
+
+    # ── Mode: Normal from topic ────────────────────────────────────
     else:
-        source_material = "无原文链接。将基于选题方向生成。"
-    print(f"[writer] Stage 1 done. Source: {len(source_material)} chars")
+        _write_status(0, "初始化", 0, "读取选题配置")
+        topic = _read_topic(topic_id)
+        print(f"[writer] Starting pipeline for: {topic['title']}")
+        source_material = ""
+        source_url = topic.get("url", "")
 
-    # Stage 2: Draft
-    _write_status(2, "LLM初稿", 20, "生成初稿")
-    text = _draft(topic, source_material)
-    print(f"[writer] Stage 2 done. Draft: {len(text)} chars")
+        _write_status(1, "抓原文", 5, "抓取原文素材")
+        if source_url:
+            source_material = _fetch_source(source_url)
+        else:
+            source_material = "无原文链接。将基于选题方向生成。"
+        print(f"[writer] Stage 1 done. Source: {len(source_material)} chars")
+
+        _write_status(2, "LLM初稿", 20, "生成初稿")
+        text = _draft(topic, source_material)
+        print(f"[writer] Stage 2 done. Draft: {len(text)} chars")
 
     # Stage 3: Proofread
     _write_status(3, "AI腔审校", 35, "检测并移除AI腔")
