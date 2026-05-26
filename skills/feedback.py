@@ -149,12 +149,19 @@ def _detect_viral(articles: list[dict], platform_data: list[dict]) -> Optional[d
         all_words.extend(words)
     keyword_freq = Counter(all_words).most_common(20)
 
+    # Group articles by direction from meta if available
+    topic_directions: dict[str, int] = {}
+    for a in articles:
+        meta = a.get("meta", {})
+        if meta.get("topic"):
+            topic_directions[meta["topic"]] = topic_directions.get(meta["topic"], 0) + 1
+
     viral = {
         "generated_at": RUN_DATE,
         "article_count": len(articles),
         "title_patterns": dict(title_patterns.most_common(5)),
         "top_keywords": [{"word": w, "count": c} for w, c in keyword_freq[:10]],
-        "topic_directions": {},
+        "topic_directions": topic_directions,
         "data_source": "local_only" if not platform_data else "aitoearn",
     }
 

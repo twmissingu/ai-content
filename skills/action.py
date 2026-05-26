@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from config.settings import ACTIONS_DIR, PROCESSED_DIR, PENDING_DIR
+from config.settings import ACTIONS_DIR, FAILED_ACTIONS_DIR, PROCESSED_DIR, PENDING_DIR
 
 # ── Types ──────────────────────────────────────────────────────────
 ActionType = str  # "confirm" | "approve" | "reject" | "rewrite" | "test_scout"
@@ -90,8 +90,8 @@ def scan_actions() -> list[ActionFile]:
             data = json.loads(f.read_text())
             results.append(ActionFile(data))
         except (json.JSONDecodeError, OSError) as e:
-            # Malformed file — move to failed
-            failed_path = PROCESSED_DIR / f.name
+            # Malformed file — move to failed actions dir
+            failed_path = FAILED_ACTIONS_DIR / f.name
             os.rename(f, failed_path)
     return results
 

@@ -84,6 +84,7 @@ def _publish_aitoearn(platform: str, article_path: Path, meta: dict) -> bool:
         "xiaohongshu": ("aitoearn_createImageTextDraft", "IMAGE_TEXT"),
         "douyin": ("aitoearn_createVideoDraft", "VIDEO"),
         "kuaishou": ("aitoearn_createVideoDraft", "VIDEO"),
+        "shipinhao": ("aitoearn_createVideoDraft", "VIDEO"),
     }
     tool_name, draft_type = tool_map.get(platform, (None, None))
     if not tool_name:
@@ -132,7 +133,7 @@ def main():
 
         if platform == "wechat":
             ok = _publish_wechat(article, meta)
-        elif platform in ("xiaohongshu", "douyin", "kuaishou"):
+        elif platform in ("xiaohongshu", "douyin", "kuaishou", "shipinhao"):
             ok = _publish_aitoearn(platform, article, meta)
         else:
             ok = False

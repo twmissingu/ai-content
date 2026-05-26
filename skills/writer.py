@@ -8,9 +8,9 @@ Outputs to queue/review/ with .md + .meta.json.
 import json
 import os
 import re
+import subprocess
 import sys
 import time
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -134,7 +134,7 @@ def _fetch_source(url: str) -> str:
         return "无原文链接。将仅基于选题方向生成内容。"
 
     try:
-        result = __import__("subprocess").run(
+        result = subprocess.run(
             ["hermes", "mcp", "call", "firecrawl_scrape",
              "--params", json.dumps({"url": url})],
             capture_output=True, text=True, timeout=30,
@@ -416,7 +416,6 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
         # Try screenshot if Playwright available
         if _can_screenshot:
             try:
-                from playwright.sync_api import sync_playwright
                 with sync_playwright() as p:
                     browser = p.chromium.launch(headless=True)
                     page = browser.new_page(
@@ -469,8 +468,9 @@ def main():
             topic["reject_reason"] = reject_reason
 
         # Use the original topic title + reject reason as prompt context
-        topic_title = topic.get("topic", rewrite_target)
-        source_url = topic.get("source_url", "")
+        # topic dict from meta has "topic" key; from pending/ fallback has "title"
+        topic_title = topic.get("topic") or topic.get("title", rewrite_target)
+        source_url = topic.get("source_url", topic.get("url", ""))
         source_material = original_text
 
         _write_status(1, "抓原文", 5, "读取原文素材")
@@ -515,6 +515,7 @@ def main():
 
     # Stage 4: Critique & rewrite loop
     _write_status(4, "批评修订", 50, "评委评分中")
+    critique_scores: list[int] = []
     for round_num in range(1, MAX_REWRITE_ROUNDS + 1):
         text, score, passed = _critique(text, topic["title"], round_num)
         critique_scores.append(score)

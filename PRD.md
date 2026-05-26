@@ -903,7 +903,7 @@ Hermes Agent 是否原生支持飞书通知和交互卡片回调**尚未验证**
 
 ### 6.1 概述
 
-常驻 Web 服务，使用 FastAPI + Vue 3 + SQLite，初始端口 `localhost:3456`。
+常驻 Web 服务，使用 FastAPI + Vue 3 + SQLite，端口 `localhost:8710`（FastAPI 后端，前端 Vite 开发服务器默认 5173）。
 
 **安全：** Dashboard 仅监听 `127.0.0.1`（localhost），不暴露公网接口。所有操作仅本机可执行，无需 JWT 等额外认证。如需远程访问，通过 SSH 隧道转发。
 
@@ -1461,7 +1461,7 @@ fi
 
 # 检查 FastAPI 进程
 if ! pgrep -f "uvicorn main:app"; then
-  cd /path/to/project && nohup uvicorn main:app --port 3456 &
+  cd /path/to/project && nohup uvicorn main:app --port 8710 &
 fi
 
 # 检查 queue/ 积压

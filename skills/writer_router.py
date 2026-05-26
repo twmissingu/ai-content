@@ -19,10 +19,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.settings import (
     PENDING_DIR,
+    PROJECT_ROOT,
+    QUEUE_DIR,
     REVIEW_DIR,
     STATUS_DIR,
     TMP_DIR,
-    PROJECT_ROOT,
 )
 
 RUN_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -78,8 +79,8 @@ def _find_topic(topic_id: Optional[str] = None) -> tuple[Optional[Path], Optiona
         for f in PENDING_DIR.glob(f"topic_*{topic_id}*.json"):
             return f, json.loads(f.read_text())
 
-    # Find latest confirmed topic
-    topics_dir = PROJECT_ROOT / "queue/topics"
+    # Find latest confirmed topic (stored in queue/topics/ by dashboard scanner)
+    topics_dir = QUEUE_DIR / "topics"
     confirmed_files = sorted(topics_dir.glob("*.confirmed"), key=os.path.getmtime, reverse=True)
     for cf in confirmed_files:
         topic_name = cf.stem.replace(".confirmed", "")

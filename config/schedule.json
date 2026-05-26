@@ -12,7 +12,5 @@
   "target_length": 2500,
   "max_rewrite_rounds": 3,
   "llm_model": "mimo-v2.5",
-  "llm_temperature": 0.7,
-  "morning_topic_selected": null,
-  "evening_topic_selected": null
+  "llm_temperature": 0.7
 }

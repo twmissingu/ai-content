@@ -376,12 +376,11 @@ def _scan_loop():
                 try:
                     action = json.loads(f.read_text())
                     ok = _dispatch_action(action, f)
-                    if ok:
-                        os.rename(f, PROCESSED_DIR / f.name)
                 except (json.JSONDecodeError, OSError) as e:
                     print(f"[scanner] Error processing {f.name}: {e}")
-                    # Move to failed
-                    os.rename(f, PROCESSED_DIR / f.name)
+                    ok = False
+                # Always move processed files — never retry infinitely
+                os.rename(f, PROCESSED_DIR / f.name)
         except Exception as e:
             print(f"[scanner] Loop error: {e}")
         time.sleep(10)
@@ -401,7 +400,7 @@ def health():
             "pending": len(list(PENDING_DIR.glob("*.json"))),
             "review": len(list(REVIEW_DIR.glob("*.meta.json"))),
             "actions": len(list(ACTIONS_DIR.glob("*.json"))),
-            "failed": len(list(Path(str(FAILED_DIR)).glob("*.json"))) if 'FAILED_DIR' in dir() else 0,
+            "failed": len(list(FAILED_DIR.glob("*.json"))),
         },
     }
 

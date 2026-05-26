@@ -20,14 +20,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config.settings import ACTIONS_DIR, PROCESSED_DIR
+from config.settings import ACTIONS_DIR, PROCESSED_DIR, PROJECT_ROOT
 from skills.action import ActionFile, scan_actions, mark_processed
 
 
+SKILLS_DIR = PROJECT_ROOT / "skills"
 DISPATCHER = {
-    "approve": ["python3", str(Path("skills/publisher.py"))],
-    "reject": ["python3", str(Path("skills/writer.py")), "--rewrite"],
-    "rewrite": ["python3", str(Path("skills/writer.py")), "--rewrite"],
+    "approve": ["python3", str(SKILLS_DIR / "publisher.py")],
+    "reject": ["python3", str(SKILLS_DIR / "writer.py"), "--rewrite"],
+    "rewrite": ["python3", str(SKILLS_DIR / "writer.py"), "--rewrite"],
     "confirm": None,  # handled by cron, not immediate dispatch
 }
 
@@ -39,8 +40,9 @@ def dispatch(action: ActionFile):
 
     if action_type == "confirm":
         # Set a flag for the next Writer cron tick
-        flag_file = Path("queue/topics") / f"{target_id}.confirmed"
-        tmp = Path("queue/topics") / f".{target_id}.confirmed.tmp"
+        topics_dir = PROJECT_ROOT / "queue/topics"
+        flag_file = topics_dir / f"{target_id}.confirmed"
+        tmp = topics_dir / f".{target_id}.confirmed.tmp"
         tmp.write_text(json.dumps(action, ensure_ascii=False, indent=2))
         os.rename(tmp, flag_file)
         return True

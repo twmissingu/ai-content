@@ -1,7 +1,7 @@
 # AGENTS.md
 
-仓库：`ai-content` — AI 内容生产系统「稿定」的规格文档库。
-状态：**开发前阶段**（仅有 PRD 和配置指引，尚未开始编码）。
+仓库：`ai-content` — AI 内容生产系统「稿定」的源代码与规格文档库。
+状态：**Phase 2 实现中**（核心管线 + Dashboard 已编码，文档持续同步）。
 
 ---
 
@@ -61,8 +61,33 @@
 
 ```
 AiToEarn配置与自动化操作指引.md   AiToEarn 接入配置（MCP + API）
-PRD.md                            产品规格文档（1589行，唯一完整方案）
+PRD.md                            产品规格文档（唯一完整方案）
 用户使用说明书.md                   用户手册（面向运营人员）
+账号注册指引.md                     社交平台账号注册指南
+development-plan.md                开发计划书
+
+skills/                            Agent 实现代码（Python）
+  ├── scout.py                     选题 Agent
+  ├── writer.py                    写手 Agent（7 阶段管线）
+  ├── writer_router.py              并行 Writer 路由器
+  ├── writer_xhs.py                 小红书 Worker
+  ├── writer_douyin.py              抖音 Worker
+  ├── publisher.py                  分发 Agent
+  ├── publisher_toutiao.py          头条号 Playwright 分发
+  ├── feedback.py                   数据反馈 Agent
+  ├── knowledge.py                  知识沉淀 Agent
+  ├── screenshot.py                 HTML→PNG 截图工具
+  ├── action.py                     action 文件协议
+  └── llm.py                       LLM 调用工具
+
+dashboard/                         Web Dashboard
+  ├── backend/main.py              FastAPI 后端（端口 8710）
+  └── frontend/                    Vue 3 + Vite 前端（端口 5173）
+
+config/                            运行态配置
+scripts/                            运维脚本
+queue/                              Agent 间通信目录（JSON 文件系统）
+kb/                                 知识库（Markdown）
 ```
 
 **核心文档：`PRD.md`** — 所有决策和方案的唯一来源。开始任务前必须读取相关内容。
@@ -129,4 +154,4 @@ PRD.md                            产品规格文档（1589行，唯一完整方
 - PRD.md 中的设计方案如需修改，先引用原文位置再提改动。
 - 外部服务文档优先查 AiToEarn 配置指引（仓库内已有），不够再用 web search。
 - 不添加仓库中不存在的文件除非用户明确要求。
-- 当前仓库无构建/测试命令（无代码），不生成无关的脚本配置。
+- 当前仓库无构建/测试命令，不生成无关的脚本配置。

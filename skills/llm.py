@@ -2,10 +2,15 @@
 
 Reads Hermes-provider config from env (XIAOMI_API_KEY, LLM_BASE_URL, LLM_MODEL).
 Uses direct HTTP (OpenAI-compatible) so agents are not coupled to Hermes internals.
+
+Fallback chain: reads config/model_fallback.json for ordered fallback models.
+Primary model (LLM_MODEL) is tried first; on failure each fallback is tried in order.
 """
 
 import json
+import os
 import time
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -15,24 +20,64 @@ from config.settings import (
     LLM_BASE_URL,
     LLM_MODEL,
     LLM_MAX_TOKENS,
+    LOGS_DIR,
     require_api_key,
 )
 
 
 class LLMError(Exception):
-    """Raised when the LLM call fails."""
+    """Raised when the LLM call fails after exhausting all fallback models."""
 
 
-def _client() -> httpx.Client:
-    key = LLM_API_KEY or require_api_key("XIAOMI_API_KEY")
+# ── Fallback chain ──────────────────────────────────────────────
+def _load_fallback_chain() -> list[dict]:
+    """Read model fallback chain from config/model_fallback.json.
+
+    Returns list of fallback config dicts (may be empty).
+    The primary model is NOT included here — it's tried first separately.
+    """
+    path = Path(__file__).resolve().parent.parent / "config" / "model_fallback.json"
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text())
+        return data.get("fallbacks", [])
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+FALLBACK_CHAIN = _load_fallback_chain()
+"""List of fallback model configs. Each has at least a 'model' key."""
+
+
+_HTTP_CLIENT: httpx.Client | None = None
+_LAST_MODEL_USED: str = LLM_MODEL
+
+
+def get_last_model() -> str:
+    """Return the model that was last used (primary or fallback)."""
+    return _LAST_MODEL_USED
+
+
+def _make_client(base_url: str | None = None, api_key: str | None = None) -> httpx.Client:
+    """Create a new httpx client for a specific endpoint."""
+    key = api_key or LLM_API_KEY or require_api_key("XIAOMI_API_KEY")
     return httpx.Client(
-        base_url=LLM_BASE_URL,
+        base_url=base_url or LLM_BASE_URL,
         headers={
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         },
         timeout=120,
     )
+
+
+def _get_client() -> httpx.Client:
+    """Return the module-level httpx singleton (connection reuse)."""
+    global _HTTP_CLIENT
+    if _HTTP_CLIENT is None:
+        _HTTP_CLIENT = _make_client()
+    return _HTTP_CLIENT
 
 
 def chat(
@@ -73,26 +118,53 @@ def chat(
         {"role": "user", "content": user_prompt},
     ]
 
-    body: dict = {
-        "model": model or LLM_MODEL,
-        "messages": messages,
-        "max_tokens": max_tokens or LLM_MAX_TOKENS,
-        "temperature": temperature,
-    }
-    if json_mode:
-        body["response_format"] = {"type": "json_object"}
+    # Collect models to try: explicit override, or primary + fallbacks
+    if model:
+        models_to_try = [model]
+    else:
+        models_to_try = [LLM_MODEL] + [f.get("model", "") for f in FALLBACK_CHAIN]
+        models_to_try = [m for m in models_to_try if m]  # remove empties
 
-    try:
-        resp = _client().post("/chat/completions", json=body)
-        resp.raise_for_status()
-        data = resp.json()
-    except httpx.HTTPStatusError as e:
-        detail = e.response.text[:500]
-        raise LLMError(f"LLM API error {e.response.status_code}: {detail}") from e
-    except httpx.TimeoutException as e:
-        raise LLMError(f"LLM request timed out after 120s") from e
-    except Exception as e:
-        raise LLMError(f"LLM request failed: {e}") from e
+    last_error: Exception | None = None
+    data = None
+
+    for attempt_model in models_to_try:
+        body: dict = {
+            "model": attempt_model,
+            "messages": messages,
+            "max_tokens": max_tokens or LLM_MAX_TOKENS,
+            "temperature": temperature,
+        }
+        if json_mode:
+            body["response_format"] = {"type": "json_object"}
+
+        try:
+            resp = _get_client().post("/chat/completions", json=body)
+            resp.raise_for_status()
+            data = resp.json()
+            global _LAST_MODEL_USED
+            _LAST_MODEL_USED = attempt_model
+            break  # success — exit the retry loop
+        except httpx.HTTPStatusError as e:
+            last_error = e
+            detail = e.response.text[:200]
+            print(f"[llm] Model {attempt_model} failed (HTTP {e.response.status_code}): {detail}")
+            if attempt_model == models_to_try[-1]:
+                raise LLMError(f"LLM API error {e.response.status_code}: {detail}") from e
+        except httpx.TimeoutException as e:
+            last_error = e
+            print(f"[llm] Model {attempt_model} timed out")
+            if attempt_model == models_to_try[-1]:
+                raise LLMError(f"LLM request timed out after 120s") from e
+        except Exception as e:
+            last_error = e
+            print(f"[llm] Model {attempt_model} failed: {e}")
+            if attempt_model == models_to_try[-1]:
+                raise LLMError(f"LLM request failed: {e}") from e
+
+    # Guard (should not reach here if all models failed)
+    if data is None:
+        raise LLMError(f"All {len(models_to_try)} models failed. Last error: {last_error}") from last_error
 
     # Extract content
     try:
@@ -132,19 +204,18 @@ def chat_structured(
 
 def _record_usage(data: dict) -> None:
     """Append a CSV row with token usage for cost tracking."""
-    from pathlib import Path
-
     usage = data.get("usage", {})
     if not usage:
         return
+    used_model = _LAST_MODEL_USED or LLM_MODEL
     row = (
         f"{time.strftime('%Y-%m-%dT%H:%M:%S')},"
         f"{usage.get('prompt_tokens', 0)},"
         f"{usage.get('completion_tokens', 0)},"
         f"{usage.get('total_tokens', 0)},"
-        f"{LLM_MODEL}\n"
+        f"{used_model}\n"
     )
-    cost_path = Path("data/logs/cost.csv")
+    cost_path = LOGS_DIR / "cost.csv"
     cost_path.parent.mkdir(parents=True, exist_ok=True)
     if not cost_path.exists():
         cost_path.write_text("timestamp,prompt_tokens,completion_tokens,total_tokens,model\n")

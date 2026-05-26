@@ -6,7 +6,7 @@ Reads Hermes env vars at import time, falls back to defaults where safe.
 
 import os
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Optional
 
 # ── Paths ──────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -14,6 +14,7 @@ SKILLS_DIR = PROJECT_ROOT / "skills"
 QUEUE_DIR = PROJECT_ROOT / "queue"
 ACTIONS_DIR = QUEUE_DIR / "actions"
 PROCESSED_DIR = ACTIONS_DIR / "processed"
+FAILED_ACTIONS_DIR = ACTIONS_DIR / "failed"
 STATUS_DIR = QUEUE_DIR / "status"
 REVIEW_DIR = QUEUE_DIR / "review"
 PENDING_DIR = QUEUE_DIR / "pending"
@@ -26,7 +27,7 @@ LOGS_DIR = DATA_DIR / "logs"
 CONFIG_DIR = PROJECT_ROOT / "config"
 
 # Ensure runtime directories exist
-for _d in [ACTIONS_DIR, PROCESSED_DIR, STATUS_DIR, REVIEW_DIR,
+for _d in [ACTIONS_DIR, PROCESSED_DIR, FAILED_ACTIONS_DIR, STATUS_DIR, REVIEW_DIR,
            PENDING_DIR, FAILED_DIR, IMAGES_DIR, TMP_DIR, LOGS_DIR]:
     _d.mkdir(parents=True, exist_ok=True)
 

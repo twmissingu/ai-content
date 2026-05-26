@@ -13,7 +13,7 @@ import re
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -135,11 +135,12 @@ def _call_firecrawl_search(query: str) -> list[dict]:
 
 
 def _call_github_trending() -> list[dict]:
-    """Fetch GitHub trending repos via API."""
+    """Fetch GitHub trending repos via API (last 7 days)."""
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
     try:
         result = subprocess.run(
             ["curl", "-s",
-             "https://api.github.com/search/repositories?q=created:>2026-05-20&sort=stars&order=desc&per_page=10"],
+             f"https://api.github.com/search/repositories?q=created:>{since}&sort=stars&order=desc&per_page=10"],
             capture_output=True, text=True, timeout=15,
         )
         data = json.loads(result.stdout)
