@@ -1,7 +1,8 @@
 # AGENTS.md
 
 仓库：`ai-content` — AI 内容生产系统「稿定」的源代码与规格文档库。
-状态：**Phase 2 实现中**（核心管线 + Dashboard 已编码，文档持续同步）。
+状态：**Phase 2 实现中**（核心管线 + Dashboard 已编码）。
+版本：[v0.2.0](CHANGELOG.md) — 2026-05-26
 
 ---
 
@@ -60,13 +61,19 @@
 ## 二、仓库结构
 
 ```
-AiToEarn配置与自动化操作指引.md   AiToEarn 接入配置（MCP + API）
-PRD.md                            产品规格文档（唯一完整方案）
-用户使用说明书.md                   用户手册（面向运营人员）
-账号注册指引.md                     社交平台账号注册指南
-development-plan.md                开发计划书
+README.md                            项目介绍（英文）
+README_zh.md                         项目介绍（中文）
+AGENTS.md                            AI Agent 行为规范
+PRD.md                               产品规格文档（唯一完整方案）
+CHANGELOG.md                         版本变更记录
+LICENSE                              MIT 许可证
+AiToEarn配置与自动化操作指引.md       AiToEarn 接入配置（MCP + API）
+用户使用说明书.md                     用户手册（面向运营人员）
+账号注册指引.md                       社交平台账号注册指南
+development-plan.md                  开发计划书
 
 skills/                            Agent 实现代码（Python）
+  ├── __init__.py
   ├── scout.py                     选题 Agent
   ├── writer.py                    写手 Agent（7 阶段管线）
   ├── writer_router.py              并行 Writer 路由器
