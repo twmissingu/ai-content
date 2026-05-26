@@ -1,6 +1,5 @@
 # Runtime
 queue/
-config/
 data/
 *.db
 *.db-shm

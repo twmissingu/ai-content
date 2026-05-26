@@ -362,22 +362,29 @@ def _generate_titles(text: str, topic_title: str) -> tuple[str, list[dict]]:
 
 # ── Stage 7: Illustrations ─────────────────────────────────────────
 def _illustrate(text: str, topic_title: str) -> list[str]:
-    """Stage 7: Generate illustration HTML templates.
+    """Stage 7: Generate illustrations.
 
-    Phase 1: HTML template only (zero-cost). baoyu integration deferred.
-    Returns list of image file paths (empty = no images generated).
+    Phase 1: HTML templates only.
+    Phase 3.2: HTML → PNG via Playwright screenshot.
+    Falls back to HTML-only if Playwright unavailable.
+    Returns list of file paths (PNG preferred, HTML fallback).
     """
-    # HTML template illustration — lightweight, zero cost
     images: list[str] = []
     img_dir = Path("queue/images") / RUN_TIMESTAMP
     img_dir.mkdir(parents=True, exist_ok=True)
 
-    # Extract key sections for illustration
+    # Check if Playwright screenshot is available
+    _can_screenshot = False
+    try:
+        from playwright.sync_api import sync_playwright
+        _can_screenshot = True
+    except ImportError:
+        pass
+
     paragraphs = [p for p in text.split("\n\n") if len(p) > 50]
-    sections_to_illustrate = paragraphs[:3]  # up to 3 illustrations
+    sections_to_illustrate = paragraphs[:3]
 
     for i, section in enumerate(sections_to_illustrate):
-        # Generate a simple HTML info-card
         section_title = section[:60].replace("\n", " ")
         html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -405,16 +412,52 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
 </div></body></html>"""
         html_path = img_dir / f"illustration_{i + 1}.html"
         html_path.write_text(html, encoding="utf-8")
-        images.append(str(html_path))
+
+        # Try screenshot if Playwright available
+        if _can_screenshot:
+            try:
+                from playwright.sync_api import sync_playwright
+                with sync_playwright() as p:
+                    browser = p.chromium.launch(headless=True)
+                    page = browser.new_page(
+                        viewport={"width": 580, "height": 440},
+                        device_scale_factor=2,
+                    )
+                    page.goto(f"file://{html_path.resolve()}")
+                    page.wait_for_load_state("networkidle")
+                    png_path = html_path.with_suffix(".png")
+                    page.screenshot(path=str(png_path))
+                    browser.close()
+                    images.append(str(png_path))
+                    print(f"[writer] Screenshot: {png_path}")
+            except Exception as e:
+                print(f"[writer] Screenshot failed for {html_path.name}: {e}")
+                images.append(str(html_path))
+        else:
+            images.append(str(html_path))
 
     return images
 
 
 # ── Main pipeline ──────────────────────────────────────────────────
 def main():
+    # Support --topic-file for router compatibility
+    topic_file_arg = None
+    work_dir_arg = None
+    for i, arg in enumerate(sys.argv):
+        if arg == "--topic-file" and i + 1 < len(sys.argv):
+            topic_file_arg = Path(sys.argv[i + 1])
+        elif arg == "--work-dir" and i + 1 < len(sys.argv):
+            work_dir_arg = Path(sys.argv[i + 1])
+
     topic_id = sys.argv[1] if len(sys.argv) > 1 else None
     rewrite_mode = "--rewrite" in sys.argv
     rewrite_target = topic_id if rewrite_mode else None
+
+    # If topic_file_arg given, use that instead of scanning pending/
+    _topic_from_file = None
+    if topic_file_arg and topic_file_arg.exists():
+        _topic_from_file = json.loads(topic_file_arg.read_text())
 
     # ── Mode: Rewrite ──────────────────────────────────────────────
     if rewrite_mode and rewrite_target:
@@ -449,7 +492,7 @@ def main():
     # ── Mode: Normal from topic ────────────────────────────────────
     else:
         _write_status(0, "初始化", 0, "读取选题配置")
-        topic = _read_topic(topic_id)
+        topic = _topic_from_file if _topic_from_file else _read_topic(topic_id)
         print(f"[writer] Starting pipeline for: {topic['title']}")
         source_material = ""
         source_url = topic.get("url", "")
