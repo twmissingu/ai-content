@@ -1,0 +1,29 @@
+{
+  "wechat_default": {
+    "name": "公众号默认",
+    "platform": "wechat",
+    "length": 2500,
+    "tone": "口语化",
+    "stance": "强烈观点",
+    "structure": "开头3秒抓人 → 层层递进论证 → 总结观点",
+    "illustrations": 3
+  },
+  "xiaohongshu_default": {
+    "name": "小红书默认",
+    "platform": "xiaohongshu",
+    "length": 600,
+    "tone": "轻松口语化+emoji",
+    "stance": "第一人称经验分享",
+    "structure": "开头痛点/好奇 → 主体干货 → 结尾互动引导",
+    "illustrations": 6
+  },
+  "douyin_default": {
+    "name": "抖音脚本",
+    "platform": "douyin",
+    "length": 300,
+    "tone": "口语化，语速快",
+    "stance": "抓眼球",
+    "structure": "前三秒抓眼球 → 核心观点 → 行动引导",
+    "illustrations": 0
+  }
+}

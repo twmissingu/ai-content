@@ -1,0 +1,13 @@
+{
+  "primary": {
+    "model": "mimo-v2.5",
+    "provider": "xiaomi"
+  },
+  "fallbacks": [
+    {
+      "model": "gpt-4o-mini",
+      "provider": "openrouter"
+    }
+  ],
+  "current": "mimo-v2.5"
+}

@@ -1,0 +1,18 @@
+{
+  "morning_scout": "09:00",
+  "morning_writer": "09:30",
+  "evening_scout": "14:00",
+  "evening_writer": "14:30",
+  "working_days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+  "monthly_budget": 15.0,
+  "quality_threshold": 70,
+  "domain": "科技/AI",
+  "tone": "口语化",
+  "stance": "强烈观点",
+  "target_length": 2500,
+  "max_rewrite_rounds": 3,
+  "llm_model": "mimo-v2.5",
+  "llm_temperature": 0.7,
+  "morning_topic_selected": null,
+  "evening_topic_selected": null
+}
