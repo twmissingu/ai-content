@@ -64,13 +64,16 @@
 README.md                            项目介绍（英文）
 README_zh.md                         项目介绍（中文）
 AGENTS.md                            AI Agent 行为规范
-PRD.md                               产品规格文档（唯一完整方案）
 CHANGELOG.md                         版本变更记录
 LICENSE                              MIT 许可证
-AiToEarn配置与自动化操作指引.md       AiToEarn 接入配置（MCP + API）
-用户使用说明书.md                     用户手册（面向运营人员）
-账号注册指引.md                       社交平台账号注册指南
-development-plan.md                  开发计划书
+docs/
+  product/
+    PRD.md                           产品规格文档（唯一完整方案）
+    development-plan.md              开发计划书
+  manual/
+    AiToEarn配置与自动化操作指引.md    AiToEarn 接入配置（MCP + API）
+    用户使用说明书.md                  用户手册（面向运营人员）
+    账号注册指引.md                    社交平台账号注册指南
 
 skills/                            Agent 实现代码（Python）
   ├── __init__.py
@@ -97,7 +100,7 @@ queue/                              Agent 间通信目录（JSON 文件系统）
 kb/                                 知识库（Markdown）
 ```
 
-**核心文档：`PRD.md`** — 所有决策和方案的唯一来源。开始任务前必须读取相关内容。
+**核心文档：`docs/product/PRD.md`** — 所有决策和方案的唯一来源。开始任务前必须读取相关内容。
 
 ---
 
@@ -158,7 +161,7 @@ kb/                                 知识库（Markdown）
 ## 四、开发约束
 
 - 所有文件编辑前必须先 `read`，不准凭记忆改。
-- PRD.md 中的设计方案如需修改，先引用原文位置再提改动。
-- 外部服务文档优先查 AiToEarn 配置指引（仓库内已有），不够再用 web search。
+- `docs/product/PRD.md` 中的设计方案如需修改，先引用原文位置再提改动。
+- 外部服务文档优先查 `docs/manual/AiToEarn配置与自动化操作指引.md`（仓库内已有），不够再用 web search。
 - 不添加仓库中不存在的文件除非用户明确要求。
 - 当前仓库无构建/测试命令，不生成无关的脚本配置。

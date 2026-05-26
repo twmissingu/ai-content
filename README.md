@@ -152,7 +152,7 @@ python3 dashboard/backend/main.py
 ```
 
 **Key files for agent understanding:**
-- `PRD.md` — Complete product spec (single source of truth)
+- `docs/product/PRD.md` — Complete product spec (single source of truth)
 - `AGENTS.md` — Agent behavior rules for AI coding assistants
 - `config/settings.py` — All runtime configuration in one place
 - `skills/action.py` — JSON action file protocol (atomic `.tmp + rename`)
@@ -178,6 +178,9 @@ python3 dashboard/backend/main.py
 ├── dashboard/                 # Web Dashboard
 │   ├── backend/main.py        FastAPI (port 8710)
 │   └── frontend/              Vue 3 + Vite (port 5173)
+├── docs/                      # Documentation
+│   ├── product/               # Product specs (PRD, dev plan)
+│   └── manual/                # User manuals, setup guides
 ├── config/                    # Runtime configuration
 ├── scripts/                   # Operational scripts
 ├── queue/                     # Agent communication (JSON files)

@@ -138,7 +138,7 @@ project-root/
 
 | 依赖 | 动作 | 参考文档 |
 |------|------|---------|
-| AiToEarn MCP | 注册账号 → 创建 API Key → 配置到 Hermes | 仓库内 `AiToEarn配置与自动化操作指引.md` |
+| AiToEarn MCP | 注册账号 → 创建 API Key → 配置到 Hermes | 仓库内 `docs/manual/AiToEarn配置与自动化操作指引.md` |
 | china-hot-mcp | pip 安装 → Hermes MCP 配置 | 同上 |
 | Firecrawl | 确认 Hermes 内置配置 | Hermes 文档 |
 | Playwright | `npx playwright install chromium` | Playwright 文档 |
