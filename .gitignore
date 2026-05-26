@@ -1,0 +1,20 @@
+# Runtime
+queue/
+config/
+data/
+*.db
+*.db-shm
+*.db-wal
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+
+# OS
+.DS_Store
