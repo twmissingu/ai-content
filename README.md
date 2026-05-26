@@ -69,35 +69,35 @@ Hermes Cron ─→ Scout Agent ─→ queue/pending/ ─→ You confirm
 - [Hermes Agent](https://hermes-agent.nousresearch.com/) v0.14+
 - Playwright (for Toutiao distribution + screenshots)
 
-### Installation
+### Setup
+
+**Recommended — guided setup (interactive):**
 
 ```bash
-# Clone
-git clone https://github.com/twmissingu/ai-content.git
-cd ai-content
+bash scripts/setup.sh
+```
 
-# Python dependencies for agents
+The script will: check Python/Node versions → prompt for API key → write `.env` → create directories → install dependencies → optionally start the Dashboard.
+
+**Alternative — manual setup:**
+
+```bash
+# 1. Install dependencies
 pip install httpx uvicorn fastapi pydantic
+cd dashboard/frontend && npm install && cd ../..
 
-# Frontend dependencies
-cd dashboard/frontend
-npm install
-cd ../..
+# 2. Set API key
+export XIAOMI_API_KEY="your-api-key-here"
+
+# 3. Create runtime directories
+bash scripts/init_directories.sh
 
 # Playwright (optional, for Toutiao + screenshots)
-pip install playwright
-python3 -m playwright install chromium
+pip install playwright && python3 -m playwright install chromium
 ```
 
-### Configuration
-
-```bash
-# Set LLM API key (required)
-export XIAOMI_API_KEY="your-api-key-here"
-# Optional overrides
-export LLM_BASE_URL="https://api.xiaomimimo.com/v1"   # default
-export LLM_MODEL="mimo-v2.5"                           # default
-```
+> Configuration is also auto-loaded from `.env` (see `config/.env.example`).
+> Environment variables always take precedence over `.env`.
 
 ### Run
 

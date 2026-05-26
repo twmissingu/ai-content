@@ -69,35 +69,37 @@ Hermes Cron ─→ Scout Agent ─→ queue/pending/ ─→ 人工确认选题
 - [Hermes Agent](https://hermes-agent.nousresearch.com/) v0.14+（可选，用于定时调度）
 - Playwright（可选，用于头条号分发 + 截图）
 
-### 安装
+### 安装与配置
+
+**推荐 — 交互式配置向导：**
 
 ```bash
-# 克隆仓库
-git clone https://github.com/twmissingu/ai-content.git
-cd ai-content
+bash scripts/setup.sh
+```
 
-# 安装 Python 依赖
+脚本自动完成：检测 Python/Node 版本 → 引导填入 API Key → 写入 `.env` → 创建目录 → 安装依赖 → 可选启动 Dashboard。
+
+**手动配置：**
+
+```bash
+# 1. 安装 Python 依赖
 pip install httpx uvicorn fastapi pydantic
 
-# 安装前端依赖
-cd dashboard/frontend
-npm install
-cd ../..
+# 2. 安装前端依赖
+cd dashboard/frontend && npm install && cd ../..
 
-# 安装 Playwright（可选）
-pip install playwright
-python3 -m playwright install chromium
-```
-
-### 配置
-
-```bash
-# 设置 LLM API Key（必需）
+# 3. 设置 API Key
 export XIAOMI_API_KEY="your-api-key-here"
-# 可选覆盖
-export LLM_BASE_URL="https://api.xiaomimimo.com/v1"   # 默认
-export LLM_MODEL="mimo-v2.5"                           # 默认
+
+# 4. 创建运行目录
+bash scripts/init_directories.sh
+
+# Playwright（可选）
+pip install playwright && python3 -m playwright install chromium
 ```
+
+> 配置也可通过 `.env` 文件自动加载（参考 `config/.env.example`）。
+> 环境变量优先级高于 `.env` 文件。
 
 ### 运行
 

@@ -1,12 +1,33 @@
 """Centralized configuration for the content production system.
 
 All agent code reads settings from this module, never from env directly.
-Reads Hermes env vars at import time, falls back to defaults where safe.
+Auto-loads .env from project root if present (env vars take precedence).
 """
 
 import os
+import re
 from pathlib import Path
 from typing import Optional
+
+# ── .env auto-loader ──────────────────────────────────────────────
+def _load_env_dotfile() -> None:
+    """Load .env from project root into os.environ (won't overwrite existing env vars)."""
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.exists():
+        return
+    with open(env_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip("\"'")
+            # Don't overwrite env vars already set
+            if key and key not in os.environ:
+                os.environ[key] = val
+
+_load_env_dotfile()
 
 # ── Paths ──────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent

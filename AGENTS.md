@@ -158,7 +158,55 @@ kb/                                 知识库（Markdown）
 
 ---
 
-## 四、开发约束
+## 四、配置流程（AI Agent 快速上手）
+
+引导用户完成配置时（包括你自己作为 Agent 首次部署），按以下步骤：
+
+### 4.1 交互式配置（推荐）
+
+推荐给用户执行，引导式问答完成全部配置：
+
+```bash
+bash scripts/setup.sh
+```
+
+脚本自动处理：检测 Python/Node 版本 → 引导填入 API Key → 写入 `.env` → 创建目录 → 安装依赖 → 可选启动 Dashboard。
+
+### 4.2 手动配置（自动化场景）
+
+适合你自己作为 Agent 执行或 CI/CD 场景：
+
+```bash
+# 1. 安装依赖
+pip install httpx uvicorn fastapi pydantic
+cd dashboard/frontend && npm install && cd ../..
+
+# 2. 设置 API Key（两种方式任选其一）
+# 方式 A：环境变量（推荐）
+export XIAOMI_API_KEY="你的key"
+
+# 方式 B：写入 .env 文件
+echo 'XIAOMI_API_KEY="你的key"' >> .env
+
+# 3. 创建运行时目录
+bash scripts/init_directories.sh
+```
+
+### 4.3 配置验证
+
+```python
+# 验证 .env 自动加载
+python3 -c "from config.settings import LLM_API_KEY; print('OK' if LLM_API_KEY else 'MISSING')"
+```
+
+### 4.4 安全提醒
+
+`scripts/setup.sh` 会读取并在终端显示 API Key 前 4 位 + 后 4 位（脱敏格式 `ak_u***D5G`）。
+.key 文件和空 `XIAOMI_API_KEY=""` 不会触发加载。
+
+---
+
+## 五、开发约束
 
 - 所有文件编辑前必须先 `read`，不准凭记忆改。
 - `docs/product/PRD.md` 中的设计方案如需修改，先引用原文位置再提改动。
