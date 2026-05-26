@@ -59,9 +59,7 @@ else
     fi
 fi
 
-# ── 3. API Key 检查 ────────────────────────────────────────────────
-info "检查 LLM API Key..."
-
+# ── 3. 加载 .env（如果存在）────────────────────────────────────────
 load_env() {
     local env_file="$ROOT/.env"
     [ -f "$env_file" ] || return 1
@@ -75,65 +73,91 @@ load_env() {
     done < "$env_file"
     return 0
 }
+load_env || true
 
-# 检查顺序：环境变量 → .env 文件
-if [ -n "${XIAOMI_API_KEY:-}" ]; then
-    KEY_SOURCE="环境变量"
-elif load_env && [ -n "${XIAOMI_API_KEY:-}" ]; then
-    KEY_SOURCE=".env 文件"
+# ── 4. Base URL 检查 ──────────────────────────────────────────────
+echo ""
+info "第一步：LLM API 地址"
+echo "  输入你的 LLM API Base URL（兼容 OpenAI 格式）"
+echo "  例如: https://api.deepseek.com"
+echo "       https://dashscope.aliyuncs.com/compatible-mode/v1"
+echo "       https://token-plan-cn.xiaomimimo.com/v1"
+echo ""
+
+if [ -n "${LLM_BASE_URL:-}" ]; then
+    ok "已检测到 LLM_BASE_URL: ${LLM_BASE_URL}"
+    echo "  直接回车保留，或输入新地址覆盖："
 else
-    KEY_SOURCE=""
-    echo ""
-    warn "未检测到 XIAOMI_API_KEY"
-    echo ""
-    echo "请输入你的 LLM API Key（输入不可见，直接回车跳过）："
-    echo "  (支持任意兼容 OpenAI 格式的 API)"
-    echo -n "  > "
-    read -r -s USER_KEY
-    echo ""
-    if [ -n "$USER_KEY" ]; then
-        XIAOMI_API_KEY="$USER_KEY"
-        KEY_SOURCE="用户输入"
-    else
-        warn "未设置 API Key。Agent 功能不可用，Dashboard 仍可启动。"
-    fi
+    echo -n "  Base URL > "
+fi
+read -r USER_BASE_URL
+if [ -n "$USER_BASE_URL" ]; then
+    LLM_BASE_URL="$USER_BASE_URL"
+    ok "Base URL 已设置"
+elif [ -z "${LLM_BASE_URL:-}" ]; then
+    warn "Base URL 未设置（Agent 功能将不可用）"
 fi
 
+# ── 5. API Key 检查 ───────────────────────────────────────────────
+echo ""
+info "第二步：LLM API Key"
+echo ""
+
 if [ -n "${XIAOMI_API_KEY:-}" ]; then
-    # 脱敏显示
     PREFIX="${XIAOMI_API_KEY:0:4}"
     SUFFIX="${XIAOMI_API_KEY: -4}"
-    MASKED="${PREFIX}****${SUFFIX}"
-    ok "API Key 已就绪（来源: $KEY_SOURCE）: $MASKED"
+    ok "已检测到 XIAOMI_API_KEY: ${PREFIX}****${SUFFIX}"
+    echo "  直接回车保留，或输入新 Key 覆盖："
+else
+    echo -n "  API Key > "
+fi
+read -r -s USER_KEY
+echo ""
+if [ -n "$USER_KEY" ]; then
+    XIAOMI_API_KEY="$USER_KEY"
+    ok "API Key 已设置"
+elif [ -z "${XIAOMI_API_KEY:-}" ]; then
+    warn "API Key 未设置（Agent 功能将不可用）"
 fi
 
-# ── 4. 写入 .env ──────────────────────────────────────────────────
+# ── 6. 写入 .env ──────────────────────────────────────────────────
 ENV_FILE="$ROOT/.env"
-if [ -n "${XIAOMI_API_KEY:-}" ]; then
-    # 保留 .env 中已有的非 XIAOMI_API_KEY 配置
-    if [ -f "$ENV_FILE" ]; then
-        cp "$ENV_FILE" "$ENV_FILE.bak"
-        # 过滤掉旧的 XIAOMI_API_KEY 行，保留其他配置
-        grep -v '^XIAOMI_API_KEY=' "$ENV_FILE.bak" > "$ENV_FILE" 2>/dev/null || true
+ENV_UPDATED=false
+
+write_env() {
+    local key="$1"
+    local val="$2"
+    if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+        # macOS sed requires different syntax
+        sed -i '' "s|^${key}=.*|${key}=\"${val}\"|" "$ENV_FILE"
+    else
+        echo "${key}=\"${val}\"" >> "$ENV_FILE"
+    fi
+    ENV_UPDATED=true
+}
+
+if [ -n "${LLM_BASE_URL:-}" ] || [ -n "${XIAOMI_API_KEY:-}" ]; then
+    # 如果 .env 不存在则创建，保留已有内容
+    [ -f "$ENV_FILE" ] || touch "$ENV_FILE"
+
+    if [ -n "${LLM_BASE_URL:-}" ]; then
+        write_env "LLM_BASE_URL" "$LLM_BASE_URL"
+    fi
+    if [ -n "${XIAOMI_API_KEY:-}" ]; then
+        write_env "XIAOMI_API_KEY" "$XIAOMI_API_KEY"
     fi
 
-    # 追加或更新 XIAOMI_API_KEY
-    if grep -q '^XIAOMI_API_KEY=' "$ENV_FILE" 2>/dev/null; then
-        sed -i '' "s|^XIAOMI_API_KEY=.*|XIAOMI_API_KEY=\"${XIAOMI_API_KEY}\"|" "$ENV_FILE"
-    else
-        echo "" >> "$ENV_FILE"
-        echo "# LLM Provider (auto-set by setup.sh)" >> "$ENV_FILE"
-        echo "XIAOMI_API_KEY=\"${XIAOMI_API_KEY}\"" >> "$ENV_FILE"
+    if $ENV_UPDATED; then
+        ok ".env 已更新"
     fi
-    ok ".env 已更新"
 fi
 
-# ── 5. 创建运行时目录 ──────────────────────────────────────────────
+# ── 7. 创建运行时目录 ──────────────────────────────────────────────
 info "创建运行时目录..."
 bash "$ROOT/scripts/init_directories.sh"
 ok "目录已就绪"
 
-# ── 6. 安装 Python 依赖 ───────────────────────────────────────────
+# ── 8. 安装 Python 依赖 ───────────────────────────────────────────
 info "检查 Python 依赖..."
 DEPS_MISSING=false
 for mod in httpx uvicorn fastapi pydantic; do
@@ -158,7 +182,7 @@ else
     ok "Python 依赖已就绪"
 fi
 
-# ── 7. 安装前端依赖 ───────────────────────────────────────────────
+# ── 9. 安装前端依赖 ───────────────────────────────────────────────
 if [ -n "${NODE:-}" ] && [ -d "$ROOT/dashboard/frontend" ]; then
     if [ ! -d "$ROOT/dashboard/frontend/node_modules" ]; then
         info "安装前端依赖..."
@@ -171,51 +195,64 @@ if [ -n "${NODE:-}" ] && [ -d "$ROOT/dashboard/frontend" ]; then
     fi
 fi
 
-# ── 8. 配置概要 ────────────────────────────────────────────────────
+# ── 10. 配置概要 ──────────────────────────────────────────────────
 echo ""
 echo -e "${BLUE}══════════════════ 配置概要 ═══════════════════${NC}"
 echo "  项目根目录 : $ROOT"
+echo "  Python      : $PY_VER ($PYTHON)"
+echo "  Node.js     : ${NODE_VER:-未安装}"
+
+if [ -n "${LLM_BASE_URL:-}" ]; then
+    echo "  LLM 地址    : $LLM_BASE_URL"
+else
+    echo -e "  ${YELLOW}LLM 地址    : 未配置${NC}"
+fi
+
 if [ -n "${XIAOMI_API_KEY:-}" ]; then
-    echo "  API Key     : ${MASKED:-已配置}"
+    PREFIX="${XIAOMI_API_KEY:0:4}"
+    SUFFIX="${XIAOMI_API_KEY: -4}"
+    echo "  API Key     : ${PREFIX}****${SUFFIX}"
 else
     echo -e "  ${YELLOW}API Key     : 未配置${NC}"
 fi
-echo "  LLM 地址    : ${LLM_BASE_URL:-https://api.xiaomimimo.com/v1}"
-echo "  LLM 模型    : ${LLM_MODEL:-mimo-v2.5}"
-echo "  Python      : $PY_VER ($PYTHON)"
-echo "  Node.js     : ${NODE_VER:-未安装}"
+
 echo "  队列目录    : $ROOT/queue/"
 echo "  Dashboard   : http://localhost:5173"
 echo -e "${BLUE}════════════════════════════════════════════════${NC}"
 echo ""
 
-# ── 9. 启动 Dashboard ─────────────────────────────────────────────
-echo "是否启动 Dashboard？[y/N]"
-read -r START_DASH
-if [[ "$START_DASH" =~ ^[Yy] ]]; then
-    info "启动 FastAPI 后端 (port 8710)..."
-    "$PYTHON" -m uvicorn dashboard.backend.main:app --host 0.0.0.0 --port 8710 --reload &
-    BACKEND_PID=$!
-    sleep 2
+# ── 11. 启动 Dashboard ───────────────────────────────────────────
+if [ -n "${LLM_BASE_URL:-}" ] && [ -n "${XIAOMI_API_KEY:-}" ]; then
+    echo "是否启动 Dashboard？[y/N]"
+    read -r START_DASH
+    if [[ "$START_DASH" =~ ^[Yy] ]]; then
+        info "启动 FastAPI 后端 (port 8710)..."
+        "$PYTHON" -m uvicorn dashboard.backend.main:app --host 0.0.0.0 --port 8710 --reload &
+        BACKEND_PID=$!
+        sleep 2
 
-    if [ -n "${NODE:-}" ] && [ -d "$ROOT/dashboard/frontend/node_modules" ]; then
-        info "启动 Vue 前端 (port 5173)..."
-        cd "$ROOT/dashboard/frontend"
-        npm run dev &
-        FRONTEND_PID=$!
-        cd "$ROOT"
+        if [ -n "${NODE:-}" ] && [ -d "$ROOT/dashboard/frontend/node_modules" ]; then
+            info "启动 Vue 前端 (port 5173)..."
+            cd "$ROOT/dashboard/frontend"
+            npm run dev &
+            FRONTEND_PID=$!
+            cd "$ROOT"
+        fi
+
+        echo ""
+        ok "Dashboard 已启动："
+        echo "  后端: http://localhost:8710"
+        echo "  前端: http://localhost:5173"
+        echo "  停止: kill $BACKEND_PID ${FRONTEND_PID:-}"
+        echo ""
+        echo "按 Ctrl+C 停止所有服务"
+        wait
     fi
-
-    echo ""
-    ok "Dashboard 已启动："
-    echo "  后端: http://localhost:8710"
-    echo "  前端: http://localhost:5173"
-    echo "  停止: kill $BACKEND_PID ${FRONTEND_PID:-}"
-    echo ""
-    echo "按 Ctrl+C 停止所有服务"
-    wait
+else
+    info "Base URL 或 API Key 未配置，跳过 Dashboard 启动。"
+    echo "  配置后手动启动: python3 dashboard/backend/main.py"
 fi
 
 ok "Setup 完成！"
-echo "  下一步: 访问 http://localhost:5173 打开 Dashboard"
-echo "  或直接运行 Agent: python3 skills/scout.py"
+echo "  下一步: 运行 python3 skills/scout.py 开始选题"
+echo "  或访问 http://localhost:5173 打开 Dashboard（需先启动）"

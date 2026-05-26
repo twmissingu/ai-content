@@ -77,7 +77,7 @@ Hermes Cron ─→ Scout Agent ─→ queue/pending/ ─→ 人工确认选题
 bash scripts/setup.sh
 ```
 
-脚本自动完成：检测 Python/Node 版本 → 引导填入 API Key → 写入 `.env` → 创建目录 → 安装依赖 → 可选启动 Dashboard。
+脚本自动完成：检测 Python/Node 版本 → 引导填入 **Base URL**（必填）→ 引导填入 **API Key**（必填）→ 写入 `.env` → 创建目录 → 安装依赖 → 可选启动 Dashboard。
 
 **手动配置：**
 
@@ -88,8 +88,9 @@ pip install httpx uvicorn fastapi pydantic
 # 2. 安装前端依赖
 cd dashboard/frontend && npm install && cd ../..
 
-# 3. 设置 API Key
-export XIAOMI_API_KEY="your-api-key-here"
+# 3. 设置 Base URL + API Key（两者必填）
+export LLM_BASE_URL="https://你的api地址/v1"
+export XIAOMI_API_KEY="你的key"
 
 # 4. 创建运行目录
 bash scripts/init_directories.sh

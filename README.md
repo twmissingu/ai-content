@@ -77,7 +77,7 @@ Hermes Cron ─→ Scout Agent ─→ queue/pending/ ─→ You confirm
 bash scripts/setup.sh
 ```
 
-The script will: check Python/Node versions → prompt for API key → write `.env` → create directories → install dependencies → optionally start the Dashboard.
+The script will: check Python/Node versions → prompt for **Base URL** (required) → prompt for **API Key** (required) → write `.env` → create directories → install dependencies → optionally start the Dashboard.
 
 **Alternative — manual setup:**
 
@@ -86,7 +86,8 @@ The script will: check Python/Node versions → prompt for API key → write `.e
 pip install httpx uvicorn fastapi pydantic
 cd dashboard/frontend && npm install && cd ../..
 
-# 2. Set API key
+# 2. Set Base URL + API Key (both required)
+export LLM_BASE_URL="https://your-api-endpoint/v1"
 export XIAOMI_API_KEY="your-api-key-here"
 
 # 3. Create runtime directories

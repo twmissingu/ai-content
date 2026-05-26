@@ -170,7 +170,7 @@ kb/                                 知识库（Markdown）
 bash scripts/setup.sh
 ```
 
-脚本自动处理：检测 Python/Node 版本 → 引导填入 API Key → 写入 `.env` → 创建目录 → 安装依赖 → 可选启动 Dashboard。
+脚本自动完成：检测 Python/Node 版本 → 引导填入 **Base URL**（必填）→ 引导填入 **API Key**（必填）→ 写入 `.env` → 创建目录 → 安装依赖 → 可选启动 Dashboard。
 
 ### 4.2 手动配置（自动化场景）
 
@@ -181,11 +181,13 @@ bash scripts/setup.sh
 pip install httpx uvicorn fastapi pydantic
 cd dashboard/frontend && npm install && cd ../..
 
-# 2. 设置 API Key（两种方式任选其一）
+# 2. 设置 Base URL + API Key（两种方式任选其一）
 # 方式 A：环境变量（推荐）
+export LLM_BASE_URL="https://你的api地址/v1"
 export XIAOMI_API_KEY="你的key"
 
 # 方式 B：写入 .env 文件
+echo 'LLM_BASE_URL="https://你的api地址/v1"' >> .env
 echo 'XIAOMI_API_KEY="你的key"' >> .env
 
 # 3. 创建运行时目录
@@ -196,13 +198,17 @@ bash scripts/init_directories.sh
 
 ```python
 # 验证 .env 自动加载
-python3 -c "from config.settings import LLM_API_KEY; print('OK' if LLM_API_KEY else 'MISSING')"
+python3 -c "
+from config.settings import LLM_BASE_URL, LLM_API_KEY
+print(f'Base URL: {LLM_BASE_URL}')
+print(f'API Key : {\"OK\" if LLM_API_KEY else \"MISSING\"}')
+"
 ```
 
 ### 4.4 安全提醒
 
 `scripts/setup.sh` 会读取并在终端显示 API Key 前 4 位 + 后 4 位（脱敏格式 `ak_u***D5G`）。
-.key 文件和空 `XIAOMI_API_KEY=""` 不会触发加载。
+.env 文件和空值不会触发加载。任何情况下都不暴露完整 Key。
 
 ---
 
