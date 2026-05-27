@@ -2,12 +2,16 @@
 
 Phase 1: WeChat (baoyu-post-to-wechat) + AiToEarn (小红书/抖音/视频号).
 Graceful per-platform failure (one fails, others continue).
+
+Uses AgentBase for unified status writing, logging, and metrics.
+Uses temp files instead of command-line args for content passing (security).
 """
 
 import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,143 +27,170 @@ from config.settings import (
     STATUS_DIR,
 )
 from skills.action import mark_processed
-
-RUN_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-
-
-def _write_status(pct: int, detail: str, error: Optional[str] = None):
-    status = {
-        "agent": "publisher",
-        "progress_pct": pct,
-        "detail": detail,
-        "started_at": RUN_TIMESTAMP,
-        "error": error,
-    }
-    path = STATUS_DIR / "publisher.json"
-    tmp = STATUS_DIR / ".publisher.json.tmp"
-    tmp.write_text(json.dumps(status, ensure_ascii=False, indent=2))
-    os.rename(tmp, path)
+from skills.common import AgentBase, agent_main
 
 
-def find_article(target_id: str) -> tuple[Optional[Path], Optional[dict]]:
-    """Find article files matching target_id in queue/review/."""
-    meta_path = REVIEW_DIR / f"{target_id}.meta.json"
-    article_path = REVIEW_DIR / f"{target_id}.md"
+class PublisherAgent(AgentBase):
+    """Publisher agent for distributing content to platforms."""
+    
+    name = "publisher"
+    version = "1.0.0"
+    
+    def __init__(self):
+        super().__init__(enable_metrics=True)
+        self._run_timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    
+    def find_article(self, target_id: str) -> tuple[Optional[Path], Optional[dict]]:
+        """Find article files matching target_id in queue/review/."""
+        meta_path = REVIEW_DIR / f"{target_id}.meta.json"
+        article_path = REVIEW_DIR / f"{target_id}.md"
 
-    # Try different patterns
-    if not meta_path.exists():
-        for f in REVIEW_DIR.glob(f"*{target_id}*.meta.json"):
-            meta_path = f
-            article_path = REVIEW_DIR / f.stem.replace(".meta", "") + ".md"
-            break
+        # Try different patterns
+        if not meta_path.exists():
+            for f in REVIEW_DIR.glob(f"*{target_id}*.meta.json"):
+                meta_path = f
+                article_path = REVIEW_DIR / f.stem.replace(".meta", "") + ".md"
+                break
 
-    if not meta_path.exists():
-        return None, None
+        if not meta_path.exists():
+            return None, None
 
-    meta = json.loads(meta_path.read_text())
-    if not article_path.exists():
-        article_path = REVIEW_DIR / f"{meta_path.stem.replace('.meta', '')}.md"
+        meta = json.loads(meta_path.read_text())
+        if not article_path.exists():
+            article_path = REVIEW_DIR / f"{meta_path.stem.replace('.meta', '')}.md"
 
-    return article_path if article_path.exists() else None, meta
+        return article_path if article_path.exists() else None, meta
 
+    def _publish_wechat(self, article_path: Path, meta: dict) -> bool:
+        """Publish to WeChat draft box via baoyu-post-to-wechat.
+        
+        Uses temp file instead of command-line args for security.
+        """
+        content = article_path.read_text(encoding='utf-8')[:5000]
+        
+        # Write content to temp file (avoid command-line injection)
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix='.md', prefix='wechat_')
+        try:
+            with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            result = subprocess.run(
+                ["npx", "skills", "run", "baoyu-post-to-wechat",
+                 "--file", tmp_path],
+                capture_output=True, text=True, timeout=60,
+            )
+            return result.returncode == 0
+        except Exception as e:
+            self.logger.error(f"WeChat publish failed: {e}")
+            return False
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
-def _publish_wechat(article_path: Path, meta: dict) -> bool:
-    """Publish to WeChat draft box via baoyu-post-to-wechat."""
-    try:
-        result = subprocess.run(
-            ["npx", "skills", "run", "baoyu-post-to-wechat",
-             "--param", f"content={article_path.read_text(encoding='utf-8')[:5000]}"],
-            capture_output=True, text=True, timeout=60,
-        )
-        return result.returncode == 0
-    except Exception as e:
-        print(f"[publisher] WeChat failed: {e}")
-        return False
+    def _publish_aitoearn(self, platform: str, article_path: Path, meta: dict) -> bool:
+        """Publish to AiToEarn platform draft box via MCP."""
+        content = article_path.read_text(encoding="utf-8")
+        tool_map = {
+            "xiaohongshu": ("aitoearn_createImageTextDraft", "IMAGE_TEXT"),
+            "douyin": ("aitoearn_createVideoDraft", "VIDEO"),
+            "kuaishou": ("aitoearn_createVideoDraft", "VIDEO"),
+            "shipinhao": ("aitoearn_createVideoDraft", "VIDEO"),
+        }
+        tool_name, draft_type = tool_map.get(platform, (None, None))
+        if not tool_name:
+            self.logger.warning(f"No tool mapping for platform: {platform}")
+            return False
 
-
-def _publish_aitoearn(platform: str, article_path: Path, meta: dict) -> bool:
-    """Publish to AiToEarn platform draft box via MCP."""
-    content = article_path.read_text(encoding="utf-8")
-    tool_map = {
-        "xiaohongshu": ("aitoearn_createImageTextDraft", "IMAGE_TEXT"),
-        "douyin": ("aitoearn_createVideoDraft", "VIDEO"),
-        "kuaishou": ("aitoearn_createVideoDraft", "VIDEO"),
-        "shipinhao": ("aitoearn_createVideoDraft", "VIDEO"),
-    }
-    tool_name, draft_type = tool_map.get(platform, (None, None))
-    if not tool_name:
-        return False
-
-    try:
-        params = json.dumps({
+        # Write params to temp file for security
+        params = {
             "title": meta.get("topic", ""),
             "content": content[:3000],
             "draftType": draft_type,
             "platform": platform,
-        })
-        result = subprocess.run(
-            ["hermes", "mcp", "call", tool_name, "--params", params],
-            capture_output=True, text=True, timeout=60,
+        }
+        
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix='.json', prefix='aitoearn_')
+        try:
+            with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
+                json.dump(params, f, ensure_ascii=False)
+            
+            result = subprocess.run(
+                ["hermes", "mcp", "call", tool_name, "--params-file", tmp_path],
+                capture_output=True, text=True, timeout=60,
+            )
+            return result.returncode == 0
+        except Exception as e:
+            self.logger.error(f"{platform} publish failed: {e}")
+            return False
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    def run(self, target_id: Optional[str] = None, platforms: Optional[list[str]] = None):
+        """Main publisher logic."""
+        if target_id is None:
+            target_id = sys.argv[1] if len(sys.argv) > 1 else None
+        
+        if platforms is None:
+            platforms = sys.argv[2:] if len(sys.argv) > 2 else ["wechat", "xiaohongshu", "douyin"]
+
+        if not target_id:
+            self.logger.warning("No target_id provided, looking for approve action...")
+            return
+
+        self.write_status("开始分发", 10, f"开始分发: {target_id}")
+        article, meta = self.find_article(target_id)
+        if not article or not meta:
+            error = f"Article not found: {target_id}"
+            self.write_error(error)
+            self.logger.error(error)
+            return
+
+        self.logger.info(f"Distributing: {meta.get('topic', 'unknown')}")
+        results: dict[str, bool] = {}
+
+        for i, platform in enumerate(platforms):
+            display = PLATFORM_DISPLAY.get(platform, platform)
+            progress = 20 + i * (60 // len(platforms))
+            self.write_status("分发中", progress, f"分发到{display}")
+
+            if platform == "wechat":
+                ok = self._publish_wechat(article, meta)
+            elif platform in ("xiaohongshu", "douyin", "kuaishou", "shipinhao"):
+                ok = self._publish_aitoearn(platform, article, meta)
+            else:
+                ok = False
+
+            results[platform] = ok
+            if ok:
+                self.logger.info(f"{display}: ✅")
+            else:
+                self.logger.warning(f"{display}: ❌")
+                # Record failure
+                self.write_failed_action(
+                    target_id=target_id,
+                    platform=platform,
+                    error=f"分发到{display}失败",
+                    meta=meta,
+                )
+
+        # Summary
+        success_count = sum(1 for v in results.values() if v)
+        self.write_completed(
+            detail=f"分发完成: {success_count}/{len(platforms)} 成功",
+            results=results,
         )
-        return result.returncode == 0
-    except Exception as e:
-        print(f"[publisher] {platform} failed: {e}")
-        return False
+        self.logger.info(f"Done. {success_count}/{len(platforms)} succeeded")
 
 
 def main():
-    target_id = sys.argv[1] if len(sys.argv) > 1 else None
-    platforms = sys.argv[2:] if len(sys.argv) > 2 else ["wechat", "xiaohongshu", "douyin"]
-
-    if not target_id:
-        # Scan for latest unreviewed approved action
-        print("[publisher] No target_id provided, looking for approve action...")
-        return
-
-    _write_status(10, f"开始分发: {target_id}")
-    article, meta = find_article(target_id)
-    if not article or not meta:
-        error = f"Article not found: {target_id}"
-        _write_status(0, error, error)
-        print(f"[publisher] {error}")
-        return
-
-    print(f"[publisher] Distributing: {meta.get('topic', 'unknown')}")
-    results: dict[str, bool] = {}
-
-    for platform in platforms:
-        display = PLATFORM_DISPLAY.get(platform, platform)
-        _write_status(20 + platforms.index(platform) * 20, f"分发到{display}")
-
-        if platform == "wechat":
-            ok = _publish_wechat(article, meta)
-        elif platform in ("xiaohongshu", "douyin", "kuaishou", "shipinhao"):
-            ok = _publish_aitoearn(platform, article, meta)
-        else:
-            ok = False
-
-        results[platform] = ok
-        if ok:
-            print(f"[publisher] {display}: ✅")
-        else:
-            print(f"[publisher] {display}: ❌")
-            # Record failure
-            failed = {
-                "target_id": target_id,
-                "platform": platform,
-                "timestamp": RUN_TIMESTAMP,
-                "error": f"分发到{display}失败",
-                "meta": meta,
-            }
-            failed_path = FAILED_DIR / f"{RUN_TIMESTAMP}-{platform}.json"
-            tmp = FAILED_DIR / f".{RUN_TIMESTAMP}-{platform}.json.tmp"
-            tmp.write_text(json.dumps(failed, ensure_ascii=False, indent=2))
-            os.rename(tmp, failed_path)
-
-    # Summary
-    success_count = sum(1 for v in results.values() if v)
-    _write_status(100, f"分发完成: {success_count}/{len(platforms)} 成功")
-    print(f"[publisher] Done. {success_count}/{len(platforms)} succeeded")
+    """Entry point for backward compatibility."""
+    agent = PublisherAgent()
+    agent.run()
 
 
 if __name__ == "__main__":

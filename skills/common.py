@@ -2,10 +2,11 @@
 
 Provides:
 - Unified agent status writing with atomic file operations
-- Structured JSON logging with agent context
+- Structured JSON logging with agent context and log rotation
 - Error handling decorators
 - Input validation helpers
 - Secure file operations with locking
+- Performance metrics collection
 
 Usage:
     from skills.common import AgentBase, agent_main, validate_source
@@ -24,6 +25,7 @@ Usage:
 import functools
 import json
 import logging
+import logging.handlers
 import os
 import sys
 import tempfile
@@ -36,7 +38,17 @@ from typing import Any, Callable, Optional, TypeVar, Union
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config.settings import STATUS_DIR, FAILED_DIR
+from config.settings import STATUS_DIR, FAILED_DIR, DATA_DIR
+
+# Import metrics (lazy to avoid circular imports)
+_metrics_module = None
+
+def _get_metrics_module():
+    global _metrics_module
+    if _metrics_module is None:
+        from skills import metrics
+        _metrics_module = metrics
+    return _metrics_module
 
 # ═══════════════════════════════════════════════════════════════════════
 # Structured Logging
@@ -59,16 +71,47 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_data, ensure_ascii=False)
 
 
-def get_agent_logger(agent_name: str) -> logging.LoggerAdapter:
-    """Get a logger with agent context."""
+def get_agent_logger(
+    agent_name: str,
+    log_dir: Optional[Path] = None,
+    enable_file_logging: bool = True,
+    max_bytes: int = 10 * 1024 * 1024,  # 10MB
+    backup_count: int = 5
+) -> logging.LoggerAdapter:
+    """Get a logger with agent context, supporting both console and file output with rotation.
+    
+    Args:
+        agent_name: Name of the agent (used in log format and filename)
+        log_dir: Directory for log files (default: data/logs/)
+        enable_file_logging: Whether to enable file logging
+        max_bytes: Max size per log file before rotation
+        backup_count: Number of backup files to keep
+    """
     logger = logging.getLogger(f"gaoding.{agent_name}")
     
-    # Add handler if not already present
+    # Only add handlers once
     if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(JSONFormatter())
-        logger.addHandler(handler)
         logger.setLevel(logging.INFO)
+        
+        # Console handler (stdout)
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(JSONFormatter())
+        logger.addHandler(console_handler)
+        
+        # File handler with rotation (optional)
+        if enable_file_logging:
+            if log_dir is None:
+                log_dir = DATA_DIR / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            
+            file_handler = logging.handlers.RotatingFileHandler(
+                log_dir / f"{agent_name}.log",
+                maxBytes=max_bytes,
+                backupCount=backup_count,
+                encoding='utf-8'
+            )
+            file_handler.setFormatter(JSONFormatter())
+            logger.addHandler(file_handler)
     
     return logging.LoggerAdapter(logger, {'agent': agent_name})
 
@@ -168,17 +211,61 @@ def file_lock(lock_path: Path, timeout: float = 30.0):
 # ═══════════════════════════════════════════════════════════════════════
 
 class AgentBase:
-    """Base class for all agents with common functionality."""
+    """Base class for all agents with common functionality.
+    
+    Features:
+    - Atomic status writing
+    - Structured logging with rotation
+    - Performance metrics collection
+    - Error handling
+    """
     
     name: str = "unknown"
     version: str = "1.0.0"
     
-    def __init__(self):
+    def __init__(self, enable_metrics: bool = True):
         self.logger = get_agent_logger(self.name)
         self._start_time = datetime.now(timezone.utc)
         self._start_timestamp = self._start_time.strftime("%Y%m%d_%H%M%S")
         self._status_path = STATUS_DIR / f"{self.name}.json"
         self._lock = threading.Lock()
+        
+        # Metrics
+        self._enable_metrics = enable_metrics
+        self._metrics = None
+        if enable_metrics:
+            try:
+                metrics_mod = _get_metrics_module()
+                self._metrics = metrics_mod.AgentMetrics(self.name)
+            except Exception:
+                self._metrics = None
+    
+    @property
+    def metrics(self):
+        """Get the metrics collector."""
+        return self._metrics
+    
+    def start_stage(self, stage_name: str) -> None:
+        """Start timing a pipeline stage (metrics)."""
+        if self._metrics:
+            self._metrics.start_stage(stage_name)
+    
+    def end_stage(self, stage_name: str) -> float:
+        """End timing a pipeline stage. Returns duration in seconds."""
+        if self._metrics:
+            return self._metrics.end_stage(stage_name)
+        return 0.0
+    
+    def record_llm_call(
+        self,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        duration: float = 0.0,
+        success: bool = True
+    ) -> None:
+        """Record an LLM API call."""
+        if self._metrics:
+            self._metrics.record_llm_call(input_tokens, output_tokens, duration, success)
     
     def write_status(
         self,
@@ -206,9 +293,10 @@ class AgentBase:
     def write_completed(
         self,
         detail: str,
+        save_metrics: bool = True,
         **extra
     ) -> None:
-        """Write completion status."""
+        """Write completion status and optionally save metrics."""
         self.write_status(
             stage="completed",
             progress_pct=100,
@@ -216,14 +304,41 @@ class AgentBase:
             completed_at=datetime.now(timezone.utc).isoformat(),
             **extra
         )
+        
+        # Save metrics
+        if save_metrics and self._metrics:
+            try:
+                metrics_path = self._metrics.save()
+                self.logger.info(f"Metrics saved to: {metrics_path}")
+            except Exception as e:
+                self.logger.warning(f"Failed to save metrics: {e}")
     
     def write_error(
         self,
         error: str,
         detail: str = "",
+        save_metrics: bool = True,
         **extra
     ) -> None:
-        """Write error status."""
+        """Write error status and optionally save metrics."""
+        self.write_status(
+            stage="error",
+            progress_pct=0,
+            detail=detail or f"Error: {error}",
+            error=error,
+            **extra
+        )
+        
+        # Record error in metrics
+        if self._metrics:
+            self._metrics.record_error("unknown", error)
+        
+        # Save metrics
+        if save_metrics and self._metrics:
+            try:
+                self._metrics.save()
+            except Exception:
+                pass
         self.write_status(
             stage="error",
             progress_pct=0,

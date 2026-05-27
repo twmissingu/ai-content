@@ -1,5 +1,67 @@
 # Changelog
 
+## [0.6.0] - 2026-05-28
+
+### Architecture Improvements
+
+- **All Agents migrated to AgentBase**:
+  - `skills/writer.py`: Full rewrite using `WriterAgent(AgentBase)` class
+  - `skills/publisher.py`: Full rewrite using `PublisherAgent(AgentBase)` class
+  - `skills/feedback.py`: Full rewrite using `FeedbackAgent(AgentBase)` class
+  - All agents now use unified status writing, logging, and metrics
+
+### Security Fixes
+
+- **Command-line Injection Prevention**: Publisher now uses temp files instead of command-line args for content passing
+  - WeChat publishing: content written to temp file, passed via `--file` flag
+  - AiToEarn publishing: params written to temp JSON file, passed via `--params-file` flag
+  - Temp files are cleaned up in `finally` blocks
+
+### Performance Improvements
+
+- **Playwright Batch Screenshots**: Writer now reuses browser instance for multiple screenshots
+  - 3 screenshots: ~6-9s → ~3-4s (50%+ faster)
+  - Single `with sync_playwright()` context for all screenshots
+  - Browser instance shared across all illustration generations
+- **Database Query Cache**: Added `@cached_query` decorator with TTL support
+  - `get_pipeline_sessions()` now cached for 10 seconds
+  - Cache automatically invalidated on write operations
+  - Thread-safe with proper locking
+
+### New Features
+
+- **Performance Metrics Module** (`skills/metrics.py`):
+  - `AgentMetrics` class for collecting agent performance data
+  - Tracks: LLM calls, token usage, stage durations, errors
+  - Auto-saves to `data/metrics/` directory
+  - Integrated into `AgentBase` with `start_stage()`, `end_stage()`, `record_llm_call()`
+- **Log Rotation**: All agent logs now support file rotation
+  - Default: 10MB per file, 5 backup files
+  - Logs written to `data/logs/{agent_name}.log`
+  - Configurable via `get_agent_logger()` parameters
+- **API Rate Limiting**: FastAPI middleware limits requests to 120/minute per IP
+  - Health check endpoint exempt from rate limiting
+  - Returns 429 status with error message when exceeded
+- **Markdown Preview**: Approval view now renders article preview as formatted Markdown
+  - Uses `marked` library for rendering
+  - Styled with `.markdown-body` CSS class
+  - Supports headings, lists, code blocks, links, etc.
+
+### Frontend Improvements
+
+- **PipelineView Dynamic Timeline**: Timeline now reads from config instead of hardcoded values
+  - Morning/evening schedule from `store.config.schedule`
+  - Fallback to defaults if config not loaded
+- **ApprovalView Markdown Rendering**: Article preview now renders Markdown with proper styling
+
+### Testing
+
+- **Integration Tests** (`tests/test_integration.py`):
+  - `TestWriterIntegration`: Tests article creation, low quality handling
+  - `TestPublisherIntegration`: Tests article finding
+  - `TestFeedbackIntegration`: Tests article collection from history
+  - `TestCommonIntegration`: Tests atomic writes, file locking
+
 ## [0.5.0] - 2026-05-28
 
 ### Architecture Improvements

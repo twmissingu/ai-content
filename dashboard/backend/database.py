@@ -8,9 +8,10 @@ Implements 5 core tables from PRD 6.1:
 - config_entries: 配置变更记录
 
 Uses WAL mode + single worker to avoid write conflicts.
-Thread-safe with connection pooling.
+Thread-safe with connection pooling and query caching.
 """
 
+import functools
 import json
 import logging
 import sqlite3
@@ -19,7 +20,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional, TypeVar
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -42,11 +43,48 @@ _query_cache: dict[str, tuple[float, Any]] = {}
 _cache_lock = threading.Lock()
 CACHE_TTL = 5.0  # seconds
 
+F = TypeVar('F', bound=Callable)
+
+
+def cached_query(ttl: float = CACHE_TTL) -> Callable[[F], F]:
+    """Cache query results with TTL.
+    
+    Usage:
+        @cached_query(ttl=10.0)
+        def get_sessions(limit=30):
+            ...
+    """
+    def decorator(func: F) -> F:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # Build cache key from function name and arguments
+            cache_key = f"{func.__name__}:{args}:{sorted(kwargs.items())}"
+            
+            # Check cache
+            with _cache_lock:
+                if cache_key in _query_cache:
+                    timestamp, result = _query_cache[cache_key]
+                    if time.time() - timestamp < ttl:
+                        logger.debug(f"Cache hit: {func.__name__}")
+                        return result
+            
+            # Execute query
+            result = func(*args, **kwargs)
+            
+            # Store in cache
+            with _cache_lock:
+                _query_cache[cache_key] = (time.time(), result)
+            
+            return result
+        return wrapper
+    return decorator
+
 
 def _invalidate_cache() -> None:
     """Invalidate all cached queries."""
     with _cache_lock:
         _query_cache.clear()
+        logger.debug("Cache invalidated")
 
 
 @contextmanager
@@ -205,6 +243,7 @@ def update_pipeline_session(session_id: int, **kwargs):
         """, values)
 
 
+@cached_query(ttl=10.0)
 def get_pipeline_sessions(
     limit: int = 30,
     offset: int = 0,

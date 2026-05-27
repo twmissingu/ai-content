@@ -69,14 +69,38 @@ const formattedTime = computed(() => {
   return currentTime.value.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 })
 
-// Timeline items with status
-const timelineItems = [
-  { time: '09:00', label: 'Scout 选题', hour: 9, minute: 0 },
-  { time: '09:30', label: '人工确认', hour: 9, minute: 30 },
-  { time: '09:30', label: 'Writer 写作', hour: 9, minute: 30 },
-  { time: '10:45', label: '审批', hour: 10, minute: 45 },
-  { time: '11:00', label: '分发', hour: 11, minute: 0 },
-]
+// Timeline items from config (with fallback defaults)
+const timelineItems = computed(() => {
+  const schedule = store.config?.schedule
+  if (!schedule) {
+    // Fallback defaults
+    return [
+      { time: '09:00', label: 'Scout 选题', hour: 9, minute: 0 },
+      { time: '09:30', label: '人工确认', hour: 9, minute: 30 },
+      { time: '09:30', label: 'Writer 写作', hour: 9, minute: 30 },
+      { time: '10:45', label: '审批', hour: 10, minute: 45 },
+      { time: '11:00', label: '分发', hour: 11, minute: 0 },
+    ]
+  }
+  
+  // Parse schedule times
+  const parseTime = (timeStr: string) => {
+    const [h, m] = timeStr.split(':').map(Number)
+    return { hour: h, minute: m }
+  }
+  
+  const morning = parseTime(schedule.morning_scout || '09:00')
+  const morningWriter = parseTime(schedule.morning_writer || '09:30')
+  const evening = parseTime(schedule.evening_scout || '14:00')
+  const eveningWriter = parseTime(schedule.evening_writer || '14:30')
+  
+  return [
+    { time: schedule.morning_scout || '09:00', label: 'Scout 选题 (早)', ...morning },
+    { time: schedule.morning_writer || '09:30', label: 'Writer 写作 (早)', ...morningWriter },
+    { time: schedule.evening_scout || '14:00', label: 'Scout 选题 (晚)', ...evening },
+    { time: schedule.evening_writer || '14:30', label: 'Writer 写作 (晚)', ...eveningWriter },
+  ]
+})
 
 function getTimelineStatus(item: { hour: number, minute: number }): 'completed' | 'active' | 'pending' {
   const now = currentTime.value

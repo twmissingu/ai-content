@@ -101,35 +101,92 @@ async def lifespan(app: FastAPI):
     """Initialize database, search index, and start background scanner on startup."""
     # Initialize database
     init_db()
-    print("[database] SQLite database initialized")
+    logger.info("SQLite database initialized")
     
     # Auto-index knowledge base
     try:
         index_stats = auto_index_if_needed()
-        print(f"[search] Knowledge base index: {index_stats}")
+        logger.info(f"Knowledge base index: {index_stats}")
     except Exception as e:
-        print(f"[search] Error initializing search index: {e}")
+        logger.error(f"Error initializing search index: {e}")
     
     # Start background scanner
     thread = threading.Thread(target=_scan_loop, daemon=True, name="action-scanner")
     thread.start()
-    print("[scanner] Background action scanner started (10s interval)")
+    logger.info("Background action scanner started (10s interval)")
     
     # Start budget monitor
     budget_thread = threading.Thread(target=_budget_monitor_loop, daemon=True, name="budget-monitor")
     budget_thread.start()
-    print("[budget] Budget monitor started")
+    logger.info("Budget monitor started")
     
     yield
     
     # Shutdown all background threads using events
     _scanner_stop_event.set()
     _budget_stop_event.set()
-    print("[scanner] Background action scanner stopped")
-    print("[budget] Budget monitor stopped")
+    logger.info("Background action scanner stopped")
+    logger.info("Budget monitor stopped")
 
 
-app = FastAPI(title="稿定 Dashboard", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="稿定 Dashboard", version="0.2.0", lifespan=lifespan)
+
+# ── Rate Limiting ─────────────────────────────────────────────────
+from collections import defaultdict
+from fastapi import Request
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+
+
+class RateLimiter:
+    """Simple in-memory rate limiter."""
+    
+    def __init__(self, requests_per_minute: int = 120):
+        self.requests_per_minute = requests_per_minute
+        self.requests: dict[str, list[float]] = defaultdict(list)
+        self._lock = threading.Lock()
+    
+    def is_allowed(self, client_ip: str) -> bool:
+        """Check if request is allowed for the given IP."""
+        now = time.time()
+        minute_ago = now - 60
+        
+        with self._lock:
+            # Clean old records
+            self.requests[client_ip] = [
+                t for t in self.requests[client_ip] if t > minute_ago
+            ]
+            
+            if len(self.requests[client_ip]) >= self.requests_per_minute:
+                return False
+            
+            self.requests[client_ip].append(now)
+            return True
+
+
+rate_limiter = RateLimiter(requests_per_minute=120)
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Middleware to enforce rate limiting."""
+    
+    async def dispatch(self, request: Request, call_next):
+        # Skip rate limiting for health checks
+        if request.url.path == "/api/health":
+            return await call_next(request)
+        
+        client_ip = request.client.host
+        if not rate_limiter.is_allowed(client_ip):
+            logger.warning(f"Rate limit exceeded for {client_ip}")
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests. Please try again later."}
+            )
+        
+        return await call_next(request)
+
+
+app.add_middleware(RateLimitMiddleware)
 
 # CORS origins - configurable via environment variable
 # Default to localhost for security; override for Docker/production

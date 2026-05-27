@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
+import { marked } from 'marked'
 
 const store = useDashboardStore()
 const selectedId = ref<string | null>(null)
@@ -10,6 +11,13 @@ const showApproveConfirm = ref<string | null>(null)
 
 // Track loading state per article
 const processingIds = ref<Set<string>>(new Set())
+
+// Markdown rendering
+const renderedContent = computed(() => {
+  const article = store.approvalQueue.find(a => a.id === selectedId.value)
+  if (!article?.content_preview) return ''
+  return marked(article.content_preview) as string
+})
 
 function select(id: string) {
   selectedId.value = selectedId.value === id ? null : id
@@ -174,7 +182,7 @@ const pendingCount = computed(() => store.approvalQueue.length)
             <div v-if="article.meta.topic" class="preview-title">
               # {{ article.meta.topic }}
             </div>
-            <div class="preview-text">{{ article.content_preview }}</div>
+            <div class="preview-text markdown-body" v-html="renderedContent"></div>
           </div>
         </div>
       </transition>
@@ -357,8 +365,72 @@ const pendingCount = computed(() => store.approvalQueue.length)
   font-size: var(--text-md);
   color: var(--text-secondary);
   line-height: 1.8;
-  white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Markdown styles */
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3) {
+  margin-top: var(--space-lg);
+  margin-bottom: var(--space-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.markdown-body :deep(p) {
+  margin-bottom: var(--space-md);
+}
+
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  margin-bottom: var(--space-md);
+  padding-left: var(--space-xl);
+}
+
+.markdown-body :deep(li) {
+  margin-bottom: var(--space-xs);
+}
+
+.markdown-body :deep(code) {
+  background: var(--bg-active);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.markdown-body :deep(pre) {
+  background: var(--bg-active);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  margin-bottom: var(--space-md);
+}
+
+.markdown-body :deep(blockquote) {
+  border-left: 3px solid var(--primary);
+  padding-left: var(--space-md);
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-md);
+}
+
+.markdown-body :deep(a) {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.markdown-body :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.markdown-body :deep(strong) {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.markdown-body :deep(em) {
+  font-style: italic;
 }
 
 /* ── Expand Hint ─────────────────────────────────────────────── */
