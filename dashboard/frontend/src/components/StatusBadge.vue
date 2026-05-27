@@ -78,7 +78,7 @@ const config = statusConfig[props.status] || { label: props.status, icon: '❓',
 
 .status-badge.warning {
   background: var(--warning-light);
-  color: #7c6c00;
+  color: var(--warning-dark);
 }
 
 .status-badge.danger {
@@ -93,19 +93,19 @@ const config = statusConfig[props.status] || { label: props.status, icon: '❓',
 
 /* ── Hover Effects ───────────────────────────────────────────── */
 .status-badge.success:hover {
-  background: #d4edda;
+  background: var(--success-hover-light);
 }
 
 .status-badge.primary:hover {
-  background: #d0e4fd;
+  background: var(--primary-hover-light);
 }
 
 .status-badge.warning:hover {
-  background: #fff3cd;
+  background: var(--warning-hover-light);
 }
 
 .status-badge.danger:hover {
-  background: #f8d7da;
+  background: var(--danger-hover-light);
 }
 
 .status-badge.neutral:hover {

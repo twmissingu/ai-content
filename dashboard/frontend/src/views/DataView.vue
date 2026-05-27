@@ -89,31 +89,26 @@ const budgetStatus = computed(() => {
         </div>
       </div>
 
-      <!-- Placeholder Cards -->
-      <div class="card stat-card placeholder-card">
-        <div class="stat-icon">📊</div>
-        <div class="stat-content">
-          <div class="stat-label">文章总数</div>
-          <div class="stat-value text-tertiary">--</div>
-          <div class="stat-hint">Phase 3 启用</div>
+      <!-- Placeholder Section -->
+      <div class="card placeholder-section">
+        <div class="placeholder-header">
+          <span class="placeholder-icon">🚀</span>
+          <div class="placeholder-title">Phase 3 即将推出</div>
+          <div class="placeholder-subtitle">更多数据分析功能开发中</div>
         </div>
-      </div>
-
-      <div class="card stat-card placeholder-card">
-        <div class="stat-icon">👀</div>
-        <div class="stat-content">
-          <div class="stat-label">总阅读量</div>
-          <div class="stat-value text-tertiary">--</div>
-          <div class="stat-hint">Phase 3 启用</div>
-        </div>
-      </div>
-
-      <div class="card stat-card placeholder-card">
-        <div class="stat-icon">📈</div>
-        <div class="stat-content">
-          <div class="stat-label">平均互动率</div>
-          <div class="stat-value text-tertiary">--</div>
-          <div class="stat-hint">Phase 3 启用</div>
+        <div class="placeholder-features">
+          <div class="placeholder-feature">
+            <span class="feature-icon">📊</span>
+            <span class="feature-name">文章总数</span>
+          </div>
+          <div class="placeholder-feature">
+            <span class="feature-icon">👀</span>
+            <span class="feature-name">总阅读量</span>
+          </div>
+          <div class="placeholder-feature">
+            <span class="feature-icon">📈</span>
+            <span class="feature-name">平均互动率</span>
+          </div>
         </div>
       </div>
     </div>
@@ -228,6 +223,12 @@ const budgetStatus = computed(() => {
   display: flex;
   align-items: flex-start;
   gap: var(--space-lg);
+  transition: all var(--transition-normal);
+}
+
+.stat-card:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
 }
 
 .stat-icon {
@@ -282,6 +283,67 @@ const budgetStatus = computed(() => {
   font-size: var(--text-sm);
   color: var(--text-tertiary);
   margin-top: var(--space-xs);
+}
+
+/* ── Placeholder Section ─────────────────────────────────────── */
+.placeholder-section {
+  border: 2px dashed var(--border-color);
+  background: var(--bg-hover);
+  padding: var(--space-2xl);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xl);
+  text-align: center;
+}
+
+.placeholder-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.placeholder-icon {
+  font-size: 48px;
+  opacity: 0.6;
+}
+
+.placeholder-title {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.placeholder-subtitle {
+  font-size: var(--text-md);
+  color: var(--text-tertiary);
+}
+
+.placeholder-features {
+  display: flex;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.placeholder-feature {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.feature-icon {
+  font-size: var(--text-lg);
+}
+
+.feature-name {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
 }
 
 /* ── Cost Card ───────────────────────────────────────────────── */

@@ -68,6 +68,17 @@ function clearSearch() {
   selectedSection.value = null
 }
 
+function highlightMatch(text: string, keyword: string): string {
+  if (!keyword || !text) return text
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+  const regex = new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
+  return escaped.replace(regex, '<mark class="highlight">$1</mark>')
+}
+
 fetchSections()
 </script>
 
@@ -173,7 +184,7 @@ fetchSections()
             </div>
           </div>
           <div v-if="r.match" class="result-match">
-            <span class="match-text">...{{ r.match }}...</span>
+            <span class="match-text" v-html="'...' + highlightMatch(r.match, query) + '...'"></span>
           </div>
         </div>
       </template>
@@ -388,7 +399,7 @@ fetchSections()
 
 .result-card:hover {
   box-shadow: var(--shadow-lg);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
 }
 
 .result-header {
@@ -447,6 +458,14 @@ fetchSections()
   font-size: var(--text-md);
   color: var(--text-secondary);
   line-height: 1.6;
+}
+
+.match-text :deep(.highlight) {
+  background: var(--warning-light);
+  color: var(--warning-dark);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 500;
 }
 
 /* ── Loading State ───────────────────────────────────────────── */

@@ -8,18 +8,24 @@
   --primary-hover: #1557b0;
   --primary-light: #e8f0fe;
   --primary-dark: #0d47a1;
+  --primary-hover-light: #d0e4fd;
   
   /* ── 语义色 ───────────────────────────────────────────────────── */
   --success: #1e7e34;
   --success-light: #e6f4ea;
   --success-hover: #155d27;
+  --success-hover-light: #d4edda;
   
   --danger: #c5221f;
   --danger-light: #fce8e6;
   --danger-hover: #a31815;
+  --danger-hover-light: #f8d7da;
   
   --warning: #f9a825;
   --warning-light: #fff8e1;
+  --warning-dark: #7c6c00;
+  --warning-hover: #f57f17;
+  --warning-hover-light: #fff3cd;
   
   --info: #1a73e8;
   --info-light: #e8f0fe;
@@ -131,7 +137,7 @@ a:hover {
   border-radius: var(--radius-xl);
   padding: var(--space-xl);
   box-shadow: var(--shadow-md);
-  transition: box-shadow var(--transition-normal);
+  transition: box-shadow var(--transition-normal), transform var(--transition-normal);
 }
 
 .card:hover {
@@ -172,6 +178,24 @@ a:hover {
   transition: all var(--transition-fast);
   white-space: nowrap;
   user-select: none;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(255,255,255,0.3) 10%, transparent 10.01%);
+  transform: scale(10);
+  opacity: 0;
+  transition: transform 0.5s, opacity 1s;
+}
+
+.btn:active::after {
+  transform: scale(0);
+  opacity: 0.3;
+  transition: 0s;
 }
 
 .btn:disabled {
@@ -270,6 +294,12 @@ a:hover {
   font-weight: 500;
   border-radius: var(--radius-full);
   white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+.badge:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
 
 .badge-primary {
@@ -344,8 +374,25 @@ a:hover {
 .progress-bar-fill {
   height: 100%;
   border-radius: var(--radius-full);
-  transition: width var(--transition-slow);
+  transition: width 1s ease-out;
   background: var(--primary);
+  position: relative;
+}
+
+.progress-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
 .progress-bar-fill.success {
@@ -517,4 +564,90 @@ a:hover {
 .slide-leave-to {
   transform: translateY(10px);
   opacity: 0;
+}
+
+/* ── 骨架屏 ───────────────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-hover) 25%, var(--bg-active) 50%, var(--bg-hover) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: var(--radius-md);
+}
+
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeleton-text {
+  height: 16px;
+  margin-bottom: var(--space-sm);
+}
+
+.skeleton-title {
+  height: 24px;
+  width: 60%;
+  margin-bottom: var(--space-md);
+}
+
+.skeleton-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+}
+
+.skeleton-card {
+  height: 120px;
+}
+
+/* ── 涟漪效果 ─────────────────────────────────────────────────── */
+.ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(255,255,255,0.3) 10%, transparent 10.01%);
+  transform: scale(10);
+  opacity: 0;
+  transition: transform 0.5s, opacity 1s;
+}
+
+.ripple:active::after {
+  transform: scale(0);
+  opacity: 0.3;
+  transition: 0s;
+}
+
+/* ── 脉冲动画 ─────────────────────────────────────────────────── */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ── 淡入动画 ─────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* ── 数字滚动 ─────────────────────────────────────────────────── */
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.count-up {
+  animation: countUp 0.5s ease-out;
 }

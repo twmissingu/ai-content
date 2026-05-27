@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
 import StatusBadge from '../components/StatusBadge.vue'
 
@@ -43,9 +43,51 @@ function getAgentLabel(name: string): string {
 
 function getProgressColor(pct: number): string {
   if (pct >= 100) return 'success'
-  if (pct >= 70) return 'primary'
-  if (pct >= 40) return 'warning'
+  if (pct >= 80) return 'danger'
+  if (pct >= 60) return 'warning'
   return 'primary'
+}
+
+// Current time with auto-refresh
+const currentTime = ref(new Date())
+let timeInterval: ReturnType<typeof setInterval> | null = null
+
+onMounted(() => {
+  timeInterval = setInterval(() => {
+    currentTime.value = new Date()
+  }, 60000) // Update every minute
+})
+
+onUnmounted(() => {
+  if (timeInterval) {
+    clearInterval(timeInterval)
+    timeInterval = null
+  }
+})
+
+const formattedTime = computed(() => {
+  return currentTime.value.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+})
+
+// Timeline items with status
+const timelineItems = [
+  { time: '09:00', label: 'Scout 选题', hour: 9, minute: 0 },
+  { time: '09:30', label: '人工确认', hour: 9, minute: 30 },
+  { time: '09:30', label: 'Writer 写作', hour: 9, minute: 30 },
+  { time: '10:45', label: '审批', hour: 10, minute: 45 },
+  { time: '11:00', label: '分发', hour: 11, minute: 0 },
+]
+
+function getTimelineStatus(item: { hour: number, minute: number }): 'completed' | 'active' | 'pending' {
+  const now = currentTime.value
+  const currentHour = now.getHours()
+  const currentMinute = now.getMinutes()
+  const itemMinutes = item.hour * 60 + item.minute
+  const currentMinutes = currentHour * 60 + currentMinute
+  
+  if (currentMinutes >= itemMinutes + 30) return 'completed'
+  if (currentMinutes >= itemMinutes) return 'active'
+  return 'pending'
 }
 </script>
 
@@ -66,37 +108,26 @@ function getProgressColor(pct: number): string {
     <div class="card timeline-card">
       <div class="card-header">
         <h3 class="card-title">📅 今日时间线</h3>
+        <span class="timeline-current-time">
+          当前时间: {{ formattedTime }}
+        </span>
       </div>
       <div class="timeline">
-        <div class="timeline-item">
-          <span class="timeline-time">09:00</span>
-          <span class="timeline-dot active"></span>
-          <span class="timeline-label">Scout 选题</span>
-        </div>
-        <div class="timeline-connector"></div>
-        <div class="timeline-item">
-          <span class="timeline-time">09:30</span>
-          <span class="timeline-dot"></span>
-          <span class="timeline-label">人工确认</span>
-        </div>
-        <div class="timeline-connector"></div>
-        <div class="timeline-item">
-          <span class="timeline-time">09:30</span>
-          <span class="timeline-dot"></span>
-          <span class="timeline-label">Writer 写作</span>
-        </div>
-        <div class="timeline-connector"></div>
-        <div class="timeline-item">
-          <span class="timeline-time">10:45</span>
-          <span class="timeline-dot"></span>
-          <span class="timeline-label">审批</span>
-        </div>
-        <div class="timeline-connector"></div>
-        <div class="timeline-item">
-          <span class="timeline-time">11:00</span>
-          <span class="timeline-dot"></span>
-          <span class="timeline-label">分发</span>
-        </div>
+        <template v-for="(item, index) in timelineItems" :key="item.time + item.label">
+          <div class="timeline-item" :class="getTimelineStatus(item)">
+            <span class="timeline-time">{{ item.time }}</span>
+            <span class="timeline-dot">
+              <span v-if="getTimelineStatus(item) === 'completed'" class="dot-icon">✓</span>
+              <span v-else-if="getTimelineStatus(item) === 'active'" class="dot-pulse"></span>
+            </span>
+            <span class="timeline-label">{{ item.label }}</span>
+          </div>
+          <div 
+            v-if="index < timelineItems.length - 1" 
+            class="timeline-connector"
+            :class="{ completed: getTimelineStatus(item) === 'completed' }"
+          ></div>
+        </template>
       </div>
     </div>
 
@@ -180,10 +211,18 @@ function getProgressColor(pct: number): string {
 
     <!-- Empty State -->
     <div v-if="agentList.length === 0" class="card empty-state">
-      <div class="empty-state-icon">🤖</div>
+      <div class="empty-state-animation">
+        <div class="empty-state-icon">🤖</div>
+        <div class="empty-state-pulse"></div>
+      </div>
       <div class="empty-state-title">系统空闲</div>
       <div class="empty-state-description">
         等待下一时段的 Scout 选题任务
+      </div>
+      <div class="empty-state-action">
+        <button class="btn btn-primary" @click="store.fetchPipeline()">
+          🔄 检查状态
+        </button>
       </div>
     </div>
   </div>
@@ -221,6 +260,18 @@ function getProgressColor(pct: number): string {
   overflow: hidden;
 }
 
+.timeline-card .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.timeline-current-time {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
 .timeline {
   display: flex;
   align-items: center;
@@ -237,6 +288,15 @@ function getProgressColor(pct: number): string {
   min-width: 80px;
 }
 
+.timeline-item.completed .timeline-time {
+  color: var(--success);
+}
+
+.timeline-item.active .timeline-time {
+  color: var(--primary);
+  font-weight: 700;
+}
+
 .timeline-time {
   font-size: var(--text-sm);
   font-weight: 600;
@@ -244,18 +304,40 @@ function getProgressColor(pct: number): string {
 }
 
 .timeline-dot {
-  width: 12px;
-  height: 12px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  background: var(--border-color);
-  border: 2px solid var(--bg-card);
-  box-shadow: 0 0 0 2px var(--border-color);
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: all var(--transition-fast);
 }
 
-.timeline-dot.active {
+.timeline-item.completed .timeline-dot {
+  background: var(--success);
+  border-color: var(--success);
+  color: white;
+}
+
+.timeline-item.active .timeline-dot {
   background: var(--primary);
-  box-shadow: 0 0 0 2px var(--primary), 0 0 0 4px var(--primary-light);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-light);
+  animation: pulse 2s infinite;
+}
+
+.dot-icon {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dot-pulse {
+  width: 8px;
+  height: 8px;
+  background: white;
+  border-radius: 50%;
 }
 
 .timeline-label {
@@ -264,11 +346,25 @@ function getProgressColor(pct: number): string {
   white-space: nowrap;
 }
 
+.timeline-item.completed .timeline-label {
+  color: var(--success);
+}
+
+.timeline-item.active .timeline-label {
+  color: var(--primary);
+  font-weight: 600;
+}
+
 .timeline-connector {
   flex: 1;
   height: 2px;
   background: var(--border-color);
   min-width: 20px;
+  transition: background var(--transition-fast);
+}
+
+.timeline-connector.completed {
+  background: var(--success);
 }
 
 /* ── Budget Card ─────────────────────────────────────────────── */
@@ -315,6 +411,12 @@ function getProgressColor(pct: number): string {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
+  transition: all var(--transition-normal);
+}
+
+.agent-card:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
 }
 
 .agent-header {
@@ -330,42 +432,47 @@ function getProgressColor(pct: number): string {
 }
 
 .agent-icon {
-  font-size: var(--text-3xl);
+  font-size: var(--text-4xl);
   line-height: 1;
 }
 
 .agent-name {
-  font-size: var(--text-lg);
-  font-weight: 600;
+  font-size: var(--text-xl);
+  font-weight: 700;
   color: var(--text-primary);
   margin: 0;
+  letter-spacing: -0.3px;
 }
 
 .agent-worker {
   font-size: var(--text-xs);
-  color: var(--text-tertiary);
+  color: var(--text-disabled);
   font-family: var(--font-mono);
+  margin-top: 2px;
+  display: block;
 }
 
 /* ── Stage Info ──────────────────────────────────────────────── */
 .agent-stage {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: var(--space-sm) var(--space-md);
-  background: var(--bg-hover);
-  border-radius: var(--radius-md);
+  padding: var(--space-xs) var(--space-md);
+  background: var(--primary-light);
+  border-radius: var(--radius-full);
+  align-self: flex-start;
 }
 
 .stage-label {
-  font-size: var(--text-sm);
-  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  color: var(--primary);
+  font-weight: 500;
 }
 
 .stage-value {
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--text-primary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--primary-dark);
 }
 
 /* ── Progress ────────────────────────────────────────────────── */
@@ -421,6 +528,50 @@ function getProgressColor(pct: number): string {
 /* ── Empty State ─────────────────────────────────────────────── */
 .empty-state {
   padding: var(--space-4xl);
+  text-align: center;
+}
+
+.empty-state-animation {
+  position: relative;
+  display: inline-block;
+  margin-bottom: var(--space-lg);
+}
+
+.empty-state-icon {
+  font-size: 64px;
+  position: relative;
+  z-index: 1;
+}
+
+.empty-state-pulse {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--primary-light);
+  animation: pulse 2s infinite;
+  z-index: 0;
+}
+
+.empty-state-title {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-sm);
+}
+
+.empty-state-description {
+  font-size: var(--text-md);
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-xl);
+}
+
+.empty-state-action {
+  display: flex;
+  justify-content: center;
 }
 
 /* ── Responsive ──────────────────────────────────────────────── */

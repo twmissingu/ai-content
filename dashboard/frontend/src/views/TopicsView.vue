@@ -68,12 +68,6 @@ function truncateText(text: string, maxLen: number = 150): string {
     <!-- Topics Grid -->
     <div class="topics-grid">
       <div v-for="topic in store.topics" :key="topic.id" class="card topic-card">
-        <!-- Score Badge -->
-        <div class="topic-score" :class="getScoreColor(topic.final_score || 0)">
-          <span class="score-value">{{ topic.final_score || 0 }}</span>
-          <span class="score-label">{{ getScoreLabel(topic.final_score || 0) }}</span>
-        </div>
-
         <!-- Topic Header -->
         <div class="topic-header">
           <h3 class="topic-title">{{ topic.title }}</h3>
@@ -94,6 +88,20 @@ function truncateText(text: string, maxLen: number = 150): string {
         <!-- Description -->
         <div v-if="topic.description" class="topic-description">
           {{ truncateText(topic.description) }}
+        </div>
+
+        <!-- Score Summary -->
+        <div class="topic-score-summary" :class="getScoreColor(topic.final_score || 0)">
+          <div class="score-main">
+            <span class="score-value">{{ topic.final_score || 0 }}</span>
+            <span class="score-label">{{ getScoreLabel(topic.final_score || 0) }}</span>
+          </div>
+          <div class="score-details">
+            <span class="score-detail">热度 {{ topic.viral_score || 0 }}</span>
+            <span class="score-detail">新颖 {{ topic.novelty_score || 0 }}</span>
+            <span class="score-detail">可行 {{ topic.feasibility_score || 0 }}</span>
+            <span class="score-detail">饱和 {{ topic.saturation_score || 0 }}</span>
+          </div>
         </div>
 
         <!-- Score Breakdown -->
@@ -214,54 +222,9 @@ function truncateText(text: string, maxLen: number = 150): string {
   transform: translateY(-2px);
 }
 
-/* ── Score Badge ─────────────────────────────────────────────── */
-.topic-score {
-  position: absolute;
-  top: var(--space-lg);
-  right: var(--space-lg);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-lg);
-  min-width: 56px;
-}
-
-.topic-score.success {
-  background: var(--success-light);
-  color: var(--success);
-}
-
-.topic-score.primary {
-  background: var(--primary-light);
-  color: var(--primary);
-}
-
-.topic-score.warning {
-  background: var(--warning-light);
-  color: #7c6c00;
-}
-
-.topic-score.neutral {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-}
-
-.score-value {
-  font-size: var(--text-2xl);
-  font-weight: 700;
-  line-height: 1;
-}
-
-.score-label {
-  font-size: var(--text-xs);
-  font-weight: 500;
-  margin-top: 2px;
-}
-
 /* ── Topic Content ───────────────────────────────────────────── */
 .topic-header {
-  padding-right: 72px;
+  padding-right: 0;
 }
 
 .topic-title {
@@ -295,6 +258,81 @@ function truncateText(text: string, maxLen: number = 150): string {
   font-size: var(--text-md);
   color: var(--text-secondary);
   line-height: 1.6;
+}
+
+/* ── Score Summary ───────────────────────────────────────────── */
+.topic-score-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-md);
+  border-radius: var(--radius-lg);
+  background: var(--bg-hover);
+}
+
+.topic-score-summary.success {
+  background: var(--success-light);
+}
+
+.topic-score-summary.primary {
+  background: var(--primary-light);
+}
+
+.topic-score-summary.warning {
+  background: var(--warning-light);
+}
+
+.topic-score-summary.neutral {
+  background: var(--bg-hover);
+}
+
+.score-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 48px;
+}
+
+.score-main .score-value {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.score-main .score-label {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+.topic-score-summary.success .score-main {
+  color: var(--success);
+}
+
+.topic-score-summary.primary .score-main {
+  color: var(--primary);
+}
+
+.topic-score-summary.warning .score-main {
+  color: var(--warning-dark);
+}
+
+.topic-score-summary.neutral .score-main {
+  color: var(--text-secondary);
+}
+
+.score-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.score-detail {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  padding: 2px 6px;
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
 }
 
 /* ── Score Breakdown ─────────────────────────────────────────── */

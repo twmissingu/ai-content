@@ -6,6 +6,7 @@ const store = useDashboardStore()
 const selectedId = ref<string | null>(null)
 const rejectReason = ref('')
 const showRejectInput = ref<string | null>(null)
+const showApproveConfirm = ref<string | null>(null)
 
 function select(id: string) {
   selectedId.value = selectedId.value === id ? null : id
@@ -21,6 +22,15 @@ function doReject(id: string) {
 function cancelReject() {
   showRejectInput.value = null
   rejectReason.value = ''
+}
+
+function confirmApprove(id: string) {
+  store.approve(id)
+  showApproveConfirm.value = null
+}
+
+function cancelApprove() {
+  showApproveConfirm.value = null
 }
 
 const pendingCount = computed(() => store.approvalQueue.length)
@@ -74,9 +84,24 @@ const pendingCount = computed(() => store.approvalQueue.length)
           </div>
         </div>
         <div class="article-actions">
+          <template v-if="showApproveConfirm === article.id">
+            <button 
+              class="btn btn-success btn-sm" 
+              @click.stop="confirmApprove(article.id)"
+            >
+              确认通过
+            </button>
+            <button 
+              class="btn btn-ghost btn-sm" 
+              @click.stop="cancelApprove"
+            >
+              取消
+            </button>
+          </template>
           <button 
+            v-else
             class="btn btn-success btn-sm" 
-            @click.stop="store.approve(article.id)"
+            @click.stop="showApproveConfirm = article.id"
           >
             ✅ 通过
           </button>
@@ -195,6 +220,7 @@ const pendingCount = computed(() => store.approvalQueue.length)
 
 .article-card:hover {
   box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
 }
 
 .article-header {
