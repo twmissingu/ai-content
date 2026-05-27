@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.4.0] - 2026-05-27
+
+### UI/UX Improvements
+
+- **Design System**: Created unified CSS design system with variables for colors, spacing, typography, shadows, and transitions
+- **App.vue**: Redesigned header and navigation with sticky positioning, smooth transitions, and approval badge
+- **PipelineView**: Enhanced with timeline visualization, budget status card, and improved agent cards
+- **ApprovalView**: Better article cards with expandable preview, improved reject form, and empty states
+- **TopicsView**: Redesigned score badge, score breakdown visualization, and hover effects
+- **DataView**: Added stats cards grid, improved chart with tooltips, and loading states
+- **KbView**: New search interface with section filters, result cards, and initial state guidance
+- **StatusBadge**: Refactored with design system variables, multiple sizes, and hover effects
+
+### Technical
+
+- All components now use CSS variables from design system
+- Consistent spacing, typography, and color usage across all views
+- Improved responsive design for mobile devices
+- Better loading and empty state handling
+- Store updated with budget tracking and error handling
+
 ## [0.3.1] - 2026-05-27
 
 ### Security
