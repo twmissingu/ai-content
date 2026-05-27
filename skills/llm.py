@@ -52,11 +52,23 @@ FALLBACK_CHAIN = _load_fallback_chain()
 
 _HTTP_CLIENT: httpx.Client | None = None
 _LAST_MODEL_USED: str = LLM_MODEL
+_CURRENT_AGENT: str = "unknown"
 
 
 def get_last_model() -> str:
     """Return the model that was last used (primary or fallback)."""
     return _LAST_MODEL_USED
+
+
+def set_current_agent(agent: str):
+    """Set the current agent name for token tracking."""
+    global _CURRENT_AGENT
+    _CURRENT_AGENT = agent
+
+
+def get_current_agent() -> str:
+    """Get the current agent name."""
+    return _CURRENT_AGENT
 
 
 def _make_client(base_url: str | None = None, api_key: str | None = None) -> httpx.Client:
@@ -175,7 +187,7 @@ def chat(
 
     # Cost tracking
     if track_cost:
-        _record_usage(data)
+        _record_usage(data, agent=_CURRENT_AGENT)
 
     return content.strip()
 
@@ -202,17 +214,23 @@ def chat_structured(
         raise LLMError(f"LLM returned invalid JSON: {e}\nRaw: {raw[:300]}") from e
 
 
-def _record_usage(data: dict) -> None:
-    """Append a CSV row with token usage for cost tracking."""
+def _record_usage(data: dict, agent: str = "unknown") -> None:
+    """Record token usage to CSV and SQLite database."""
     usage = data.get("usage", {})
     if not usage:
         return
+    
     used_model = _LAST_MODEL_USED or LLM_MODEL
+    prompt_tokens = usage.get('prompt_tokens', 0)
+    completion_tokens = usage.get('completion_tokens', 0)
+    total_tokens = usage.get('total_tokens', 0)
+    
+    # Record to CSV (legacy support)
     row = (
         f"{time.strftime('%Y-%m-%dT%H:%M:%S')},"
-        f"{usage.get('prompt_tokens', 0)},"
-        f"{usage.get('completion_tokens', 0)},"
-        f"{usage.get('total_tokens', 0)},"
+        f"{prompt_tokens},"
+        f"{completion_tokens},"
+        f"{total_tokens},"
         f"{used_model}\n"
     )
     cost_path = LOGS_DIR / "cost.csv"
@@ -221,3 +239,16 @@ def _record_usage(data: dict) -> None:
         cost_path.write_text("timestamp,prompt_tokens,completion_tokens,total_tokens,model\n")
     with open(cost_path, "a") as f:
         f.write(row)
+    
+    # Record to SQLite database
+    try:
+        from dashboard.backend.database import log_token_usage
+        log_token_usage(
+            agent=agent,
+            model=used_model,
+            input_tokens=prompt_tokens,
+            output_tokens=completion_tokens,
+        )
+    except Exception as e:
+        # Don't fail if database logging fails
+        print(f"[llm] Failed to log to database: {e}")

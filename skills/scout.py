@@ -29,7 +29,10 @@ from config.settings import (
     TMP_DIR,
 )
 from skills.action import write_topic_pending
-from skills.llm import chat_structured
+from skills.llm import chat_structured, set_current_agent
+
+# Set current agent for token tracking
+set_current_agent("scout")
 
 # ── Constants ──────────────────────────────────────────────────────
 SAME_TOPIC_BLOCK_DAYS = 3
@@ -55,6 +58,7 @@ SOURCE_WEIGHTS: dict[str, float] = {
 # Scoring thresholds (PRD 3.1)
 ATTENTION_FLOOR = 40
 FINAL_FLOOR = 55
+COLD_START_FLOOR = 45  # lower bar during cold start when few sources available
 STRONG_PUSH = 85
 CANDIDATE_CAP = 10
 MIN_CANDIDATES = 5
@@ -435,8 +439,9 @@ def main():
     scored = _enforce_diversity(scored)
     print(f"[scout] After diversity: {len(scored)} candidates")
 
-    # Step 5: Filter by threshold
-    final = [c for c in scored if c["final_score"] >= FINAL_FLOOR][:CANDIDATE_CAP]
+    # Step 5: Filter by threshold (lower bar during cold start)
+    threshold = COLD_START_FLOOR if cold_start else FINAL_FLOOR
+    final = [c for c in scored if c["final_score"] >= threshold][:CANDIDATE_CAP]
     print(f"[scout] Final candidates meeting threshold: {len(final)}")
 
     # Step 6: Write to pending

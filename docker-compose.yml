@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gaoding-dashboard
+    ports:
+      - "127.0.0.1:8710:8710"
+    volumes:
+      # Persist data
+      - ./data:/app/data
+      # Persist queue
+      - ./queue:/app/queue
+      # Persist knowledge base
+      - ./kb:/app/kb
+      # Persist config
+      - ./config:/app/config
+      # Mount .env file
+      - ./.env:/app/.env:ro
+    environment:
+      - LLM_BASE_URL=${LLM_BASE_URL}
+      - XIAOMI_API_KEY=${XIAOMI_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-mimo-v2.5}
+      - FEISHU_WEBHOOK_URL=${FEISHU_WEBHOOK_URL}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8710/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Watchdog service
+  watchdog:
+    image: alpine:latest
+    container_name: gaoding-watchdog
+    volumes:
+      - ./scripts/watchdog.sh:/watchdog.sh:ro
+      - ./queue:/app/queue
+      - ./data:/app/data
+    environment:
+      - FEISHU_WEBHOOK_URL=${FEISHU_WEBHOOK_URL}
+      - PROJECT_ROOT=/app
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        apk add --no-cache bash curl
+        while true; do
+          bash /watchdog.sh
+          sleep 60
+        done
+    depends_on:
+      dashboard:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  gaoding-data:
+    driver: local

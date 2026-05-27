@@ -104,6 +104,11 @@ PLATFORM_DISPLAY: dict[str, str] = {
     "baijiahao": "百家号",
 }
 
+# ── Feishu notification ───────────────────────────────────────────
+FEISHU_WEBHOOK_URL: Optional[str] = os.getenv("FEISHU_WEBHOOK_URL")
+NOTIFICATION_QUIET_START: int = int(os.getenv("NOTIFICATION_QUIET_START", "22"))  # 22:00
+NOTIFICATION_QUIET_END: int = int(os.getenv("NOTIFICATION_QUIET_END", "8"))      # 08:00
+
 # ── Helper ─────────────────────────────────────────────────────────
 def require_api_key(name: str = "XIAOMI_API_KEY") -> str:
     """Return an API key or raise a clear error."""

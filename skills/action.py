@@ -109,7 +109,7 @@ def write_topic_pending(
 ) -> Path:
     """Write a Scout-recommended topic into queue/pending/."""
     if filename is None:
-        filename = f"topic_{time.strftime('%Y%m%d_%H%M%S')}.json"
+        filename = f"topic_{time.strftime('%Y%m%d_%H%M%S')}_{time.time_ns() % 1000000:06d}.json"
     path = PENDING_DIR / filename
     tmp = PENDING_DIR / f".{filename}.tmp"
     tmp.write_text(json.dumps(topic_data, ensure_ascii=False, indent=2))

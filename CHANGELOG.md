@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.3.0] - 2026-05-27
+
+### Security
+
+- **dashboard/backend/main.py**: Fix CORS configuration — restrict to localhost origins only (configurable via CORS_ORIGINS env var)
+- **dashboard/backend/main.py**: Bind uvicorn to 127.0.0.1 instead of 0.0.0.0
+
+### Fixed
+
+- **dashboard/backend/main.py**: Add shutdown flag for budget monitor thread
+- **dashboard/backend/main.py**: Fix pipeline timeline schema inconsistency between database and filesystem sources
+- **dashboard/backend/main.py**: Add warning response when database approval recording fails
+- **dashboard/backend/database.py**: Fix check_budget_limit to read budget from configuration
+- **dashboard/backend/search.py**: Add FTS5 query escaping to prevent injection
+- **dashboard/backend/config_service.py**: Simplify schedule update to apply immediately
+
+### Added
+
+- **dashboard/backend/database.py**: SQLite database layer with 5 core tables (pipeline_sessions, platform_versions, approval_records, token_usage, config_entries)
+- **dashboard/backend/database.py**: FTS5 virtual table for knowledge base search
+- **dashboard/backend/database.py**: Budget control functions (check_budget_limit, get_monthly_cost)
+- **dashboard/backend/search.py**: Knowledge base search service with jieba Chinese tokenization
+- **dashboard/backend/search.py**: Auto-indexing on startup with incremental updates
+- **dashboard/backend/feishu.py**: Feishu webhook notification module with card messages
+- **dashboard/backend/config_service.py**: Configuration management service with dual-version preview
+- **dashboard/backend/config_service.py**: Writing style prompt generation
+- **dashboard/backend/config_service.py**: Budget, quality gates, source configuration management
+- **scripts/watchdog.sh**: Enhanced watchdog with Feishu alerts and auto-restart
+- **tests/**: Unit test framework with pytest (test_database.py, test_config.py)
+- **Dockerfile**: Docker support for containerized deployment
+- **docker-compose.yml**: Docker Compose with watchdog service
+- **requirements-test.txt**: Test dependencies
+- **pytest.ini**: Pytest configuration
+
+### Changed
+
+- **dashboard/backend/main.py**: Integrate SQLite database for all data operations
+- **dashboard/backend/main.py**: Use FTS5 search instead of simple string matching
+- **dashboard/backend/main.py**: Add budget monitoring background thread
+- **dashboard/backend/main.py**: Enhanced health check with database status
+- **dashboard/backend/main.py**: New API endpoints for configuration management
+- **skills/llm.py**: Add agent tracking for token usage (set_current_agent)
+- **skills/llm.py**: Log token usage to both CSV and SQLite database
+- **skills/scout.py**: Set current agent name for token tracking
+- **skills/writer.py**: Set current agent name for token tracking
+- **config/settings.py**: Add Feishu webhook and notification settings
+
 ## [0.2.0] - 2026-05-26
 
 ### Fixed

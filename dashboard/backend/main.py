@@ -40,22 +40,96 @@ from config.settings import (
     STATUS_DIR,
 )
 
+# Import database layer
+from dashboard.backend.database import (
+    init_db,
+    get_db,
+    get_pipeline_sessions,
+    update_platform_version,
+    get_pending_versions,
+    create_approval_record,
+    log_token_usage,
+    get_token_usage_stats,
+    set_config_value,
+    get_config_value,
+    get_pending_config,
+    get_all_config,
+    check_budget_limit,
+)
+
+# Import search service
+from dashboard.backend.search import (
+    search_kb as search_kb_fts,
+    index_all_kb,
+    get_index_stats,
+    auto_index_if_needed,
+)
+
+# Import Feishu notification
+from dashboard.backend.feishu import (
+    send_feishu_alert,
+    alert_budget_warning,
+)
+
+# Import configuration service
+from dashboard.backend.config_service import (
+    get_schedule_config,
+    get_writing_styles,
+    get_quality_gates,
+    get_source_config,
+    get_model_config,
+    get_budget_config,
+    update_schedule,
+    update_writing_style,
+    update_quality_gates,
+    update_source,
+    update_budget,
+    generate_style_prompt,
+    get_all_config_summary,
+)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start background scanner on startup."""
+    """Initialize database, search index, and start background scanner on startup."""
+    # Initialize database
+    init_db()
+    print("[database] SQLite database initialized")
+    
+    # Auto-index knowledge base
+    try:
+        index_stats = auto_index_if_needed()
+        print(f"[search] Knowledge base index: {index_stats}")
+    except Exception as e:
+        print(f"[search] Error initializing search index: {e}")
+    
+    # Start background scanner
     thread = threading.Thread(target=_scan_loop, daemon=True, name="action-scanner")
     thread.start()
     print("[scanner] Background action scanner started (10s interval)")
+    
+    # Start budget monitor
+    budget_thread = threading.Thread(target=_budget_monitor_loop, daemon=True, name="budget-monitor")
+    budget_thread.start()
+    print("[budget] Budget monitor started")
+    
     yield
+    
+    # Shutdown all background threads
     _SCANNER_RUNNING = False
+    _BUDGET_MONITOR_RUNNING = False
     print("[scanner] Background action scanner stopped")
+    print("[budget] Budget monitor stopped")
 
 
 app = FastAPI(title="稿定 Dashboard", version="0.1.0", lifespan=lifespan)
 
+# CORS origins - configurable via environment variable
+# Default to localhost for security; override for Docker/production
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8710,http://127.0.0.1:8710").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -133,7 +207,7 @@ def _load_schedule() -> dict:
 # ── Routes: Pipeline ───────────────────────────────────────────────
 @app.get("/api/pipeline/status")
 def get_pipeline_status():
-    """Read all status files and return aggregated view."""
+    """Read all status files and return aggregated view with budget info."""
     agents = {}
     for f in STATUS_DIR.glob("*.json"):
         data = _read_json(f)
@@ -144,32 +218,66 @@ def get_pipeline_status():
         if timeout and data.get("progress_pct", 100) < 100:
             agents[name]["timeout"] = True
 
-    return {"agents": agents, "timestamp": datetime.now(timezone.utc).isoformat()}
+    # Add budget status
+    budget = check_budget_limit()
+    
+    return {
+        "agents": agents, 
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "budget": budget,
+    }
 
 
 @app.get("/api/pipeline/timeline")
 def get_pipeline_timeline():
-    """Get recent pipeline sessions from kb/history/."""
-    history_dir = KB_DIR / "history"
-    if not history_dir.exists():
-        return {"sessions": []}
+    """Get recent pipeline sessions from database and filesystem."""
     sessions = []
-    for d in sorted(history_dir.iterdir(), reverse=True)[:14]:
-        if d.is_dir():
-            articles = list(d.glob("*.md"))
-            sessions.append({
-                "date": d.name,
-                "article_count": len(articles),
-                "articles": [a.stem for a in articles],
-            })
+    
+    # Get from database
+    db_sessions = get_pipeline_sessions(limit=14)
+    for s in db_sessions:
+        sessions.append({
+            "id": s.get('id'),
+            "date": s.get('date', ''),
+            "period": s.get('period', ''),
+            "topic": s.get('topic', ''),
+            "status": s.get('status', 'unknown'),
+            "article_count": 1,
+            "articles": [s.get('topic', '')],
+            "source": "database",
+            "started_at": s.get('started_at'),
+            "completed_at": s.get('completed_at'),
+        })
+    
+    # Also get from kb/history for backward compatibility
+    history_dir = KB_DIR / "history"
+    if history_dir.exists():
+        for d in sorted(history_dir.iterdir(), reverse=True)[:14]:
+            if d.is_dir():
+                articles = list(d.glob("*.md"))
+                sessions.append({
+                    "id": None,
+                    "date": d.name,
+                    "period": "",
+                    "topic": "",
+                    "status": "completed",
+                    "article_count": len(articles),
+                    "articles": [a.stem for a in articles],
+                    "source": "filesystem",
+                    "started_at": None,
+                    "completed_at": None,
+                })
+    
     return {"sessions": sessions}
 
 
 # ── Routes: Approval ───────────────────────────────────────────────
 @app.get("/api/approval/queue")
 def get_approval_queue():
-    """List articles pending approval from queue/review/."""
+    """List articles pending approval from queue/review/ and database."""
     articles = []
+    
+    # Get from filesystem (legacy support)
     for f in sorted(REVIEW_DIR.glob("*.meta.json"), key=os.path.getmtime, reverse=True):
         meta = _read_json(f)
         article_id = f.stem.replace(".meta", "")
@@ -179,22 +287,69 @@ def get_approval_queue():
             "id": article_id,
             "meta": meta,
             "content_preview": article_content[:500],
+            "source": "filesystem",
         })
+    
+    # Get pending versions from database
+    try:
+        pending_versions = get_pending_versions()
+        for pv in pending_versions:
+            articles.append({
+                "id": f"db_{pv['id']}",
+                "meta": {
+                    "platform": pv['platform'],
+                    "topic": pv.get('topic', ''),
+                    "score": pv.get('score', 0),
+                },
+                "content_preview": "",
+                "source": "database",
+                "db_version_id": pv['id'],
+            })
+    except Exception as e:
+        print(f"[api] Error fetching pending versions: {e}")
+    
     return {"articles": articles, "count": len(articles)}
 
 
 @app.post("/api/approval/act")
 def approval_act(req: ApproveRequest):
-    """Write an approval action file."""
+    """Write an approval action file and record in database."""
     if req.action not in ("approve", "reject", "rewrite"):
         raise HTTPException(400, f"Invalid action: {req.action}")
+    
+    # Write action file for scanner
     path = _write_action(
         req.action, req.target_id,
         reason=req.reason,
         platform_versions=req.platform_versions or ["wechat"],
         trigger_agent="publisher" if req.action == "approve" else "writer",
     )
-    return {"status": "ok", "action": req.action, "target_id": req.target_id, "path": str(path)}
+    
+    # Record in database if it's a database-tracked version
+    db_warning = None
+    if req.target_id.startswith("db_"):
+        try:
+            version_id = int(req.target_id.replace("db_", ""))
+            action_map = {"approve": "pass", "reject": "reject", "rewrite": "rewrite"}
+            create_approval_record(
+                version_id=version_id,
+                action=action_map.get(req.action, req.action),
+                reason=req.reason,
+            )
+            update_platform_version(
+                version_id=version_id,
+                status="approved" if req.action == "approve" else "rejected",
+            )
+        except Exception as e:
+            db_warning = f"Database recording failed: {e}"
+            print(f"[api] {db_warning}")
+    
+    response = {"status": "ok", "action": req.action, "target_id": req.target_id, "path": str(path)}
+    if db_warning:
+        response["status"] = "partial"
+        response["warning"] = db_warning
+    
+    return response
 
 
 # ── Routes: Topics ─────────────────────────────────────────────────
@@ -220,104 +375,296 @@ def confirm_topic(req: ConfirmRequest):
 # ── Routes: Data ───────────────────────────────────────────────────
 @app.get("/api/data/cost")
 def get_cost_data():
-    """Read cost tracking data from data/logs/cost.csv."""
-    cost_path = PROJECT_ROOT / "data/logs/cost.csv"
-    if not cost_path.exists():
-        return {"daily": [], "monthly_total": 0}
-    lines = cost_path.read_text().strip().split("\n")[1:]  # skip header
-    daily: dict[str, float] = {}
-    for line in lines:
-        parts = line.split(",")
-        if len(parts) >= 4:
-            date = parts[0][:10]
-            total_tokens = int(parts[3])
-            # Estimate cost: ~$0.003 per 1K tokens for xiaomi
-            cost = total_tokens * 0.003 / 1000
-            daily[date] = daily.get(date, 0) + cost
-    daily_list = [{"date": d, "cost": round(c, 4)} for d, c in sorted(daily.items())]
-    monthly = round(sum(daily.values()), 4)
-    return {"daily": daily_list, "monthly_total": monthly}
+    """Read cost tracking data from database."""
+    try:
+        stats = get_token_usage_stats(days=30)
+        
+        # Format daily data
+        daily_list = []
+        for row in stats.get('daily', []):
+            daily_list.append({
+                "date": row['date'],
+                "cost": round(row.get('cost', 0), 4),
+                "input_tokens": row.get('input_tokens', 0),
+                "output_tokens": row.get('output_tokens', 0),
+                "call_count": row.get('call_count', 0),
+            })
+        
+        # Monthly total
+        monthly = stats.get('monthly', {})
+        monthly_total = round(monthly.get('cost', 0), 4)
+        
+        # Agent breakdown
+        by_agent = stats.get('by_agent', [])
+        
+        return {
+            "daily": daily_list, 
+            "monthly_total": monthly_total,
+            "by_agent": by_agent,
+            "budget": check_budget_limit(),
+        }
+    except Exception as e:
+        print(f"[api] Error getting cost data: {e}")
+        # Fallback to CSV if database fails
+        cost_path = PROJECT_ROOT / "data/logs/cost.csv"
+        if not cost_path.exists():
+            return {"daily": [], "monthly_total": 0, "error": str(e)}
+        lines = cost_path.read_text().strip().split("\n")[1:]
+        daily: dict[str, float] = {}
+        for line in lines:
+            parts = line.split(",")
+            if len(parts) >= 4:
+                date = parts[0][:10]
+                total_tokens = int(parts[3])
+                cost = total_tokens * 0.003 / 1000
+                daily[date] = daily.get(date, 0) + cost
+        daily_list = [{"date": d, "cost": round(c, 4)} for d, c in sorted(daily.items())]
+        monthly = round(sum(daily.values()), 4)
+        return {"daily": daily_list, "monthly_total": monthly, "source": "csv_fallback"}
 
 
 @app.get("/api/data/analytics")
 def get_analytics():
-    """Read kb/viral/ for analytics data."""
+    """Read analytics data from database and kb/viral/."""
+    data = {"topics": [], "keywords": []}
+    
+    # Get from kb/viral/
     viral_dir = KB_DIR / "viral"
-    if not viral_dir.exists():
-        return {"topics": [], "keywords": []}
-    data = {}
-    for f in viral_dir.glob("*.json"):
-        data.update(_read_json(f))
+    if viral_dir.exists():
+        for f in viral_dir.glob("*.json"):
+            data.update(_read_json(f))
+    
+    # Add pipeline statistics from database
+    try:
+        sessions = get_pipeline_sessions(limit=30)
+        data['pipeline_stats'] = {
+            'total_sessions': len(sessions),
+            'completed': sum(1 for s in sessions if s.get('status') == 'completed'),
+            'failed': sum(1 for s in sessions if s.get('status') == 'failed'),
+            'running': sum(1 for s in sessions if s.get('status') == 'running'),
+        }
+    except Exception as e:
+        print(f"[api] Error getting pipeline stats: {e}")
+    
     return data
 
 
 # ── Routes: Knowledge Base ─────────────────────────────────────────
 @app.get("/api/kb/search")
-def search_kb(q: str = Query("", min_length=1)):
-    """Search knowledge base by keyword (simple file name/content match)."""
+def search_kb(q: str = Query("", min_length=1), section: Optional[str] = None):
+    """Search knowledge base using FTS5 with Chinese tokenization."""
     if not q:
         return {"results": []}
-    results = []
-    for path in KB_DIR.rglob("*.md"):
-        if q.lower() in path.stem.lower():
-            results.append({
-                "path": str(path.relative_to(KB_DIR)),
-                "title": path.stem,
-                "type": path.parent.name,
-            })
-            continue
-        # Check content
-        try:
-            content = path.read_text(encoding="utf-8", errors="ignore")
-            if q.lower() in content.lower():
-                # Find the matching line
-                for line in content.split("\n"):
-                    if q.lower() in line.lower():
-                        results.append({
-                            "path": str(path.relative_to(KB_DIR)),
-                            "title": path.stem,
-                            "type": path.parent.name,
-                            "match": line.strip()[:100],
-                        })
-                        break
-        except OSError:
-            pass
-    return {"results": results[:20]}
+    
+    try:
+        # Use FTS5 search
+        results = search_kb_fts(q, section=section, limit=20)
+        return {
+            "results": results,
+            "count": len(results),
+            "query": q,
+            "section": section,
+            "search_type": "fts5",
+        }
+    except Exception as e:
+        print(f"[api] FTS5 search failed, using fallback: {e}")
+        
+        # Fallback to simple search
+        results = []
+        for path in KB_DIR.rglob("*.md"):
+            if q.lower() in path.stem.lower():
+                results.append({
+                    "path": str(path.relative_to(KB_DIR)),
+                    "title": path.stem,
+                    "type": path.parent.name,
+                })
+                continue
+            try:
+                content = path.read_text(encoding="utf-8", errors="ignore")
+                if q.lower() in content.lower():
+                    for line in content.split("\n"):
+                        if q.lower() in line.lower():
+                            results.append({
+                                "path": str(path.relative_to(KB_DIR)),
+                                "title": path.stem,
+                                "type": path.parent.name,
+                                "match": line.strip()[:100],
+                            })
+                            break
+            except OSError:
+                pass
+        
+        return {
+            "results": results[:20],
+            "count": len(results[:20]),
+            "query": q,
+            "search_type": "fallback",
+        }
 
 
 @app.get("/api/kb/sections")
 def get_kb_sections():
     """List knowledge base sections and their article counts."""
     sections = []
-    for d in sorted(KB_DIR.iterdir()):
-        if d.is_dir() and d.name != "history":
-            count = len(list(d.rglob("*.md")))
-            sections.append({"name": d.name, "count": count, "path": str(d)})
-    # History is special — date subdirectories
-    history_dir = KB_DIR / "history"
-    if history_dir.exists():
-        total_history = sum(1 for _ in history_dir.rglob("*.md"))
-        sections.append({"name": "history", "count": total_history, "path": str(history_dir)})
+    
+    # Get from index stats if available
+    try:
+        index_stats = get_index_stats()
+        indexed_sections = index_stats.get('by_section', {})
+    except Exception:
+        indexed_sections = {}
+    
+    # Scan filesystem
+    if KB_DIR.exists():
+        for d in sorted(KB_DIR.iterdir()):
+            if d.is_dir() and d.name != "history":
+                # Use index count if available, otherwise count files
+                count = indexed_sections.get(d.name, len(list(d.rglob("*.md"))))
+                sections.append({
+                    "name": d.name, 
+                    "count": count, 
+                    "path": str(d),
+                })
+        
+        # History is special — date subdirectories
+        history_dir = KB_DIR / "history"
+        if history_dir.exists():
+            total_history = indexed_sections.get('history', sum(1 for _ in history_dir.rglob("*.md")))
+            sections.append({
+                "name": "history", 
+                "count": total_history, 
+                "path": str(history_dir),
+            })
+    
     return {"sections": sections}
+
+
+@app.post("/api/kb/reindex")
+def reindex_kb():
+    """Force reindex knowledge base."""
+    try:
+        stats = index_all_kb(force=True)
+        return {"status": "ok", "stats": stats}
+    except Exception as e:
+        raise HTTPException(500, f"Reindex failed: {e}")
 
 
 # ── Routes: Config ─────────────────────────────────────────────────
 @app.get("/api/config")
 def get_config():
-    """Read system configuration."""
-    return _load_schedule()
+    """Read all system configuration."""
+    try:
+        return get_all_config_summary()
+    except Exception as e:
+        print(f"[api] Error getting config: {e}")
+        # Fallback to basic config
+        return _load_schedule()
 
 
-@app.post("/api/config/update")
-def update_config(update: ConfigUpdate):
-    """Update a single configuration value."""
-    path = CONFIG_DIR / "schedule.json"
-    config = _load_schedule()
-    config[update.key] = update.value
-    tmp = CONFIG_DIR / ".schedule.json.tmp"
-    tmp.write_text(json.dumps(config, ensure_ascii=False, indent=2))
-    os.rename(tmp, path)
-    return {"status": "ok", "key": update.key, "value": update.value}
+@app.get("/api/config/{section}")
+def get_config_section(section: str):
+    """Read specific configuration section."""
+    section_map = {
+        "schedule": get_schedule_config,
+        "styles": get_writing_styles,
+        "gates": get_quality_gates,
+        "sources": get_source_config,
+        "model": get_model_config,
+        "budget": get_budget_config,
+    }
+    
+    getter = section_map.get(section)
+    if not getter:
+        raise HTTPException(404, f"Unknown config section: {section}")
+    
+    try:
+        return getter()
+    except Exception as e:
+        raise HTTPException(500, f"Error reading {section}: {e}")
+
+
+@app.post("/api/config/schedule")
+def update_schedule_config(update: ConfigUpdate):
+    """Update schedule configuration.
+    
+    Note: Schedule changes are applied to the config file immediately,
+    but require Hermes gateway restart to take effect for cron jobs.
+    """
+    try:
+        # Apply the change immediately
+        result = update_schedule(update.key, update.value)
+        
+        # Determine if Hermes restart is needed
+        time_keys = {'morning_scout', 'morning_writer', 'evening_scout', 'evening_writer'}
+        needs_restart = update.key in time_keys
+        
+        response = {
+            "status": "ok",
+            "key": update.key,
+            "value": update.value,
+        }
+        
+        if needs_restart:
+            response["message"] = "配置已更新。需要重启 Hermes gateway 才能使新的调度时间生效。"
+            response["needs_restart"] = True
+        
+        return response
+            
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Error updating schedule: {e}")
+
+
+@app.post("/api/config/styles/{style_name}")
+def update_style_config(style_name: str, updates: dict):
+    """Update a writing style preset."""
+    try:
+        result = update_writing_style(style_name, updates)
+        return {"status": "ok", "style": style_name, "config": result}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Error updating style: {e}")
+
+
+@app.post("/api/config/gates")
+def update_gates_config(updates: dict):
+    """Update quality gate thresholds."""
+    try:
+        result = update_quality_gates(updates)
+        return {"status": "ok", "config": result}
+    except Exception as e:
+        raise HTTPException(500, f"Error updating gates: {e}")
+
+
+@app.post("/api/config/sources/{source_name}")
+def update_source_config(source_name: str, updates: dict):
+    """Update source configuration."""
+    try:
+        result = update_source(source_name, updates)
+        return {"status": "ok", "source": source_name, "config": result}
+    except Exception as e:
+        raise HTTPException(500, f"Error updating source: {e}")
+
+
+@app.post("/api/config/budget")
+def update_budget_config(updates: dict):
+    """Update budget configuration."""
+    try:
+        result = update_budget(updates)
+        return {"status": "ok", "config": result}
+    except Exception as e:
+        raise HTTPException(500, f"Error updating budget: {e}")
+
+
+@app.get("/api/config/style-prompt/{style_name}")
+def get_style_prompt(style_name: str):
+    """Get generated prompt for a writing style."""
+    prompt = generate_style_prompt(style_name)
+    if not prompt:
+        raise HTTPException(404, f"Unknown style: {style_name}")
+    return {"style": style_name, "prompt": prompt}
 
 
 # ── Background action scanner ─────────────────────────────────────
@@ -386,16 +733,69 @@ def _scan_loop():
         time.sleep(10)
 
 
+# ── Budget monitor ────────────────────────────────────────────────
+_BUDGET_MONITOR_RUNNING = True
+_last_budget_alert_time = 0
+
+def _budget_monitor_loop():
+    """Background thread: monitor budget usage every 5 minutes."""
+    global _last_budget_alert_time
+    
+    while _BUDGET_MONITOR_RUNNING:
+        try:
+            budget_status = check_budget_limit()
+            
+            # Check if we need to alert
+            current_time = time.time()
+            
+            # Alert if over 80% (but not more than once per hour)
+            if budget_status['is_warning'] and current_time - _last_budget_alert_time > 3600:
+                alert_budget_warning(
+                    budget_status['current_cost'],
+                    budget_status['budget'],
+                    budget_status['percentage'],
+                )
+                _last_budget_alert_time = current_time
+            
+            # Alert immediately if over 100%
+            if budget_status['is_exceeded'] and current_time - _last_budget_alert_time > 1800:
+                alert_budget_warning(
+                    budget_status['current_cost'],
+                    budget_status['budget'],
+                    budget_status['percentage'],
+                )
+                _last_budget_alert_time = current_time
+                
+        except Exception as e:
+            print(f"[budget] Monitor error: {e}")
+        
+        # Check every 5 minutes
+        time.sleep(300)
+
+
 
 
 
 # ── Routes: Health ─────────────────────────────────────────────────
 @app.get("/api/health")
 def health():
-    """Basic health check."""
+    """Basic health check with database and budget status."""
+    # Check database connectivity
+    db_status = "ok"
+    try:
+        with get_db() as conn:
+            conn.execute("SELECT 1")
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+    
+    # Check budget
+    budget = check_budget_limit()
+    
     return {
         "status": "ok",
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "database": db_status,
+        "budget": budget,
         "queue_sizes": {
             "pending": len(list(PENDING_DIR.glob("*.json"))),
             "review": len(list(REVIEW_DIR.glob("*.meta.json"))),
@@ -405,6 +805,22 @@ def health():
     }
 
 
+@app.post("/api/token/log")
+def log_token(token_data: dict):
+    """Log token usage from agents."""
+    try:
+        usage_id = log_token_usage(
+            agent=token_data.get('agent', 'unknown'),
+            model=token_data.get('model', 'unknown'),
+            input_tokens=token_data.get('input_tokens', 0),
+            output_tokens=token_data.get('output_tokens', 0),
+            session_id=token_data.get('session_id'),
+        )
+        return {"status": "ok", "id": usage_id}
+    except Exception as e:
+        raise HTTPException(500, f"Failed to log token usage: {e}")
+
+
 # ── Entry ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8710)
+    uvicorn.run(app, host="127.0.0.1", port=8710)

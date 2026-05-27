@@ -31,7 +31,10 @@ from config.settings import (
     TONE,
     STANCE,
 )
-from skills.llm import chat, chat_structured, LLMError
+from skills.llm import chat, chat_structured, LLMError, set_current_agent
+
+# Set current agent for token tracking
+set_current_agent("writer")
 
 # ── Constants ──────────────────────────────────────────────────────
 STAGES = [
