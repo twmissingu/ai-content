@@ -10,6 +10,7 @@
 """
 
 import json
+import logging
 import os
 import subprocess
 import threading
@@ -39,6 +40,13 @@ from config.settings import (
     REVIEW_DIR,
     STATUS_DIR,
 )
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("gaoding.dashboard")
 
 # Import database layer
 from dashboard.backend.database import (
@@ -125,14 +133,53 @@ app = FastAPI(title="稿定 Dashboard", version="0.1.0", lifespan=lifespan)
 
 # CORS origins - configurable via environment variable
 # Default to localhost for security; override for Docker/production
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8710,http://127.0.0.1:8710").split(",")
+def _get_cors_origins() -> list[str]:
+    """Get and validate CORS origins from environment."""
+    env_value = os.getenv("CORS_ORIGINS", "")
+    
+    # Default origins for development
+    default_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8710",
+        "http://127.0.0.1:8710",
+    ]
+    
+    if not env_value:
+        return default_origins
+    
+    origins = [o.strip() for o in env_value.split(",") if o.strip()]
+    
+    # Security check: warn if wildcard in production
+    environment = os.getenv("ENV", os.getenv("NODE_ENV", "development"))
+    if "*" in origins and environment == "production":
+        logger.warning(
+            "CORS_ORIGINS='*' is not recommended for production! "
+            "Consider restricting to specific domains."
+        )
+    
+    # Validate origin format
+    valid_origins = []
+    for origin in origins:
+        if origin == "*":
+            valid_origins.append(origin)
+        elif origin.startswith(("http://", "https://")):
+            valid_origins.append(origin)
+        else:
+            logger.warning(f"Invalid CORS origin ignored: {origin}")
+    
+    return valid_origins if valid_origins else default_origins
+
+
+CORS_ORIGINS = _get_cors_origins()
+logger.info(f"CORS origins: {CORS_ORIGINS}")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],  # Restrict methods
+    allow_headers=["Content-Type", "Authorization"],  # Restrict headers
 )
 
 # ── Models ─────────────────────────────────────────────────────────
@@ -242,8 +289,8 @@ def get_pipeline_timeline():
     sessions = []
     
     # Get from database
-    db_sessions = get_pipeline_sessions(limit=14)
-    for s in db_sessions:
+    db_result = get_pipeline_sessions(limit=14)
+    for s in db_result.get('items', []):
         sessions.append({
             "id": s.get('id'),
             "date": s.get('date', ''),
@@ -444,15 +491,16 @@ def get_analytics():
     
     # Add pipeline statistics from database
     try:
-        sessions = get_pipeline_sessions(limit=30)
+        sessions_result = get_pipeline_sessions(limit=30)
+        sessions = sessions_result.get('items', [])
         data['pipeline_stats'] = {
-            'total_sessions': len(sessions),
+            'total_sessions': sessions_result.get('total', len(sessions)),
             'completed': sum(1 for s in sessions if s.get('status') == 'completed'),
             'failed': sum(1 for s in sessions if s.get('status') == 'failed'),
             'running': sum(1 for s in sessions if s.get('status') == 'running'),
         }
     except Exception as e:
-        print(f"[api] Error getting pipeline stats: {e}")
+        logger.error(f"Error getting pipeline stats: {e}")
     
     return data
 

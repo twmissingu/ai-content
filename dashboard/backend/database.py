@@ -8,10 +8,14 @@ Implements 5 core tables from PRD 6.1:
 - config_entries: 配置变更记录
 
 Uses WAL mode + single worker to avoid write conflicts.
+Thread-safe with connection pooling.
 """
 
 import json
+import logging
 import sqlite3
+import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,22 +31,46 @@ DATABASE_PATH = DATA_DIR / "analytics.db"
 # Ensure data directory exists
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+# Logger
+logger = logging.getLogger("gaoding.database")
+
+# Thread-local storage for connections
+_thread_local = threading.local()
+
+# Simple query cache (invalidated on writes)
+_query_cache: dict[str, tuple[float, Any]] = {}
+_cache_lock = threading.Lock()
+CACHE_TTL = 5.0  # seconds
+
+
+def _invalidate_cache() -> None:
+    """Invalidate all cached queries."""
+    with _cache_lock:
+        _query_cache.clear()
+
 
 @contextmanager
 def get_db():
-    """Get database connection with WAL mode."""
-    conn = sqlite3.connect(str(DATABASE_PATH), timeout=10)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
-    conn.row_factory = sqlite3.Row
+    """Get database connection with WAL mode.
+    
+    Uses thread-local connections for better concurrency.
+    """
+    # Get or create thread-local connection
+    if not hasattr(_thread_local, 'conn') or _thread_local.conn is None:
+        conn = sqlite3.connect(str(DATABASE_PATH), timeout=10)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA synchronous=NORMAL")  # Better performance with WAL
+        conn.row_factory = sqlite3.Row
+        _thread_local.conn = conn
+    
+    conn = _thread_local.conn
     try:
         yield conn
         conn.commit()
     except Exception:
         conn.rollback()
         raise
-    finally:
-        conn.close()
 
 
 def init_db():
@@ -140,7 +168,7 @@ def init_db():
             )
         """)
     
-    print(f"[database] Initialized at {DATABASE_PATH}")
+    logger.info(f"Initialized at {DATABASE_PATH}")
 
 
 # ── Pipeline Sessions ──────────────────────────────────────────────
@@ -148,6 +176,7 @@ def init_db():
 def create_pipeline_session(date: str, period: str, topic: str, 
                           source_url: str = None) -> int:
     """Create a new pipeline session."""
+    _invalidate_cache()
     with get_db() as conn:
         cursor = conn.execute("""
             INSERT INTO pipeline_sessions (date, period, topic, source_url, status, started_at)
@@ -164,6 +193,7 @@ def update_pipeline_session(session_id: int, **kwargs):
     if not updates:
         return
     
+    _invalidate_cache()
     set_clause = ', '.join(f"{k} = ?" for k in updates)
     values = list(updates.values()) + [session_id]
     
@@ -175,23 +205,64 @@ def update_pipeline_session(session_id: int, **kwargs):
         """, values)
 
 
-def get_pipeline_sessions(limit: int = 30, status: str = None) -> list[dict]:
-    """Get pipeline sessions with optional status filter."""
+def get_pipeline_sessions(
+    limit: int = 30,
+    offset: int = 0,
+    status: Optional[str] = None,
+    fields: Optional[list[str]] = None
+) -> dict:
+    """Get pipeline sessions with pagination and optional status filter.
+    
+    Args:
+        limit: Maximum number of results
+        offset: Number of results to skip
+        status: Filter by status
+        fields: List of fields to return (None for all)
+    
+    Returns:
+        Dict with 'items', 'total', 'limit', 'offset'
+    """
+    # Validate fields
+    valid_fields = {
+        'id', 'date', 'period', 'topic', 'source_url', 'status',
+        'started_at', 'completed_at', 'error_message', 'created_at', 'updated_at'
+    }
+    
+    if fields:
+        select_fields = ', '.join(f for f in fields if f in valid_fields)
+        if not select_fields:
+            select_fields = 'id, date, period, topic, status'
+    else:
+        select_fields = '*'
+    
     with get_db() as conn:
+        # Get total count
+        count_query = "SELECT COUNT(*) FROM pipeline_sessions"
+        count_params = []
         if status:
-            rows = conn.execute("""
-                SELECT * FROM pipeline_sessions 
-                WHERE status = ?
-                ORDER BY date DESC, created_at DESC
-                LIMIT ?
-            """, (status, limit)).fetchall()
-        else:
-            rows = conn.execute("""
-                SELECT * FROM pipeline_sessions 
-                ORDER BY date DESC, created_at DESC
-                LIMIT ?
-            """, (limit,)).fetchall()
-        return [dict(row) for row in rows]
+            count_query += " WHERE status = ?"
+            count_params.append(status)
+        
+        total = conn.execute(count_query, count_params).fetchone()[0]
+        
+        # Get paginated results
+        query = f"SELECT {select_fields} FROM pipeline_sessions"
+        params = []
+        if status:
+            query += " WHERE status = ?"
+            params.append(status)
+        
+        query += " ORDER BY date DESC, created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        
+        rows = conn.execute(query, params).fetchall()
+        
+        return {
+            'items': [dict(row) for row in rows],
+            'total': total,
+            'limit': limit,
+            'offset': offset,
+        }
 
 
 def get_today_sessions() -> list[dict]:

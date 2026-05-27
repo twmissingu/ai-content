@@ -48,7 +48,8 @@ class TestPipelineSessions:
         """Test creating a pipeline session."""
         from dashboard.backend.database import get_pipeline_sessions
         
-        sessions = get_pipeline_sessions(limit=10)
+        result = get_pipeline_sessions(limit=10)
+        sessions = result.get('items', [])
         assert len(sessions) >= 1
         
         session = sessions[0]
@@ -68,7 +69,8 @@ class TestPipelineSessions:
             completed_at='2026-05-27T10:00:00Z'
         )
         
-        sessions = get_pipeline_sessions(limit=10)
+        result = get_pipeline_sessions(limit=10)
+        sessions = result.get('items', [])
         session = next(s for s in sessions if s['id'] == sample_session)
         assert session['status'] == 'completed'
     

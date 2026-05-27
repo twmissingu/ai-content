@@ -8,15 +8,23 @@ const rejectReason = ref('')
 const showRejectInput = ref<string | null>(null)
 const showApproveConfirm = ref<string | null>(null)
 
+// Track loading state per article
+const processingIds = ref<Set<string>>(new Set())
+
 function select(id: string) {
   selectedId.value = selectedId.value === id ? null : id
 }
 
-function doReject(id: string) {
+async function doReject(id: string) {
   if (!rejectReason.value.trim()) return
-  store.reject(id, rejectReason.value)
-  showRejectInput.value = null
-  rejectReason.value = ''
+  processingIds.value.add(id)
+  try {
+    await store.reject(id, rejectReason.value)
+    showRejectInput.value = null
+    rejectReason.value = ''
+  } finally {
+    processingIds.value.delete(id)
+  }
 }
 
 function cancelReject() {
@@ -24,9 +32,14 @@ function cancelReject() {
   rejectReason.value = ''
 }
 
-function confirmApprove(id: string) {
-  store.approve(id)
-  showApproveConfirm.value = null
+async function confirmApprove(id: string) {
+  processingIds.value.add(id)
+  try {
+    await store.approve(id)
+    showApproveConfirm.value = null
+  } finally {
+    processingIds.value.delete(id)
+  }
 }
 
 function cancelApprove() {
@@ -87,12 +100,15 @@ const pendingCount = computed(() => store.approvalQueue.length)
           <template v-if="showApproveConfirm === article.id">
             <button 
               class="btn btn-success btn-sm" 
+              :disabled="processingIds.has(article.id)"
               @click.stop="confirmApprove(article.id)"
             >
-              确认通过
+              <span v-if="processingIds.has(article.id)" class="loading-spinner-sm"></span>
+              {{ processingIds.has(article.id) ? '处理中...' : '确认通过' }}
             </button>
             <button 
               class="btn btn-ghost btn-sm" 
+              :disabled="processingIds.has(article.id)"
               @click.stop="cancelApprove"
             >
               取消
@@ -101,6 +117,7 @@ const pendingCount = computed(() => store.approvalQueue.length)
           <button 
             v-else
             class="btn btn-success btn-sm" 
+            :disabled="processingIds.has(article.id)"
             @click.stop="showApproveConfirm = article.id"
           >
             ✅ 通过
@@ -108,6 +125,7 @@ const pendingCount = computed(() => store.approvalQueue.length)
           <button 
             v-if="showRejectInput !== article.id" 
             class="btn btn-danger btn-sm"
+            :disabled="processingIds.has(article.id)"
             @click.stop="showRejectInput = article.id"
           >
             ❌ 驳回
@@ -123,16 +141,22 @@ const pendingCount = computed(() => store.approvalQueue.length)
               v-model="rejectReason" 
               class="input reject-input"
               placeholder="请输入驳回原因..." 
+              :disabled="processingIds.has(article.id)"
               @keyup.enter="doReject(article.id)"
             >
             <button 
               class="btn btn-danger" 
-              :disabled="!rejectReason.trim()" 
+              :disabled="!rejectReason.trim() || processingIds.has(article.id)"
               @click="doReject(article.id)"
             >
-              确认驳回
+              <span v-if="processingIds.has(article.id)" class="loading-spinner-sm"></span>
+              {{ processingIds.has(article.id) ? '处理中...' : '确认驳回' }}
             </button>
-            <button class="btn btn-ghost" @click="cancelReject">
+            <button 
+              class="btn btn-ghost" 
+              :disabled="processingIds.has(article.id)"
+              @click="cancelReject"
+            >
               取消
             </button>
           </div>
@@ -359,6 +383,22 @@ const pendingCount = computed(() => store.approvalQueue.length)
 
 .expand-icon {
   font-size: var(--text-md);
+}
+
+/* ── Loading Spinner ─────────────────────────────────────────── */
+.loading-spinner-sm {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: var(--space-xs);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* ── Empty State ─────────────────────────────────────────────── */

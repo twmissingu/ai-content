@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useDashboardStore } from './stores/dashboard'
 
@@ -16,6 +16,7 @@ const tabs = [
 
 const isRefreshing = ref(false)
 let refreshInterval: ReturnType<typeof setInterval> | null = null
+let errorTimeout: ReturnType<typeof setTimeout> | null = null
 
 async function refreshAll() {
   isRefreshing.value = true
@@ -28,12 +29,29 @@ async function refreshAll() {
   setTimeout(() => { isRefreshing.value = false }, 300)
 }
 
+// Auto-dismiss error after 5 seconds (clear previous timeout on new error)
+watch(() => store.error, (newError) => {
+  if (errorTimeout) {
+    clearTimeout(errorTimeout)
+    errorTimeout = null
+  }
+  if (newError) {
+    errorTimeout = setTimeout(() => {
+      store.clearError()
+      errorTimeout = null
+    }, 5000)
+  }
+})
+
 onMounted(() => {
   refreshAll()
-  // Auto-refresh every 10s
+  
+  // Auto-refresh every 10s, but only when page is visible
   refreshInterval = setInterval(() => {
-    store.fetchPipeline()
-    store.fetchApprovalQueue()
+    if (document.visibilityState === 'visible') {
+      store.fetchPipeline()
+      store.fetchApprovalQueue()
+    }
   }, 10000)
 })
 
@@ -47,6 +65,17 @@ onUnmounted(() => {
 
 <template>
   <div class="app-layout">
+    <!-- Error Toast -->
+    <transition name="slide-down">
+      <div v-if="store.error" class="error-toast" @click="store.clearError">
+        <div class="error-toast-content">
+          <span class="error-icon">❌</span>
+          <span class="error-message">{{ store.error }}</span>
+          <button class="error-close" @click.stop="store.clearError">✕</button>
+        </div>
+      </div>
+    </transition>
+
     <!-- Header -->
     <header class="app-header">
       <div class="header-left">
@@ -105,6 +134,55 @@ onUnmounted(() => {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+/* ── Error Toast ──────────────────────────────────────────────── */
+.error-toast {
+  position: fixed;
+  top: var(--space-lg);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  max-width: 500px;
+  width: 90%;
+}
+
+.error-toast-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--danger-light);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  cursor: pointer;
+}
+
+.error-icon {
+  font-size: var(--text-lg);
+  flex-shrink: 0;
+}
+
+.error-message {
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--danger);
+  word-break: break-word;
+}
+
+.error-close {
+  background: none;
+  border: none;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: var(--text-lg);
+  padding: var(--space-xs);
+  flex-shrink: 0;
+}
+
+.error-close:hover {
+  opacity: 0.7;
 }
 
 /* ── Header ──────────────────────────────────────────────────── */

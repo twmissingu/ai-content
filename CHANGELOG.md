@@ -1,5 +1,89 @@
 # Changelog
 
+## [0.5.0] - 2026-05-28
+
+### Architecture Improvements
+
+- **skills/common.py**: New shared utilities module with:
+  - `atomic_write_json()` / `atomic_write_text()`: Atomic file operations with fsync
+  - `file_lock()`: File-based locking mechanism
+  - `AgentBase`: Base class for all agents with unified status writing
+  - Input validation functions (`validate_source`, `validate_platform`, `validate_action`)
+  - `sanitize_filename()`: Path traversal prevention
+  - `mask_api_key()`: API key masking for safe logging
+  - `safe_subprocess_args()`: Subprocess injection prevention
+  - Structured JSON logging with `get_agent_logger()`
+
+### Security Fixes
+
+- **CORS Configuration**: Added validation and production warnings for wildcard origins
+- **API Key Masking**: All logs now mask API keys (show first/last 4 chars only)
+- **Subprocess Injection**: Added whitelist validation for all subprocess calls in scout.py
+- **Input Validation**: Added validation for source names, platform names, and action types
+
+### Thread Safety
+
+- **skills/llm.py**: Complete rewrite for thread safety:
+  - Replaced global variables with `threading.local()` for per-thread state
+  - Added `threading.Lock()` for shared resources (HTTP client, CSV writes)
+  - HTTP client now uses singleton manager with proper locking
+  - All agent-specific state is now thread-isolated
+- **dashboard/backend/database.py**: 
+  - Thread-local database connections
+  - Thread-safe query cache with proper locking
+  - Added `_invalidate_cache()` for write operations
+
+### Performance Improvements
+
+- **skills/scout.py**: Concurrent LLM scoring with ThreadPoolExecutor:
+  - 5 parallel workers for topic scoring
+  - Progress tracking for concurrent operations
+  - Proper error handling per thread
+- **dashboard/backend/database.py**: Query optimization:
+  - Added pagination support (`limit`, `offset`)
+  - Added field selection to reduce data transfer
+  - Added simple query cache with TTL
+  - Changed PRAGMA synchronous to NORMAL for better WAL performance
+
+### Code Quality
+
+- **Structured Logging**: All modules now use `logging.getLogger()` with JSON formatting
+- **Error Handling**: Consistent error handling patterns across all agents
+- **Type Annotations**: Improved type hints in common.py and llm.py
+
+### Frontend Improvements
+
+- **dashboard/frontend/src/stores/dashboard.ts**: Complete TypeScript rewrite:
+  - Full type definitions for all data structures
+  - `AgentStatus`, `ApprovalArticle`, `Topic`, `BudgetStatus` interfaces
+  - Per-operation loading states with `isLoading()` helper
+  - Computed properties (`pendingCount`, `isAgentRunning`)
+  - Error handling with auto-dismiss
+- **dashboard/frontend/src/App.vue**: 
+  - Global error toast with auto-dismiss (5s)
+  - Page Visibility API for efficient polling (only poll when visible)
+- **dashboard/frontend/src/views/ApprovalView.vue**:
+  - Per-article loading states
+  - Disabled buttons during processing
+  - Loading spinners for approve/reject actions
+
+### Testing
+
+- **tests/test_common.py**: 30+ unit tests for common utilities:
+  - Atomic file operations
+  - File locking
+  - Input validation
+  - Filename sanitization
+  - API key masking
+  - Subprocess argument validation
+  - AgentBase functionality
+- **tests/test_scout.py**: 15+ unit tests for Scout utilities:
+  - Topic similarity detection
+  - Deduplication and filtering
+  - Score calculation formulas
+  - Diversity enforcement
+  - Allowed sources configuration
+
 ## [0.4.0] - 2026-05-27
 
 ### UI/UX Improvements

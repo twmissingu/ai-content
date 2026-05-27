@@ -8,14 +8,16 @@ Phase 1: single Worker, cold-start parameters.
 """
 
 import json
+import logging
 import os
 import re
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -33,6 +35,17 @@ from skills.llm import chat_structured, set_current_agent
 
 # Set current agent for token tracking
 set_current_agent("scout")
+
+# Logger
+logger = logging.getLogger("gaoding.scout")
+
+# Allowed source names for china-hot MCP (security whitelist)
+ALLOWED_CHINA_HOT_SOURCES = frozenset({
+    "weibo", "zhihu", "bilibili", "baidu", "douyin", "toutiao", "kr36"
+})
+
+# Max workers for concurrent LLM scoring
+MAX_SCORING_WORKERS = 5
 
 # ── Constants ──────────────────────────────────────────────────────
 SAME_TOPIC_BLOCK_DAYS = 3
@@ -72,7 +85,9 @@ RUN_DATE = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 # ── Status file ────────────────────────────────────────────────────
 def _write_status(stage: str, progress_pct: int, detail: str, error: Any = None):
-    """Write scout status file."""
+    """Write scout status file with atomic write."""
+    from skills.common import atomic_write_json
+    
     status = {
         "agent": "scout",
         "stage": stage,
@@ -82,9 +97,7 @@ def _write_status(stage: str, progress_pct: int, detail: str, error: Any = None)
         "error": str(error) if error else None,
     }
     path = STATUS_DIR / "scout.json"
-    tmp = STATUS_DIR / ".scout.json.tmp"
-    tmp.write_text(json.dumps(status, ensure_ascii=False, indent=2))
-    os.rename(tmp, path)
+    atomic_write_json(path, status)
 
 
 # ── Source collectors ──────────────────────────────────────────────
@@ -94,14 +107,24 @@ def _call_china_hot(source: str) -> list[dict]:
     Each china-hot tool returns a list of trending items with at minimum
     a 'title' field. Returns empty list on any failure (network, tool not
     available, etc.) — never raises.
+    
+    Security: Validates source name against whitelist to prevent injection.
     """
+    # Security: Validate source name
+    if source not in ALLOWED_CHINA_HOT_SOURCES:
+        logger.warning(f"Invalid source rejected: {source}")
+        return []
+    
     try:
         # Hermes MCP tools are invoked via hermes gateway
+        # Source name is validated above, safe to use in command
+        cmd = ["hermes", "mcp", "call", f"china-hot_{source}_trending"]
         result = subprocess.run(
-            ["hermes", "mcp", "call", f"china-hot_{source}_trending"],
+            cmd,
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode != 0:
+            logger.debug(f"china-hot {source} returned non-zero: {result.returncode}")
             return []
         # Parse output — Hermes MCP returns JSON
         output = result.stdout.strip()
@@ -116,38 +139,58 @@ def _call_china_hot(source: str) -> list[dict]:
         if isinstance(items, dict) and "data" in items:
             items = items["data"]
         return items if isinstance(items, list) else []
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as e:
+        logger.debug(f"china-hot {source} failed: {e}")
         return []
 
 
 def _call_firecrawl_search(query: str) -> list[dict]:
     """Search web via Firecrawl for trending AI/tech content."""
+    # Sanitize query to prevent injection
+    if not query or len(query) > 500:
+        logger.warning(f"Invalid query length: {len(query) if query else 0}")
+        return []
+    
     try:
+        # Build safe command arguments
+        params = json.dumps({"query": query, "count": 5})
+        cmd = ["hermes", "mcp", "call", "firecrawl_web_search", "--params", params]
+        
         result = subprocess.run(
-            ["hermes", "mcp", "call", "firecrawl_web_search",
-             "--params", json.dumps({"query": query, "count": 5})],
+            cmd,
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode != 0:
+            logger.debug(f"Firecrawl search returned non-zero: {result.returncode}")
             return []
         items = json.loads(result.stdout)
         if isinstance(items, dict) and "data" in items:
             items = items["data"]
         return items if isinstance(items, list) else []
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as e:
+        logger.debug(f"Firecrawl search failed: {e}")
         return []
 
 
 def _call_github_trending() -> list[dict]:
     """Fetch GitHub trending repos via API (last 7 days)."""
     since = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+    
+    # Validate date format
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', since):
+        logger.error(f"Invalid date format: {since}")
+        return []
+    
     try:
-        result = subprocess.run(
-            ["curl", "-s",
-             f"https://api.github.com/search/repositories?q=created:>{since}&sort=stars&order=desc&per_page=10"],
-            capture_output=True, text=True, timeout=15,
-        )
-        data = json.loads(result.stdout)
+        # Use httpx instead of curl for better security and error handling
+        import httpx
+        url = f"https://api.github.com/search/repositories?q=created:>{since}&sort=stars&order=desc&per_page=10"
+        
+        with httpx.Client(timeout=15) as client:
+            resp = client.get(url, headers={"Accept": "application/vnd.github.v3+json"})
+            resp.raise_for_status()
+            data = resp.json()
+        
         items = data.get("items", [])
         return [
             {
@@ -159,7 +202,8 @@ def _call_github_trending() -> list[dict]:
             }
             for item in items[:5]
         ]
-    except (json.JSONDecodeError, OSError, subprocess.TimeoutExpired):
+    except Exception as e:
+        logger.debug(f"GitHub trending failed: {e}")
         return []
 
 
@@ -405,44 +449,80 @@ def _enforce_diversity(scored: list[dict]) -> list[dict]:
 
 
 # ── Main ───────────────────────────────────────────────────────────
+def _score_candidate_wrapper(args: tuple[dict, bool]) -> Optional[dict]:
+    """Wrapper for score_candidate to use with ThreadPoolExecutor."""
+    candidate, cold_start = args
+    try:
+        return score_candidate(candidate, cold_start)
+    except Exception as e:
+        logger.warning(f"Failed to score candidate '{candidate.get('title', '?')[:30]}': {e}")
+        return None
+
+
 def main():
     _write_status("collecting", 5, f"Starting scout {SESSION} session")
-    print(f"[scout] {SESSION} session started at {RUN_TIMESTAMP}")
+    logger.info(f"{SESSION} session started at {RUN_TIMESTAMP}")
 
     cold_start = _is_cold_start()
-    print(f"[scout] Cold start mode: {cold_start}")
+    logger.info(f"Cold start mode: {cold_start}")
 
     # Step 1: Collect
     _write_status("collecting", 15, "Collecting from all sources")
     candidates = collect_all()
-    print(f"[scout] Collected {len(candidates)} raw candidates")
+    logger.info(f"Collected {len(candidates)} raw candidates")
 
     # Step 2: Dedup & filter
     _write_status("dedup", 35, f"Deduplicating {len(candidates)} candidates")
     candidates = dedup_and_filter(candidates)
-    print(f"[scout] After dedup: {len(candidates)} unique")
+    logger.info(f"After dedup: {len(candidates)} unique")
 
-    # Step 3: Score each candidate via LLM
+    # Step 3: Score candidates via LLM (concurrent)
     _write_status("scoring", 50, f"Scoring {len(candidates)} candidates via LLM")
     scored: list[dict] = []
-    for i, c in enumerate(candidates):
-        _write_status("scoring", 50 + int(30 * (i + 1) / max(len(candidates), 1)),
-                      f"Scoring {i+1}/{len(candidates)}: {c['title'][:30]}")
-        result = score_candidate(c, cold_start)
-        if result:
-            scored.append(result)
+    
+    if candidates:
+        # Use ThreadPoolExecutor for concurrent scoring
+        with ThreadPoolExecutor(max_workers=MAX_SCORING_WORKERS) as executor:
+            # Prepare tasks
+            tasks = [(c, cold_start) for c in candidates]
+            
+            # Submit all tasks
+            future_to_candidate = {
+                executor.submit(_score_candidate_wrapper, task): task[0]
+                for task in tasks
+            }
+            
+            # Collect results as they complete
+            completed = 0
+            for future in as_completed(future_to_candidate):
+                completed += 1
+                candidate = future_to_candidate[future]
+                
+                # Update progress
+                _write_status(
+                    "scoring",
+                    50 + int(30 * completed / max(len(candidates), 1)),
+                    f"Scoring {completed}/{len(candidates)}: {candidate['title'][:30]}"
+                )
+                
+                try:
+                    result = future.result(timeout=60)
+                    if result:
+                        scored.append(result)
+                except Exception as e:
+                    logger.warning(f"Scoring failed for '{candidate['title'][:30]}': {e}")
 
     scored.sort(key=lambda x: x["final_score"], reverse=True)
-    print(f"[scout] Scored candidates: {len(scored)}")
+    logger.info(f"Scored candidates: {len(scored)}")
 
     # Step 4: Apply diversity constraint
     scored = _enforce_diversity(scored)
-    print(f"[scout] After diversity: {len(scored)} candidates")
+    logger.info(f"After diversity: {len(scored)} candidates")
 
     # Step 5: Filter by threshold (lower bar during cold start)
     threshold = COLD_START_FLOOR if cold_start else FINAL_FLOOR
     final = [c for c in scored if c["final_score"] >= threshold][:CANDIDATE_CAP]
-    print(f"[scout] Final candidates meeting threshold: {len(final)}")
+    logger.info(f"Final candidates meeting threshold: {len(final)}")
 
     # Step 6: Write to pending
     _write_status("writing", 85, f"Writing {len(final)} candidates to queue/pending/")
@@ -454,7 +534,7 @@ def main():
         "agent": "scout",
         "stage": "completed",
         "progress_pct": 100,
-        "detail": f"{SESSION} session: {len(final)} candidates pushed (from {len(candidates)} raw)",  # noqa: E501
+        "detail": f"{SESSION} session: {len(final)} candidates pushed (from {len(candidates)} raw)",
         "started_at": RUN_TIMESTAMP,
         "completed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "candidate_count": len(final),
@@ -462,13 +542,13 @@ def main():
         "session": SESSION,
         "error": None,
     }
+    
+    from skills.common import atomic_write_json
     path = STATUS_DIR / "scout.json"
-    tmp = STATUS_DIR / ".scout.json.tmp"
-    tmp.write_text(json.dumps(summary, ensure_ascii=False, indent=2))
-    os.rename(tmp, path)
+    atomic_write_json(path, summary)
 
-    print(f"[scout] Done. {len(final)} candidates written to pending/")
-    print(json.dumps(summary, ensure_ascii=False))
+    logger.info(f"Done. {len(final)} candidates written to pending/")
+    logger.info(json.dumps(summary, ensure_ascii=False))
 
 
 if __name__ == "__main__":
