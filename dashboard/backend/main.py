@@ -114,9 +114,9 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # Shutdown all background threads
-    _SCANNER_RUNNING = False
-    _BUDGET_MONITOR_RUNNING = False
+    # Shutdown all background threads using events
+    _scanner_stop_event.set()
+    _budget_stop_event.set()
     print("[scanner] Background action scanner stopped")
     print("[budget] Budget monitor stopped")
 
@@ -151,6 +151,14 @@ class ConfirmRequest(BaseModel):
 class ConfigUpdate(BaseModel):
     key: str
     value: str | int | float | bool | list | dict
+
+
+class TokenLogRequest(BaseModel):
+    agent: str = "unknown"
+    model: str = "unknown"
+    input_tokens: int = 0
+    output_tokens: int = 0
+    session_id: Optional[int] = None
 
 
 # ── Helpers ────────────────────────────────────────────────────────
@@ -668,7 +676,8 @@ def get_style_prompt(style_name: str):
 
 
 # ── Background action scanner ─────────────────────────────────────
-_SCANNER_RUNNING = True
+_scanner_stop_event = threading.Event()
+_budget_stop_event = threading.Event()
 
 DISPATCH_MAP = {
     "approve": ["python3", str(PROJECT_ROOT / "skills/publisher.py")],
@@ -716,7 +725,7 @@ def _dispatch_action(action: dict, file_path: Path) -> bool:
 
 def _scan_loop():
     """Background thread: poll queue/actions/ every 10s."""
-    while _SCANNER_RUNNING:
+    while not _scanner_stop_event.is_set():
         try:
             files = sorted(ACTIONS_DIR.glob("*.json"), key=os.path.getmtime)
             for f in files:
@@ -730,18 +739,18 @@ def _scan_loop():
                 os.rename(f, PROCESSED_DIR / f.name)
         except Exception as e:
             print(f"[scanner] Loop error: {e}")
-        time.sleep(10)
+        # Use event.wait instead of time.sleep for faster shutdown
+        _scanner_stop_event.wait(10)
 
 
 # ── Budget monitor ────────────────────────────────────────────────
-_BUDGET_MONITOR_RUNNING = True
 _last_budget_alert_time = 0
 
 def _budget_monitor_loop():
     """Background thread: monitor budget usage every 5 minutes."""
     global _last_budget_alert_time
     
-    while _BUDGET_MONITOR_RUNNING:
+    while not _budget_stop_event.is_set():
         try:
             budget_status = check_budget_limit()
             
@@ -769,8 +778,8 @@ def _budget_monitor_loop():
         except Exception as e:
             print(f"[budget] Monitor error: {e}")
         
-        # Check every 5 minutes
-        time.sleep(300)
+        # Check every 5 minutes, use event.wait for faster shutdown
+        _budget_stop_event.wait(300)
 
 
 
@@ -779,42 +788,69 @@ def _budget_monitor_loop():
 # ── Routes: Health ─────────────────────────────────────────────────
 @app.get("/api/health")
 def health():
-    """Basic health check with database and budget status."""
+    """Comprehensive health check with database, budget, and service status."""
+    health_status = {
+        "status": "ok",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "version": "0.3.0",
+        "services": {},
+        "queue_sizes": {},
+        "budget": {},
+    }
+    
     # Check database connectivity
-    db_status = "ok"
     try:
         with get_db() as conn:
             conn.execute("SELECT 1")
+        health_status["services"]["database"] = "ok"
     except Exception as e:
-        db_status = f"error: {str(e)}"
+        health_status["services"]["database"] = f"error: {str(e)}"
+        health_status["status"] = "degraded"
+    
+    # Check search index
+    try:
+        index_stats = get_index_stats()
+        health_status["services"]["search"] = {
+            "status": "ok",
+            "indexed_documents": index_stats.get("total_indexed", 0),
+        }
+    except Exception as e:
+        health_status["services"]["search"] = f"error: {str(e)}"
     
     # Check budget
-    budget = check_budget_limit()
+    try:
+        budget = check_budget_limit()
+        health_status["budget"] = budget
+        if budget.get("is_exceeded"):
+            health_status["status"] = "warning"
+    except Exception as e:
+        health_status["budget"] = {"error": str(e)}
     
-    return {
-        "status": "ok",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "database": db_status,
-        "budget": budget,
-        "queue_sizes": {
-            "pending": len(list(PENDING_DIR.glob("*.json"))),
-            "review": len(list(REVIEW_DIR.glob("*.meta.json"))),
-            "actions": len(list(ACTIONS_DIR.glob("*.json"))),
-            "failed": len(list(FAILED_DIR.glob("*.json"))),
-        },
+    # Queue sizes
+    health_status["queue_sizes"] = {
+        "pending": len(list(PENDING_DIR.glob("*.json"))),
+        "review": len(list(REVIEW_DIR.glob("*.meta.json"))),
+        "actions": len(list(ACTIONS_DIR.glob("*.json"))),
+        "failed": len(list(FAILED_DIR.glob("*.json"))),
     }
+    
+    # Check if there are too many failed actions
+    if health_status["queue_sizes"]["failed"] > 50:
+        health_status["status"] = "warning"
+    
+    return health_status
 
 
 @app.post("/api/token/log")
-def log_token(token_data: dict):
+def log_token(token_data: TokenLogRequest):
     """Log token usage from agents."""
     try:
         usage_id = log_token_usage(
-            agent=token_data.get('agent', 'unknown'),
-            model=token_data.get('model', 'unknown'),
-            input_tokens=token_data.get('input_tokens', 0),
-            output_tokens=token_data.get('output_tokens', 0),
-            session_id=token_data.get('session_id'),
+            agent=token_data.agent,
+            model=token_data.model,
+            input_tokens=token_data.input_tokens,
+            output_tokens=token_data.output_tokens,
+            session_id=token_data.session_id,
         )
         return {"status": "ok", "id": usage_id}
     except Exception as e:

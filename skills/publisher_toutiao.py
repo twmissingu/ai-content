@@ -90,22 +90,24 @@ def publish(target_id: str) -> bool:
             page.wait_for_load_state("networkidle")
             page.wait_for_timeout(2000)
 
-            # Fill title
+            # Fill title - use locator.fill() which is safe from injection
             title_input = page.locator("input[placeholder*='标题'], .article-title-input")
-            if title_input.is_visible():
-                title_input.fill(title[:64])  # Toutiao title max 64 chars
+            if title_input.count() > 0 and title_input.first.is_visible():
+                title_input.first.fill(title[:64])  # Toutiao title max 64 chars
             else:
                 print("[toutiao] Title input not found, trying fallback")
-                page.evaluate(f"document.querySelector('input')?.value = '{title[:30]}'")
+                # Use page.evaluate with JSON serialization to prevent injection
+                safe_title = json.dumps(title[:30])
+                page.evaluate(f"document.querySelector('input')?.value = {safe_title}")
 
-            # Fill content
+            # Fill content - use locator.fill() which is safe from injection
             content_editor = page.locator(".ql-editor, [contenteditable='true'], .editor-content")
-            if content_editor.is_visible():
-                content_editor.fill(content[:5000])
+            if content_editor.count() > 0 and content_editor.first.is_visible():
+                content_editor.first.fill(content[:5000])
             else:
-                page.evaluate(f"""
-                    document.querySelector('[contenteditable="true"]')?.innerText = `{content[:1000]}`;
-                """)
+                # Use page.evaluate with JSON serialization to prevent injection
+                safe_content = json.dumps(content[:1000])
+                page.evaluate(f"document.querySelector('[contenteditable=\"true\"]')?.innerText = {safe_content}")
 
             page.wait_for_timeout(2000)
 

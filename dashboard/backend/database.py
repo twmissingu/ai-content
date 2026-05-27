@@ -127,6 +127,8 @@ def init_db():
         """)
         
         # Create FTS5 virtual table for knowledge base search
+        # Use trigram tokenizer for better Chinese support (SQLite 3.34+)
+        # trigram tokenizer indexes all 3-character sequences, works well with CJK
         conn.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS kb_search 
             USING fts5(
@@ -134,7 +136,7 @@ def init_db():
                 title, 
                 content, 
                 section,
-                tokenize='unicode61'
+                tokenize='trigram'
             )
         """)
     

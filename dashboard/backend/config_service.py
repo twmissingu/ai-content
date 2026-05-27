@@ -157,11 +157,28 @@ def load_config_from_file(filename: str, defaults: dict = None) -> dict:
 
 def save_config_to_file(filename: str, config: dict):
     """Save configuration to JSON file with atomic write."""
+    import os
     path = CONFIG_DIR / filename
     tmp = CONFIG_DIR / f".{filename}.tmp"
-    tmp.write_text(json.dumps(config, ensure_ascii=False, indent=2))
-    import os
-    os.rename(tmp, path)
+    
+    try:
+        # Ensure config directory exists
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # Write to temp file first (atomic write pattern)
+        tmp.write_text(json.dumps(config, ensure_ascii=False, indent=2))
+        
+        # Sync to disk before rename
+        with open(tmp, 'r') as f:
+            os.fsync(f.fileno())
+        
+        # Atomic rename
+        os.rename(tmp, path)
+    except Exception as e:
+        # Clean up temp file on error
+        if tmp.exists():
+            tmp.unlink()
+        raise RuntimeError(f"Failed to save config {filename}: {e}")
 
 
 def get_schedule_config() -> dict:

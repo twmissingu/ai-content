@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-const API_BASE = 'http://localhost:8710'
+// API base URL - use relative path in development (Vite proxy), configurable in production
+const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
 
 export const useDashboardStore = defineStore('dashboard', () => {
   const agents = ref<Record<string, any>>({})

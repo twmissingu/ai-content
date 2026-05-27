@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.1] - 2026-05-27
+
+### Security
+
+- **skills/publisher_toutiao.py**: Fix XSS vulnerability — use JSON serialization for Playwright evaluate
+- **dashboard/backend/main.py**: Use threading.Event for safe thread shutdown
+
+### Fixed
+
+- **dashboard/backend/database.py**: Fix FTS5 tokenizer — change from unicode61 to trigram for Chinese support
+- **dashboard/backend/main.py**: Enhanced health check with service status and search index info
+- **dashboard/backend/main.py**: Add Pydantic request validation for token logging
+- **dashboard/backend/config_service.py**: Improve config save error handling with atomic writes
+- **dashboard/frontend/src/stores/dashboard.ts**: Make API base URL configurable via environment variable
+
+### Added
+
+- **requirements.txt**: Python dependencies for Docker and local installation
+
 ## [0.3.0] - 2026-05-27
 
 ### Security
