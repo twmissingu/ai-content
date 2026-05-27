@@ -14,6 +14,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
   const error = ref<string | null>(null)
 
   async function fetchPipeline() {
+    loading.value = true
     try {
       const res = await fetch(`${API_BASE}/api/pipeline/status`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -24,10 +25,13 @@ export const useDashboardStore = defineStore('dashboard', () => {
     } catch (e: any) {
       console.error('fetchPipeline:', e)
       error.value = e.message
+    } finally {
+      loading.value = false
     }
   }
 
   async function fetchApprovalQueue() {
+    loading.value = true
     try {
       const res = await fetch(`${API_BASE}/api/approval/queue`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -37,10 +41,13 @@ export const useDashboardStore = defineStore('dashboard', () => {
     } catch (e: any) {
       console.error('fetchApprovalQueue:', e)
       error.value = e.message
+    } finally {
+      loading.value = false
     }
   }
 
   async function fetchTopics() {
+    loading.value = true
     try {
       const res = await fetch(`${API_BASE}/api/topics`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -50,10 +57,13 @@ export const useDashboardStore = defineStore('dashboard', () => {
     } catch (e: any) {
       console.error('fetchTopics:', e)
       error.value = e.message
+    } finally {
+      loading.value = false
     }
   }
 
   async function fetchConfig() {
+    loading.value = true
     try {
       const res = await fetch(`${API_BASE}/api/config`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -63,6 +73,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
     } catch (e: any) {
       console.error('fetchConfig:', e)
       error.value = e.message
+    } finally {
+      loading.value = false
     }
   }
 

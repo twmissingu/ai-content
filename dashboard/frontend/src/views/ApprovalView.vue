@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
-import StatusBadge from '../components/StatusBadge.vue'
 
 const store = useDashboardStore()
 const selectedId = ref<string | null>(null)

@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { onMounted, onUnmounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useDashboardStore } from './stores/dashboard'
 
-const router = useRouter()
 const route = useRoute()
 const store = useDashboardStore()
 
@@ -16,6 +15,7 @@ const tabs = [
 ]
 
 const isRefreshing = ref(false)
+let refreshInterval: ReturnType<typeof setInterval> | null = null
 
 async function refreshAll() {
   isRefreshing.value = true
@@ -31,10 +31,17 @@ async function refreshAll() {
 onMounted(() => {
   refreshAll()
   // Auto-refresh every 10s
-  setInterval(() => {
+  refreshInterval = setInterval(() => {
     store.fetchPipeline()
     store.fetchApprovalQueue()
   }, 10000)
+})
+
+onUnmounted(() => {
+  if (refreshInterval) {
+    clearInterval(refreshInterval)
+    refreshInterval = null
+  }
 })
 </script>
 

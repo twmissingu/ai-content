@@ -15,11 +15,26 @@
 
 ### Technical
 
+- **design-system.css**: Created comprehensive CSS design system with 520+ lines covering:
+  - Color variables (primary, semantic, neutral)
+  - Spacing scale (xs to 4xl)
+  - Typography scale (xs to 5xl)
+  - Shadow system (sm to xl)
+  - Transition timing (fast, normal, slow)
+  - Border radius scale (sm to full)
+  - Layout constants (header, nav, content widths)
+  - Global reset and base styles
+  - Utility classes for buttons, cards, badges
+  - Loading and animation utilities
 - All components now use CSS variables from design system
 - Consistent spacing, typography, and color usage across all views
 - Improved responsive design for mobile devices
 - Better loading and empty state handling
 - Store updated with budget tracking and error handling
+- **Fixed**: setInterval memory leak in App.vue (cleanup on unmount)
+- **Fixed**: Store loading state now properly used in all fetch operations
+- **Fixed**: fetchSections error handling with loading state
+- **Fixed**: TypeScript warnings - removed unused imports and variables
 
 ## [0.3.1] - 2026-05-27
 

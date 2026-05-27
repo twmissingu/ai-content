@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
 const query = ref('')
@@ -7,6 +7,7 @@ const results = ref<any[]>([])
 const sections = ref<any[]>([])
 const searched = ref(false)
 const loading = ref(false)
+const loadingSections = ref(false)
 const selectedSection = ref<string | null>(null)
 
 async function search() {
@@ -28,12 +29,17 @@ async function search() {
 }
 
 async function fetchSections() {
+  loadingSections.value = true
   try {
     const res = await fetch(`${API_BASE}/api/kb/sections`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     sections.value = data.sections || []
   } catch (e) {
     console.error('Failed to fetch sections:', e)
+    sections.value = []
+  } finally {
+    loadingSections.value = false
   }
 }
 
@@ -105,19 +111,25 @@ fetchSections()
 
     <!-- Sections Overview -->
     <div class="sections-grid">
-      <div 
-        v-for="s in sections" 
-        :key="s.name"
-        class="card section-card"
-        :class="{ active: selectedSection === s.name }"
-        @click="selectSection(s.name)"
-      >
-        <span class="section-icon">{{ getSectionIcon(s.name) }}</span>
-        <div class="section-info">
-          <span class="section-name">{{ s.name }}</span>
-          <span class="section-count">{{ s.count }} 篇</span>
-        </div>
+      <div v-if="loadingSections" class="card section-card loading">
+        <div class="loading-spinner"></div>
+        <span>加载分类...</span>
       </div>
+      <template v-else>
+        <div 
+          v-for="s in sections" 
+          :key="s.name"
+          class="card section-card"
+          :class="{ active: selectedSection === s.name }"
+          @click="selectSection(s.name)"
+        >
+          <span class="section-icon">{{ getSectionIcon(s.name) }}</span>
+          <div class="section-info">
+            <span class="section-name">{{ s.name }}</span>
+            <span class="section-count">{{ s.count }} 篇</span>
+          </div>
+        </div>
+      </template>
     </div>
 
     <!-- Search Results -->
@@ -292,6 +304,11 @@ fetchSections()
   cursor: pointer;
   transition: all var(--transition-fast);
   min-width: 120px;
+}
+
+.section-card.loading {
+  cursor: default;
+  opacity: 0.7;
 }
 
 .section-card:hover {
