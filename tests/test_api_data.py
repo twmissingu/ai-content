@@ -79,3 +79,50 @@ class TestAnalytics:
         data = resp.json()
         assert "pipeline_stats" in data
         assert "total_sessions" in data["pipeline_stats"]
+
+
+class TestCostDataCSVFallback:
+    """Test cost data CSV fallback path."""
+
+    @pytest.fixture
+    def csv_client(self, tmp_path, monkeypatch):
+        """Client that triggers CSV fallback."""
+        # Make get_token_usage_stats raise an exception
+        monkeypatch.setattr("dashboard.backend.routes.data.get_token_usage_stats", lambda days=30: (_ for _ in ()).throw(Exception("DB error")))
+        monkeypatch.setattr("dashboard.backend.routes.data.check_budget_limit", lambda: {"is_exceeded": False})
+
+        # Create a CSV file
+        cost_dir = tmp_path / "data" / "logs"
+        cost_dir.mkdir(parents=True)
+        csv_path = cost_dir / "cost.csv"
+        csv_path.write_text(
+            "timestamp,prompt_tokens,completion_tokens,total_tokens,model,agent\n"
+            "2026-05-28T10:00:00,1000,500,1500,mimo-v2.5,scout\n"
+            "2026-05-28T11:00:00,2000,1000,3000,mimo-v2.5,writer\n"
+            "2026-05-27T10:00:00,500,250,750,mimo-v2.5,scout\n"
+        )
+        monkeypatch.setattr("dashboard.backend.routes.data.PROJECT_ROOT", tmp_path)
+
+        from dashboard.backend.main import app
+        from fastapi.testclient import TestClient
+        return TestClient(app)
+
+    def test_csv_fallback_returns_daily(self, csv_client):
+        resp = csv_client.get("/api/data/cost")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "daily" in data
+        assert data["source"] == "csv_fallback"
+
+    def test_csv_fallback_groups_by_date(self, csv_client):
+        resp = csv_client.get("/api/data/cost")
+        data = resp.json()
+        # Should have 2 dates: 2026-05-28 and 2026-05-27
+        dates = [d["date"] for d in data["daily"]]
+        assert "2026-05-28" in dates
+        assert "2026-05-27" in dates
+
+    def test_csv_fallback_calculates_monthly(self, csv_client):
+        resp = csv_client.get("/api/data/cost")
+        data = resp.json()
+        assert data["monthly_total"] > 0

@@ -197,6 +197,106 @@ class TestResetClient:
         reset_client()
 
 
+# ── chat() error handling ─────────────────────────────────────────────
+class TestChatErrors:
+    """Test chat function error handling."""
+
+    @patch("skills.llm._get_client")
+    def test_chat_raises_on_http_error(self, mock_get_client):
+        import httpx
+        from skills.llm import chat, LLMError
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.text = "Rate limited"
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "429", request=MagicMock(), response=mock_response
+        )
+        mock_client.post.return_value = mock_response
+        mock_get_client.return_value = mock_client
+
+        with pytest.raises(LLMError, match="429"):
+            chat("system", "user", model="single-model", track_cost=False)
+
+    @patch("skills.llm._get_client")
+    def test_chat_raises_on_timeout(self, mock_get_client):
+        import httpx
+        from skills.llm import chat, LLMError
+
+        mock_client = MagicMock()
+        mock_client.post.side_effect = httpx.TimeoutException("Connection timed out")
+        mock_get_client.return_value = mock_client
+
+        with pytest.raises(LLMError, match="timed out"):
+            chat("system", "user", model="single-model", track_cost=False)
+
+    @patch("skills.llm._get_client")
+    def test_chat_raises_on_generic_error(self, mock_get_client):
+        from skills.llm import chat, LLMError
+
+        mock_client = MagicMock()
+        mock_client.post.side_effect = ConnectionError("Network unreachable")
+        mock_get_client.return_value = mock_client
+
+        with pytest.raises(LLMError, match="failed"):
+            chat("system", "user", model="single-model", track_cost=False)
+
+    @patch("skills.llm._get_client")
+    def test_chat_json_mode_sets_response_format(self, mock_get_client):
+        from skills.llm import chat
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": '{"k":"v"}'}}],
+            "usage": {},
+        }
+        mock_response.raise_for_status = MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_get_client.return_value = mock_client
+
+        result = chat("system", "user", json_mode=True, track_cost=False)
+        body = mock_client.post.call_args[1]["json"]
+        assert body["response_format"] == {"type": "json_object"}
+
+    @patch("skills.llm._get_client")
+    def test_chat_with_explicit_model(self, mock_get_client):
+        from skills.llm import chat
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {},
+        }
+        mock_response.raise_for_status = MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_get_client.return_value = mock_client
+
+        chat("system", "user", model="custom-model", track_cost=False)
+        body = mock_client.post.call_args[1]["json"]
+        assert body["model"] == "custom-model"
+
+    @patch("skills.llm._get_client")
+    def test_chat_with_custom_max_tokens(self, mock_get_client):
+        from skills.llm import chat
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {},
+        }
+        mock_response.raise_for_status = MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_get_client.return_value = mock_client
+
+        chat("system", "user", max_tokens=100, track_cost=False)
+        body = mock_client.post.call_args[1]["json"]
+        assert body["max_tokens"] == 100
+
+
 # ── _record_usage ────────────────────────────────────────────────────
 class TestRecordUsage:
     """Test usage recording."""

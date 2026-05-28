@@ -17,6 +17,24 @@
     "structure": "3秒钩子 → Emoji要点列表 → 总结互动",
     "illustrations": 1
   },
+  "tech_science_wechat": {
+    "name": "技术科普-微信",
+    "platform": "wechat",
+    "length": 3000,
+    "tone": "故事化+口语化+有深度",
+    "stance": "用故事讲技术，从产品切入，升华收束",
+    "structure": "产品钩子 → 概念解释 → 起源故事 → 发展历程 → 核心论点 → 思辨 → 升华",
+    "illustrations": 0
+  },
+  "tech_science_xhs": {
+    "name": "技术科普-小红书",
+    "platform": "xiaohongshu",
+    "length": 600,
+    "tone": "口语化+冷知识+emoji",
+    "stance": "30秒让人get一个技术概念",
+    "structure": "冷知识钩子 → 3-5个Emoji要点 → 一句话总结 → 收藏引导",
+    "illustrations": 1
+  },
   "wechat_default": {
     "name": "公众号默认",
     "platform": "wechat",
