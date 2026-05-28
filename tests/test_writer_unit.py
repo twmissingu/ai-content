@@ -24,6 +24,12 @@ def writer_agent():
     agent.logger = MagicMock()
     agent._lock = None
     agent._metrics = None
+    agent._quality_gates = {
+        "proofread_threshold": 60,
+        "critique_threshold": 70,
+        "title_threshold": 75,
+        "max_rewrite_rounds": 3,
+    }
     return agent
 
 

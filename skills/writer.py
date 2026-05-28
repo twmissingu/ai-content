@@ -19,6 +19,7 @@ from typing import Any, Optional
 
 from config.settings import (
     ACTIONS_DIR,
+    CONFIG_DIR,
     DOMAIN,
     IMAGES_DIR,
     KB_DIR,
@@ -34,6 +35,33 @@ from config.settings import (
 )
 from skills.common import AgentBase, agent_main, load_prompt
 from skills.llm import chat, chat_structured, LLMError
+
+
+def _load_quality_gates() -> dict:
+    """Load quality gate thresholds from config/quality_gates.json."""
+    path = CONFIG_DIR / "quality_gates.json"
+    if not path.exists():
+        return {
+            "proofread_threshold": 60,
+            "critique_threshold": 70,
+            "title_threshold": 75,
+            "max_rewrite_rounds": 3,
+        }
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return {
+            "proofread_threshold": data.get("proofread_threshold", 60),
+            "critique_threshold": data.get("critique_threshold", 70),
+            "title_threshold": data.get("title_threshold", 75),
+            "max_rewrite_rounds": data.get("max_rewrite_rounds", 3),
+        }
+    except (json.JSONDecodeError, OSError):
+        return {
+            "proofread_threshold": 60,
+            "critique_threshold": 70,
+            "title_threshold": 75,
+            "max_rewrite_rounds": 3,
+        }
 
 # ── Constants ──────────────────────────────────────────────────────
 STAGES = [
@@ -52,15 +80,16 @@ TYPE = "wechat"  # Phase 1: single worker
 # ── Writer Agent ───────────────────────────────────────────────────
 class WriterAgent(AgentBase):
     """Writer agent with 7-stage pipeline."""
-    
+
     name = "writer"
     version = "1.0.0"
-    
+
     def __init__(self, worker_type: str = "wechat"):
         super().__init__(enable_metrics=True)
         self.worker_type = worker_type
         self._status_path = STATUS_DIR / f"writer-worker-{worker_type}.json"
         self._run_timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        self._quality_gates = _load_quality_gates()
     
     def write_status(self, stage: str, progress_pct: int, detail: str,
                      error: Optional[str] = None, **extra) -> None:
@@ -233,7 +262,7 @@ class WriterAgent(AgentBase):
         # Combined score
         final_score = int(regex_score * 0.4 + llm_score * 0.6)
 
-        if final_score < QUALITY_THRESHOLD:
+        if final_score < self._quality_gates["proofread_threshold"]:
             # If below threshold, apply LLM suggestions and re-check
             suggestion = llm_result.get("suggestion", "")
             if suggestion:
@@ -289,7 +318,7 @@ class WriterAgent(AgentBase):
         # ── Combine scores (scorer 70% + critic 30%) ──
         score = int(scorer_score * 0.7 + critic_score * 0.3)
 
-        if score >= QUALITY_THRESHOLD or round_num >= MAX_REWRITE_ROUNDS:
+        if score >= self._quality_gates["critique_threshold"] or round_num >= self._quality_gates["max_rewrite_rounds"]:
             return text, score, score >= QUALITY_THRESHOLD
 
         # Rewrite — combine feedback from both perspectives
@@ -358,7 +387,17 @@ class WriterAgent(AgentBase):
             return topic_title, []
 
         candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
-        return candidates[0]["title"], candidates
+
+        # Use title_threshold to decide if best candidate is good enough
+        best = candidates[0]
+        if best.get("score", 0) < self._quality_gates["title_threshold"]:
+            # Below threshold — still use it but log warning
+            self.logger.warning(
+                f"Best title score {best.get('score', 0)} below threshold "
+                f"{self._quality_gates['title_threshold']}: {best['title']}"
+            )
+
+        return best["title"], candidates
 
     # ── Stage 7: Illustrations ─────────────────────────────────────
     def _generate_html_templates(self, text: str, topic_title: str, img_dir: Path) -> list[Path]:
@@ -538,7 +577,7 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
         self.write_status("批评修订", 50, "评委评分中")
         self.start_stage("critique")
         critique_scores: list[int] = []
-        for round_num in range(1, MAX_REWRITE_ROUNDS + 1):
+        for round_num in range(1, self._quality_gates["max_rewrite_rounds"] + 1):
             text, score, passed = self._critique(text, topic["title"], round_num)
             critique_scores.append(score)
             self.write_status("批评修订", 50 + round_num * 10,
@@ -546,7 +585,7 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
             self.logger.info(f"Stage 4 round {round_num}: score={score}, passed={passed}")
             if passed:
                 break
-            if round_num < MAX_REWRITE_ROUNDS:
+            if round_num < self._quality_gates["max_rewrite_rounds"]:
                 self.write_status("批评修订", 50 + round_num * 10,
                               f"第{round_num}轮未通过，开始第{round_num + 1}轮")
         self.end_stage("critique")
