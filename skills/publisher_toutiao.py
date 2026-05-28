@@ -12,8 +12,6 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from config.settings import CONFIG_DIR, FAILED_DIR, PROJECT_ROOT, REVIEW_DIR
 
 TOUTIAO_LOGIN_URL = "https://mp.toutiao.com/"

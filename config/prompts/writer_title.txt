@@ -1,0 +1,22 @@
+请为以下文章生成3个候选标题。
+
+文章选题: {topic_title}
+文章摘要: {article_preview}
+
+标题要求:
+- 字数: 15-30字
+- 风格: 科技公众号/博客风格，吸引点击
+- 必须有具体信息点，不能空泛
+
+评分维度（每个标题独立评分）:
+1. 吸引力 (0-30): 是否让人想点击？
+2. 准确性 (0-25): 是否准确反映文章内容？
+3. 独特性 (0-25): 是否与众不同？
+4. SEO (0-20): 是否包含关键词，利于搜索？
+
+输出JSON数组:
+[
+  {{"title": "标题1", "score": 82, "attraction": 25, "accuracy": 22, "uniqueness": 18, "seo": 17, "reason": "选择理由"}},
+  {{"title": "标题2", "score": 75, "attraction": 20, "accuracy": 20, "uniqueness": 15, "seo": 20, "reason": "选择理由"}},
+  {{"title": "标题3", "score": 68, "attraction": 18, "accuracy": 18, "uniqueness": 12, "seo": 20, "reason": "选择理由"}}
+]

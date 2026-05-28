@@ -36,8 +36,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional, TypeVar, Union
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from config.settings import STATUS_DIR, FAILED_DIR, DATA_DIR
 
 # Import metrics (lazy to avoid circular imports)
@@ -114,6 +112,28 @@ def get_agent_logger(
             logger.addHandler(file_handler)
     
     return logging.LoggerAdapter(logger, {'agent': agent_name})
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Prompt Template Loader
+# ═══════════════════════════════════════════════════════════════════════
+
+def load_prompt(template_name: str, **kwargs) -> str:
+    """Load a prompt template from config/prompts/ and format with kwargs.
+
+    Args:
+        template_name: Template filename (without .txt extension)
+        **kwargs: Variables to substitute in the template
+
+    Returns:
+        Formatted prompt string
+    """
+    from config.settings import CONFIG_DIR
+    template_path = CONFIG_DIR / "prompts" / f"{template_name}.txt"
+    if not template_path.exists():
+        raise FileNotFoundError(f"Prompt template not found: {template_path}")
+    template = template_path.read_text(encoding="utf-8")
+    return template.format(**kwargs)
 
 
 # ═══════════════════════════════════════════════════════════════════════

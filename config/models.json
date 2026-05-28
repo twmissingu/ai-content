@@ -1,0 +1,35 @@
+{
+  "models": {
+    "mimo-v2.5": {
+      "cost_per_1k_tokens": 0.002,
+      "provider": "xiaomi",
+      "description": "小米 MiMo v2.5",
+      "tier": "standard"
+    },
+    "gpt-4o": {
+      "cost_per_1k_tokens": 0.005,
+      "provider": "openai",
+      "description": "GPT-4o",
+      "tier": "premium"
+    },
+    "gpt-4o-mini": {
+      "cost_per_1k_tokens": 0.001,
+      "provider": "openai",
+      "description": "GPT-4o Mini",
+      "tier": "economy"
+    },
+    "claude-sonnet-4": {
+      "cost_per_1k_tokens": 0.003,
+      "provider": "anthropic",
+      "description": "Claude Sonnet 4",
+      "tier": "standard"
+    },
+    "deepseek-v3": {
+      "cost_per_1k_tokens": 0.001,
+      "provider": "deepseek",
+      "description": "DeepSeek V3",
+      "tier": "economy"
+    }
+  },
+  "default_cost_per_1k": 0.003
+}

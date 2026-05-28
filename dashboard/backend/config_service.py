@@ -14,9 +14,6 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-
 from config.settings import (
     CONFIG_DIR,
     MONTHLY_BUDGET_USD,

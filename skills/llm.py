@@ -135,6 +135,7 @@ def _get_client() -> httpx.Client:
 
 # ── Cost tracking (thread-safe) ────────────────────────────────────
 _cost_lock = threading.Lock()
+_csv_migration_checked = False
 
 
 def _record_usage(data: dict, agent: str = "unknown") -> None:
@@ -151,31 +152,28 @@ def _record_usage(data: dict, agent: str = "unknown") -> None:
     # Record to CSV (with lock for thread safety)
     with _cost_lock:
         try:
+            global _csv_migration_checked
             cost_path = LOGS_DIR / "cost.csv"
             cost_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Check if file exists and has old header (5 columns vs 6)
-            needs_migration = False
-            if cost_path.exists():
-                with open(cost_path, 'r') as f:
-                    first_line = f.readline().strip()
-                    # Old header: timestamp,prompt_tokens,completion_tokens,total_tokens,model
-                    if first_line and 'agent' not in first_line:
-                        needs_migration = True
-            
-            if needs_migration:
-                # Migrate: read all lines, add agent column, rewrite
-                with open(cost_path, 'r') as f:
-                    lines = f.readlines()
-                with open(cost_path, 'w') as f:
-                    f.write("timestamp,prompt_tokens,completion_tokens,total_tokens,model,agent\n")
-                    for line in lines[1:]:  # skip old header
-                        line = line.rstrip('\n')
-                        if line:
-                            f.write(f"{line},unknown\n")
-                logger.info("Migrated cost.csv to new format with agent column")
-            elif not cost_path.exists():
-                cost_path.write_text("timestamp,prompt_tokens,completion_tokens,total_tokens,model,agent\n")
+
+            # One-time migration check (not on every call)
+            if not _csv_migration_checked:
+                if cost_path.exists():
+                    with open(cost_path, 'r') as f:
+                        first_line = f.readline().strip()
+                        if first_line and 'agent' not in first_line:
+                            with open(cost_path, 'r') as f2:
+                                lines = f2.readlines()
+                            with open(cost_path, 'w') as f2:
+                                f2.write("timestamp,prompt_tokens,completion_tokens,total_tokens,model,agent\n")
+                                for line in lines[1:]:
+                                    line = line.rstrip('\n')
+                                    if line:
+                                        f2.write(f"{line},unknown\n")
+                            logger.info("Migrated cost.csv to new format with agent column")
+                elif not cost_path.exists():
+                    cost_path.write_text("timestamp,prompt_tokens,completion_tokens,total_tokens,model,agent\n")
+                _csv_migration_checked = True
             
             row = (
                 f"{time.strftime('%Y-%m-%dT%H:%M:%S')},"

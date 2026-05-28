@@ -54,6 +54,22 @@ const agentList = computed(() => {
   }))
 })
 
+const agents = computed(() => store.agents as Record<string, any>)
+
+const kanbanCounts = computed(() => {
+  const agentData = store.agents
+  const scoutRunning = agentData.scout && agentData.scout.progress_pct < 100 && !agentData.scout.error
+  const writerRunning = agentData.writer && agentData.writer.progress_pct < 100 && !agentData.writer.error
+  const publisherRunning = agentData.publisher && agentData.publisher.progress_pct < 100 && !agentData.publisher.error
+
+  return {
+    discovering: scoutRunning ? 1 : 0,
+    writing: writerRunning ? 1 : 0,
+    pending: store.approvalQueue.length,
+    published: publisherRunning ? 1 : 0,
+  }
+})
+
 const stageNames: Record<string, string> = {
   scout: '选题侦察',
   writer: '内容写作',
@@ -273,6 +289,94 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
         </div>
         <div class="budget-percentage">
           {{ store.budget.percentage?.toFixed(1) || '0' }}% 已使用
+        </div>
+      </div>
+    </div>
+
+    <!-- Content Pipeline Kanban -->
+    <div class="card pipeline-kanban-card">
+      <div class="card-header">
+        <h3 class="card-title">📋 内容流转</h3>
+        <span class="kanban-hint">实时显示内容在管线中的位置</span>
+      </div>
+      <div class="kanban-board">
+        <div class="kanban-column">
+          <div class="kanban-column-header">
+            <span class="kanban-column-icon">🔍</span>
+            <span class="kanban-column-title">选题中</span>
+            <span class="kanban-column-count">{{ kanbanCounts.discovering }}</span>
+          </div>
+          <div class="kanban-cards">
+            <div v-if="kanbanCounts.discovering === 0" class="kanban-empty">空闲</div>
+            <div v-else class="kanban-card kanban-active">
+              <div class="kanban-card-title">Scout 运行中...</div>
+              <div class="kanban-card-detail">{{ agents.scout?.detail || '扫描热门话题' }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="kanban-connector">
+          <span class="connector-arrow">→</span>
+        </div>
+        <div class="kanban-column">
+          <div class="kanban-column-header">
+            <span class="kanban-column-icon">✍️</span>
+            <span class="kanban-column-title">写作中</span>
+            <span class="kanban-column-count">{{ kanbanCounts.writing }}</span>
+          </div>
+          <div class="kanban-cards">
+            <div v-if="kanbanCounts.writing === 0" class="kanban-empty">空闲</div>
+            <div v-else class="kanban-card kanban-active">
+              <div class="kanban-card-title">Writer 运行中...</div>
+              <div class="kanban-card-detail">{{ agents.writer?.detail || '7阶段管线' }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="kanban-connector">
+          <span class="connector-arrow">→</span>
+        </div>
+        <div class="kanban-column">
+          <div class="kanban-column-header">
+            <span class="kanban-column-icon">📋</span>
+            <span class="kanban-column-title">待审批</span>
+            <span class="kanban-column-count" :class="{ 'has-items': store.approvalQueue.length > 0 }">
+              {{ store.approvalQueue.length }}
+            </span>
+          </div>
+          <div class="kanban-cards">
+            <div v-if="store.approvalQueue.length === 0" class="kanban-empty">暂无</div>
+            <div
+              v-for="article in store.approvalQueue.slice(0, 3)"
+              :key="article.id"
+              class="kanban-card"
+              @click="$router.push('/approval')"
+            >
+              <div class="kanban-card-title">{{ article.meta.topic || '未知选题' }}</div>
+              <div class="kanban-card-meta">
+                <span>📊 {{ article.meta.proofread_score || '-' }}分</span>
+                <span>📝 {{ article.meta.word_count || 0 }}字</span>
+              </div>
+            </div>
+            <div v-if="store.approvalQueue.length > 3" class="kanban-more">
+              +{{ store.approvalQueue.length - 3 }} 更多
+            </div>
+          </div>
+        </div>
+        <div class="kanban-connector">
+          <span class="connector-arrow">→</span>
+        </div>
+        <div class="kanban-column">
+          <div class="kanban-column-header">
+            <span class="kanban-column-icon">📤</span>
+            <span class="kanban-column-title">已分发</span>
+            <span class="kanban-column-count">{{ kanbanCounts.published }}</span>
+          </div>
+          <div class="kanban-cards">
+            <div v-if="kanbanCounts.published === 0" class="kanban-empty">暂无</div>
+            <div v-else class="kanban-card kanban-success">
+              <div class="kanban-card-title">今日已发布</div>
+              <div class="kanban-card-detail">{{ kanbanCounts.published }} 篇文章</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -609,6 +713,171 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
 .budget-percentage {
   font-size: var(--text-sm);
   color: var(--text-secondary);
+}
+
+/* ── Content Pipeline Kanban ─────────────────────────────────── */
+.pipeline-kanban-card {
+  overflow: hidden;
+}
+
+.pipeline-kanban-card .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.kanban-hint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.kanban-board {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  overflow-x: auto;
+  padding-bottom: var(--space-sm);
+}
+
+.kanban-column {
+  flex: 1;
+  min-width: 160px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+}
+
+.kanban-column-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--divider);
+}
+
+.kanban-column-icon {
+  font-size: var(--text-lg);
+}
+
+.kanban-column-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.kanban-column-count {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  min-width: 20px;
+  text-align: center;
+}
+
+.kanban-column-count.has-items {
+  background: var(--warning);
+  color: white;
+}
+
+.kanban-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.kanban-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border-light);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.kanban-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.kanban-card.kanban-active {
+  border-left: 3px solid var(--primary);
+  background: var(--primary-light);
+}
+
+.kanban-card.kanban-success {
+  border-left: 3px solid var(--success);
+  background: var(--success-light);
+}
+
+.kanban-card-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kanban-card-detail,
+.kanban-card-meta {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.kanban-empty {
+  font-size: var(--text-xs);
+  color: var(--text-disabled);
+  text-align: center;
+  padding: var(--space-md);
+}
+
+.kanban-more {
+  font-size: var(--text-xs);
+  color: var(--primary);
+  text-align: center;
+  padding: var(--space-xs);
+  cursor: pointer;
+}
+
+.kanban-more:hover {
+  text-decoration: underline;
+}
+
+.kanban-connector {
+  display: flex;
+  align-items: center;
+  padding-top: 40px; /* Align with cards, not header */
+}
+
+.connector-arrow {
+  font-size: var(--text-xl);
+  color: var(--text-disabled);
+}
+
+@media (max-width: 768px) {
+  .kanban-board {
+    flex-direction: column;
+  }
+
+  .kanban-column {
+    min-width: 100%;
+  }
+
+  .kanban-connector {
+    padding-top: 0;
+    justify-content: center;
+  }
+
+  .connector-arrow {
+    transform: rotate(90deg);
+  }
 }
 
 /* ── Agent Cards Grid ────────────────────────────────────────── */

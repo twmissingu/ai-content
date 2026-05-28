@@ -13,8 +13,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from config.settings import KB_DIR, REVIEW_DIR
 from skills.common import AgentBase, agent_main
 

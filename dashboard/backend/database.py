@@ -22,9 +22,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional, TypeVar
 
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-
 from config.settings import DATA_DIR
 
 DATABASE_PATH = DATA_DIR / "analytics.db"
@@ -408,18 +405,29 @@ def get_approval_records(version_id: int = None, limit: int = 100) -> list[dict]
 
 # ── Token Usage ────────────────────────────────────────────────────
 
-def log_token_usage(agent: str, model: str, input_tokens: int, 
+def _load_model_costs() -> tuple[dict[str, float], float]:
+    """Load model cost rates from config/models.json."""
+    import json as _json
+    config_path = Path(__file__).resolve().parent.parent.parent / "config" / "models.json"
+    default_cost = 0.003
+    if not config_path.exists():
+        return {}, default_cost
+    try:
+        data = _json.loads(config_path.read_text())
+        models = data.get("models", {})
+        costs = {name: cfg.get("cost_per_1k_tokens", default_cost) for name, cfg in models.items()}
+        return costs, data.get("default_cost_per_1k", default_cost)
+    except Exception:
+        return {}, default_cost
+
+
+_MODEL_COSTS, _DEFAULT_COST = _load_model_costs()
+
+
+def log_token_usage(agent: str, model: str, input_tokens: int,
                    output_tokens: int, session_id: int = None) -> int:
     """Log token usage with cost estimation."""
-    # Cost estimation (approximate for common models)
-    cost_per_1k = {
-        'claude-sonnet-4': 0.003,
-        'gpt-4o': 0.005,
-        'deepseek-v3': 0.001,
-        'mimo-v2.5': 0.002,
-    }
-    
-    base_cost = cost_per_1k.get(model, 0.003)
+    base_cost = _MODEL_COSTS.get(model, _DEFAULT_COST)
     estimated_cost = (input_tokens + output_tokens) * base_cost / 1000
     
     with get_db() as conn:

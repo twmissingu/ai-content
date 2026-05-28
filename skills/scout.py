@@ -21,9 +21,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from config.settings import (
     ACTIONS_DIR,
     DOMAIN,
@@ -33,7 +30,7 @@ from config.settings import (
     TMP_DIR,
 )
 from skills.action import write_topic_pending
-from skills.common import AgentBase, agent_main, get_agent_logger, write_status as _write_status_fn
+from skills.common import AgentBase, agent_main, get_agent_logger, load_prompt, write_status as _write_status_fn
 from skills.llm import chat_structured, set_current_agent
 
 # Module-level logger for standalone functions
@@ -362,51 +359,15 @@ def score_candidate(candidate: dict, cold_start: bool) -> dict | None:
     freshness_score = 60  # default medium freshness
 
     # Call LLM to score
-    prompt = f"""你是资深内容选题专家，专注{DOMAIN}领域，擅长判断什么话题能引发科技读者共鸣。
-
-## 选题信息
-- 标题: {candidate['title']}
-- 来源: {source}
-- 领域: {DOMAIN}
-- 描述: {candidate.get('description', '无')[:200]}
-
-## 评分任务
-请从以下4个维度评分（0-100整数），每个维度给出具体判断依据:
-
-### 1. viral_score (热度) — 该话题当前的公众关注度和传播潜力
-- 90+: 全网热议、登上多个平台热搜，如"ChatGPT发布""Sora开放"
-- 70-89: 热度上升中，行业媒体在报道，如"某公司新一轮融资"
-- 50-69: 有一定关注度，但未出圈，如"某开源框架更新"
-- <50: 冷门或小众，如"某技术细节优化"
-
-### 2. saturation_score (饱和度) — 该话题已被多少媒体/创作者覆盖（注意：高饱和=差）
-- 90+: 烂大街，如"什么是大模型"这类科普文
-- 70-89: 覆盖较多，需要独特角度才有价值
-- 50-69: 适中，有差异化空间
-- <50: 蓝海领域，少有人写
-
-### 3. novelty_score (新颖度) — 是否有独特的切入角度或未被挖掘的维度
-- 90+: 前所未见的角度或颠覆性认知
-- 70-89: 有差异化空间，可从新视角切入
-- 50-69: 常规角度，但可以写得更深
-- <50: 陈词滥调，没有新意
-
-### 4. feasibility_score (可行性) — 能否找到足够素材、产出有价值的观点
-- 90+: 素材丰富，案例数据充足
-- 70-89: 需要一些调研，但可获取
-- 50-69: 素材有限，写作难度较大
-- <50: 难以展开，缺乏支撑
-
-## 方向标签
-请为选题分类一个方向标签，从以下选项中选择:
-AI应用、大模型、创业融资、科技政策、开发者工具、硬件芯片、互联网产品、区块链Web3、SaaS企业服务、自动驾驶、机器人、量子计算、生物科技、其他
-
-{"## 注意：系统刚启动，历史数据不足。请重点评估话题本身的价值和可讨论深度，saturation一律给0分。" if cold_start else ""}
-
-## 输出格式
-严格输出 JSON（不要 markdown 代码块）:
-{{"viral_score": 75, "saturation_score": 40, "novelty_score": 65, "feasibility_score": 80, "direction": "大模型", "rationale": "一句话理由，说明为什么现在写这个话题合适"}}
-"""
+    cold_start_note = "## 注意：系统刚启动，历史数据不足。请重点评估话题本身的价值和可讨论深度，saturation一律给0分。" if cold_start else ""
+    prompt = load_prompt(
+        "scout_scoring",
+        domain=DOMAIN,
+        title=candidate['title'],
+        source=source,
+        description=candidate.get('description', '无')[:200],
+        cold_start_note=cold_start_note,
+    )
 
     try:
         result = chat_structured(

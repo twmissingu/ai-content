@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -52,7 +52,7 @@ RUN mkdir -p /app/data/logs \
 EXPOSE 8710
 
 # Environment variables
-ENV CORS_ORIGINS="*"
+ENV CORS_ORIGINS="http://localhost:5173"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

@@ -23,8 +23,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from config.settings import DATA_DIR, DOMAIN, KB_DIR, STATUS_DIR
 from skills.common import AgentBase, agent_main
 from skills.llm import chat_structured

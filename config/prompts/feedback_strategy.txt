@@ -1,0 +1,22 @@
+你是一个内容策略分析师。基于以下数据，给出下一期内容的策略建议。
+
+## 历史数据
+{history_summary}
+
+## 爆款分析
+{viral_analysis}
+
+## 当前趋势
+{current_trends}
+
+请输出JSON:
+{{
+  "recommended_topics": ["选题1: 理由", "选题2: 理由", "选题3: 理由"],
+  "content_strategy": "一段话总结内容策略方向",
+  "platform_insights": {{
+    "wechat": "公众号内容建议",
+    "xiaohongshu": "小红书内容建议",
+    "douyin": "抖音内容建议"
+  }},
+  "risk_topics": ["应避免的选题方向: 理由"]
+}}

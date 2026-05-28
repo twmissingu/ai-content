@@ -1,6 +1,6 @@
-"""Knowledge base search service with FTS5 + jieba Chinese tokenization.
+"""Knowledge base search service with FTS5 trigram tokenization.
 
-Implements PRD 8.3: SQLite FTS5 + jieba 中文分词全文索引
+Uses SQLite FTS5 trigram tokenizer for Chinese text indexing.
 Supports: keyword search, phrase search, section filtering
 """
 
@@ -11,30 +11,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+import logging
 
 from config.settings import KB_DIR
 from dashboard.backend.database import get_db
 
-# Try to import jieba for Chinese tokenization
-try:
-    import jieba
-    HAS_JIEBA = True
-except ImportError:
-    HAS_JIEBA = False
-    print("[search] jieba not installed. Chinese tokenization disabled.")
-
-
-def tokenize_chinese(text: str) -> str:
-    """Tokenize Chinese text using jieba."""
-    if not HAS_JIEBA:
-        # Fallback: just return text with spaces between characters
-        return ' '.join(text)
-    
-    # Use jieba to cut text into tokens
-    tokens = jieba.cut_for_search(text)
-    return ' '.join(tokens)
+logger = logging.getLogger("gaoding.search")
 
 
 def clean_text(text: str) -> str:
@@ -72,9 +54,7 @@ def index_kb_file(file_path: Path, section: str = None) -> bool:
         # Clean content for indexing
         cleaned = clean_text(content)
         
-        # Tokenize for FTS5
-        tokenized_content = tokenize_chinese(cleaned)
-        tokenized_title = tokenize_chinese(title)
+        # FTS5 trigram tokenizer handles Chinese natively — no preprocessing needed
         
         # Determine section from path if not provided
         if section is None:
@@ -96,18 +76,18 @@ def index_kb_file(file_path: Path, section: str = None) -> bool:
                     UPDATE kb_search 
                     SET title = ?, content = ?, section = ?
                     WHERE path = ?
-                """, (tokenized_title, tokenized_content, section, path_str))
+                """, (title, cleaned, section, path_str))
             else:
                 # Insert new record
                 conn.execute("""
                     INSERT INTO kb_search (path, title, content, section)
                     VALUES (?, ?, ?, ?)
-                """, (path_str, tokenized_title, tokenized_content, section))
+                """, (path_str, title, cleaned, section))
         
         return True
         
     except Exception as e:
-        print(f"[search] Error indexing {file_path}: {e}")
+        logger.error(f"Error indexing {file_path}: {e}")
         return False
 
 
@@ -160,10 +140,10 @@ def index_all_kb(force: bool = False) -> dict:
                 stats['errors'] += 1
                 
         except Exception as e:
-            print(f"[search] Error processing {md_file}: {e}")
+            logger.error(f"Error processing {md_file}: {e}")
             stats['errors'] += 1
     
-    print(f"[search] Indexed {stats['indexed']}/{stats['total_files']} files")
+    logger.info(f"Indexed {stats['indexed']}/{stats['total_files']} files")
     return stats
 
 
@@ -195,22 +175,11 @@ def search_kb(query: str, section: str = None, limit: int = 20) -> list[dict]:
     if not query or len(query.strip()) < 2:
         return []
     
-    # Tokenize query for FTS5
-    tokenized_query = tokenize_chinese(query.strip())
-    
-    # Build FTS5 query with escaped tokens
-    # Use prefix matching for better results
-    escaped_tokens = []
-    for token in tokenized_query.split():
-        if token:
-            escaped = _escape_fts5_token(token)
-            if escaped:
-                escaped_tokens.append(f'"{escaped}"*')
-    
-    fts_query = ' OR '.join(escaped_tokens)
-    
-    if not fts_query:
+    # FTS5 trigram tokenizer handles Chinese natively — pass raw query
+    escaped = _escape_fts5_token(query.strip())
+    if not escaped:
         return []
+    fts_query = f'"{escaped}"*'
     
     results = []
     
@@ -256,7 +225,7 @@ def search_kb(query: str, section: str = None, limit: int = 20) -> list[dict]:
                 results.append(result)
     
     except Exception as e:
-        print(f"[search] FTS5 search error: {e}")
+        logger.warning(f"FTS5 search error: {e}")
         
         # Fallback to simple text search
         results = _fallback_search(query, section, limit)
@@ -345,7 +314,7 @@ def auto_index_if_needed():
             
             # If index is empty or very small, rebuild
             if count < 10:
-                print("[search] Index empty or small, rebuilding...")
+                logger.info("Index empty or small, rebuilding...")
                 return index_all_kb(force=True)
             
             # Check for new files not in index
@@ -361,13 +330,13 @@ def auto_index_if_needed():
                     new_files += 1
             
             if new_files > 5:
-                print(f"[search] Found {new_files} new files, updating index...")
+                logger.info(f"Found {new_files} new files, updating index...")
                 return index_all_kb(force=False)
             
             return {'status': 'up_to_date', 'indexed': count}
             
         except Exception as e:
-            print(f"[search] Error checking index: {e}")
+            logger.error(f"Error checking index: {e}")
             return index_all_kb(force=True)
 
 

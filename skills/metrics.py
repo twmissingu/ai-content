@@ -26,8 +26,6 @@ from pathlib import Path
 from typing import Optional
 
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from config.settings import DATA_DIR
 
 

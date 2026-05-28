@@ -1,0 +1,16 @@
+{
+  "proofread_threshold": 60,
+  "critique_threshold": 70,
+  "title_threshold": 75,
+  "max_rewrite_rounds": 3,
+  "auto_approve_threshold": 90,
+  "reject_threshold": 40,
+  "description": {
+    "proofread_threshold": "AI腔审校最低分数，低于此分触发自动润色",
+    "critique_threshold": "批评修订最低分数，低于此分触发重写",
+    "title_threshold": "标题优化最低分数，低于此分使用备选标题",
+    "max_rewrite_rounds": "最大重写轮次",
+    "auto_approve_threshold": "自动通过阈值（未来用）",
+    "reject_threshold": "自动拒绝阈值（未来用）"
+  }
+}

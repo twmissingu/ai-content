@@ -1,8 +1,8 @@
 # AGENTS.md
 
 仓库：`ai-content` — AI 内容生产系统「稿定」的源代码与规格文档库。
-状态：**Phase 2 实现中**（核心管线 + Dashboard 已编码）。
-版本：[v0.2.0](CHANGELOG.md) — 2026-05-26
+状态：**Phase 4 完成**（架构重构 + 提示词优化 + 前端 UX 升级 + 测试补全）。
+版本：[v0.7.0](CHANGELOG.md) — 2026-05-28
 
 ---
 
@@ -77,6 +77,7 @@ docs/
 
 skills/                            Agent 实现代码（Python）
   ├── __init__.py
+  ├── common.py                    共享工具（AgentBase, metrics, load_prompt）
   ├── scout.py                     选题 Agent
   ├── writer.py                    写手 Agent（7 阶段管线）
   ├── writer_router.py              并行 Writer 路由器
@@ -88,13 +89,48 @@ skills/                            Agent 实现代码（Python）
   ├── knowledge.py                  知识沉淀 Agent
   ├── screenshot.py                 HTML→PNG 截图工具
   ├── action.py                     action 文件协议
-  └── llm.py                       LLM 调用工具
+  ├── llm.py                       LLM 调用工具
+  └── metrics.py                   性能指标收集
 
 dashboard/                         Web Dashboard
-  ├── backend/main.py              FastAPI 后端（端口 8710）
+  ├── backend/
+  │   ├── main.py                  FastAPI 入口（中间件 + 路由挂载）
+  │   ├── routes/                  路由模块
+  │   │   ├── pipeline.py          管线状态、触发
+  │   │   ├── approval.py          审批队列和操作
+  │   │   ├── topics.py            选题候选
+  │   │   ├── data.py              数据分析
+  │   │   ├── kb.py                知识库搜索
+  │   │   ├── config.py            系统配置
+  │   │   └── health.py            健康检查
+  │   ├── auth.py                  API Key 认证中间件
+  │   ├── background.py            后台任务（action 扫描、预算监控）
+  │   ├── config_service.py        配置管理服务
+  │   ├── database.py              SQLite 数据层
+  │   ├── feishu.py                飞书通知
+  │   ├── helpers.py               共享工具函数
+  │   ├── models.py                Pydantic 请求模型
+  │   └── search.py                FTS5 全文搜索
   └── frontend/                    Vue 3 + Vite 前端（端口 5173）
 
 config/                            运行态配置
+  ├── settings.py                  所有运行时配置（路径、LLM、调度）
+  ├── models.json                  模型价格配置
+  ├── quality_gates.json           质量门禁阈值
+  ├── proofread_patterns.json      AI-slop 检测模式
+  ├── prompts/                     Agent 提示词模板
+  │   ├── scout_scoring.txt        Scout 评分提示词
+  │   ├── writer_draft.txt         Writer 初稿提示词
+  │   ├── writer_proofread.txt     Writer 审校提示词
+  │   ├── writer_critique_scorer.txt  批评修订评分提示词
+  │   ├── writer_critique_critic.txt  批评修订反驳提示词
+  │   ├── writer_title.txt         标题优化提示词
+  │   └── feedback_strategy.txt    策略分析提示词
+  ├── schedule.json                调度配置
+  └── writing_styles.json          写作风格预设
+
+pyproject.toml                     Python 包声明（pip install -e .）
+pytest.ini                         测试配置
 scripts/                            运维脚本
 queue/                              Agent 间通信目录（JSON 文件系统）
 kb/                                 知识库（Markdown）
@@ -218,4 +254,6 @@ print(f'API Key : {\"OK\" if LLM_API_KEY else \"MISSING\"}')
 - `docs/product/PRD.md` 中的设计方案如需修改，先引用原文位置再提改动。
 - 外部服务文档优先查 `docs/manual/AiToEarn配置与自动化操作指引.md`（仓库内已有），不够再用 web search。
 - 不添加仓库中不存在的文件除非用户明确要求。
-- 当前仓库无构建/测试命令，不生成无关的脚本配置。
+- 项目使用 `pyproject.toml` 声明为 Python 包，通过 `pip install -e .` 安装后可直接 import。
+- 提示词模板存放在 `config/prompts/` 目录，使用 `skills/common.py` 的 `load_prompt()` 加载。
+- AI-slop 检测模式存放在 `config/proofread_patterns.json`，支持通过 Dashboard 管理。

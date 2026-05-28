@@ -185,18 +185,43 @@ function cancelApprove() {
 
 const pendingCount = computed(() => store.approvalQueue.length)
 
+// Preset rejection reasons
+const rejectPresets = [
+  'AI腔太重，需要重写',
+  '论据不足，缺乏数据支撑',
+  '标题不够吸引人',
+  '内容与选题不符',
+  '需要补充案例',
+]
+
 // Keyboard shortcuts
 function handleKeydown(e: KeyboardEvent) {
+  // Escape: cancel all
   if (e.key === 'Escape') {
     selectedId.value = null
     showRejectInput.value = null
     showApproveConfirm.value = null
+    rejectReason.value = ''
     if (isBatchMode.value) toggleBatchMode()
   }
+  // Ctrl+A: select all in batch mode
   if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
     e.preventDefault()
     if (!isBatchMode.value) toggleBatchMode()
     toggleSelectAll()
+  }
+  // Enter: approve selected article (when not in reject input)
+  if (e.key === 'Enter' && selectedId.value && !showRejectInput.value) {
+    e.preventDefault()
+    const article = store.approvalQueue.find(a => a.id === selectedId.value)
+    if (article && !processingIds.has(article.id)) {
+      confirmApprove(article.id)
+    }
+  }
+  // R: start reject on selected article
+  if (e.key === 'r' && selectedId.value && !showRejectInput.value && !showApproveConfirm.value) {
+    e.preventDefault()
+    showRejectInput.value = selectedId.value
   }
 }
 
@@ -359,11 +384,21 @@ onUnmounted(() => {
       <!-- Reject Input -->
       <transition name="slide">
         <div v-if="showRejectInput === article.id" class="reject-form">
+          <div class="reject-presets">
+            <button
+              v-for="preset in rejectPresets"
+              :key="preset"
+              class="btn btn-ghost btn-xs preset-btn"
+              @click.stop="rejectReason = preset"
+            >
+              {{ preset }}
+            </button>
+          </div>
           <div class="reject-input-group">
-            <input 
-              v-model="rejectReason" 
+            <input
+              v-model="rejectReason"
               class="input reject-input"
-              placeholder="请输入驳回原因..." 
+              placeholder="请输入驳回原因..."
               :disabled="processingIds.has(article.id)"
               @keyup.enter="doReject(article.id)"
             >
@@ -652,6 +687,27 @@ onUnmounted(() => {
 .reject-form {
   padding-top: var(--space-md);
   border-top: 1px solid var(--divider);
+}
+
+.reject-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.preset-btn {
+  font-size: var(--text-xs);
+  padding: 2px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.preset-btn:hover {
+  background: var(--danger-light);
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .reject-input-group {
