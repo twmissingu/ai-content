@@ -1,9 +1,18 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
+import PaginationBar from '../components/PaginationBar.vue'
 
 const store = useDashboardStore()
+
+// Pagination
+const currentPage = ref(1)
+const pageSize = 10
+const paginatedTopics = computed(() => {
+  const start = (currentPage.value - 1) * pageSize
+  return store.topics.slice(start, start + pageSize)
+})
 
 const topicCount = computed(() => store.topics.length)
 
@@ -66,6 +75,16 @@ function truncateText(text: string, maxLen: number = 150): string {
       </div>
     </div>
 
+    <!-- Error State -->
+    <div v-else-if="store.error && store.topics.length === 0" class="card error-state">
+      <div class="error-icon">⚠️</div>
+      <div class="error-title">加载选题失败</div>
+      <p class="error-message">{{ store.error }}</p>
+      <button class="btn btn-primary" @click="store.fetchTopics()">
+        🔄 重试
+      </button>
+    </div>
+
     <!-- Empty State -->
     <div v-else-if="store.topics.length === 0" class="card empty-state">
       <div class="empty-state-icon">🔍</div>
@@ -73,11 +92,14 @@ function truncateText(text: string, maxLen: number = 150): string {
       <div class="empty-state-description">
         等待 Scout Agent 执行选题任务，通常在 09:00 和 14:00 触发
       </div>
+      <router-link to="/pipeline" class="btn btn-primary">
+        📊 查看管线状态
+      </router-link>
     </div>
 
     <!-- Topics Grid -->
     <div v-else class="topics-grid">
-      <div v-for="topic in store.topics" :key="topic.id" class="card topic-card">
+      <div v-for="topic in paginatedTopics" :key="topic.id" class="card topic-card">
         <!-- Topic Header -->
         <div class="topic-header">
           <h3 class="topic-title">{{ topic.title }}</h3>
@@ -154,14 +176,24 @@ function truncateText(text: string, maxLen: number = 150): string {
         </div>
 
         <!-- Confirm Button -->
-        <button 
-          class="btn btn-primary btn-block" 
+        <button
+          class="btn btn-primary btn-block"
           @click="store.confirmTopic(topic.id)"
+          :disabled="store.isLoading('confirmTopic')"
         >
           ✅ 确认选题
         </button>
       </div>
     </div>
+
+    <!-- Pagination -->
+    <PaginationBar
+      v-if="store.topics.length > pageSize"
+      :total="store.topics.length"
+      :page-size="pageSize"
+      :current-page="currentPage"
+      @update:currentPage="currentPage = $event"
+    />
   </div>
 </template>
 
@@ -214,7 +246,7 @@ function truncateText(text: string, maxLen: number = 150): string {
 /* ── Topics Grid ─────────────────────────────────────────────── */
 .topics-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: var(--space-lg);
 }
 
@@ -411,7 +443,62 @@ function truncateText(text: string, maxLen: number = 150): string {
 
 /* ── Empty State ─────────────────────────────────────────────── */
 .empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   padding: var(--space-4xl);
+  text-align: center;
+}
+
+.empty-state-icon {
+  font-size: 64px;
+  margin-bottom: var(--space-lg);
+  opacity: 0.6;
+}
+
+.empty-state-title {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-sm);
+}
+
+.empty-state-description {
+  font-size: var(--text-md);
+  color: var(--text-tertiary);
+  max-width: 400px;
+  margin-bottom: var(--space-xl);
+  line-height: 1.6;
+}
+
+/* ── Error State ─────────────────────────────────────────────── */
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4xl);
+  text-align: center;
+}
+
+.error-icon {
+  font-size: 48px;
+  margin-bottom: var(--space-lg);
+}
+
+.error-title {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-sm);
+}
+
+.error-message {
+  font-size: var(--text-md);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-xl);
+  max-width: 400px;
 }
 
 /* ── Responsive ──────────────────────────────────────────────── */

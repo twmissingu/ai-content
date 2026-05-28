@@ -25,7 +25,9 @@ from config.settings import (
     STATUS_DIR,
 )
 from skills.action import mark_processed
+from skills.agent_schemas import PublisherResult
 from skills.common import AgentBase, agent_main
+from skills.platform_adapters import adapt_content
 
 
 class PublisherAgent(AgentBase):
@@ -61,10 +63,13 @@ class PublisherAgent(AgentBase):
 
     def _publish_wechat(self, article_path: Path, meta: dict) -> bool:
         """Publish to WeChat draft box via baoyu-post-to-wechat.
-        
+
         Uses temp file instead of command-line args for security.
         """
-        content = article_path.read_text(encoding='utf-8')[:5000]
+        raw_content = article_path.read_text(encoding='utf-8')
+        title = raw_content.split('\n')[0].lstrip('# ').strip() if raw_content else ""
+        title, content = adapt_content(title, raw_content, "wechat")
+        content = content[:5000]
         
         # Write content to temp file (avoid command-line injection)
         tmp_fd, tmp_path = tempfile.mkstemp(suffix='.md', prefix='wechat_')
@@ -89,7 +94,9 @@ class PublisherAgent(AgentBase):
 
     def _publish_aitoearn(self, platform: str, article_path: Path, meta: dict) -> bool:
         """Publish to AiToEarn platform draft box via MCP."""
-        content = article_path.read_text(encoding="utf-8")
+        raw_content = article_path.read_text(encoding="utf-8")
+        title = raw_content.split('\n')[0].lstrip('# ').strip() if raw_content else ""
+        title, content = adapt_content(title, raw_content, platform)
         tool_map = {
             "xiaohongshu": ("aitoearn_createImageTextDraft", "IMAGE_TEXT"),
             "douyin": ("aitoearn_createVideoDraft", "VIDEO"),
@@ -103,7 +110,7 @@ class PublisherAgent(AgentBase):
 
         # Write params to temp file for security
         params = {
-            "title": meta.get("topic", ""),
+            "title": title or meta.get("topic", ""),
             "content": content[:3000],
             "draftType": draft_type,
             "platform": platform,
@@ -164,6 +171,16 @@ class PublisherAgent(AgentBase):
                 ok = False
 
             results[platform] = ok
+
+            # Validate result via schema
+            try:
+                PublisherResult.model_validate({
+                    "platform": platform,
+                    "status": "success" if ok else "failed",
+                })
+            except Exception as e:
+                self.logger.warning(f"PublisherResult validation failed for {platform}: {e}")
+
             if ok:
                 self.logger.info(f"{display}: ✅")
             else:

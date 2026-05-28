@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ref, watch, nextTick, onUnmounted } from 'vue'
+
 interface Props {
   show: boolean
   title?: string
@@ -24,6 +26,33 @@ const emit = defineEmits<{
   'update:show': [value: boolean]
 }>()
 
+let previouslyFocused: HTMLElement | null = null
+const overlayEl = ref<HTMLElement | null>(null)
+
+function getFocusableElements(): HTMLElement[] {
+  if (!overlayEl.value) return []
+  const container = overlayEl.value.querySelector('.modal-container')
+  if (!container) return []
+  return Array.from(container.querySelectorAll<HTMLElement>(
+    'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+  ))
+}
+
+function trapFocus(e: KeyboardEvent) {
+  if (e.key !== 'Tab') return
+  const focusable = getFocusableElements()
+  if (focusable.length === 0) return
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault()
+    last.focus()
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault()
+    first.focus()
+  }
+}
+
 function onConfirm() {
   emit('confirm')
 }
@@ -43,7 +72,25 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     onCancel()
   }
+  trapFocus(e)
 }
+
+watch(() => props.show, async (showing) => {
+  if (showing) {
+    previouslyFocused = document.activeElement as HTMLElement
+    await nextTick()
+    overlayEl.value?.focus()
+    const focusable = getFocusableElements()
+    if (focusable.length > 0) focusable[0].focus()
+  } else {
+    previouslyFocused?.focus()
+    previouslyFocused = null
+  }
+})
+
+onUnmounted(() => {
+  previouslyFocused = null
+})
 </script>
 
 <template>
@@ -55,12 +102,12 @@ function onKeydown(e: KeyboardEvent) {
         @click="onOverlayClick"
         @keydown="onKeydown"
         tabindex="-1"
-        ref="overlay"
+        ref="overlayEl"
       >
-        <div class="modal-container" role="dialog" aria-modal="true">
+        <div class="modal-container" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
           <!-- Header -->
           <div class="modal-header">
-            <h3 class="modal-title">{{ title }}</h3>
+            <h3 class="modal-title" id="confirm-dialog-title">{{ title }}</h3>
             <button class="modal-close" @click="onCancel" aria-label="关闭">✕</button>
           </div>
 

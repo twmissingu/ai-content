@@ -106,7 +106,7 @@ def get_session_versions(session_id: int):
         return {"versions": versions, "count": len(versions)}
     except Exception as e:
         logger.error(f"Error fetching versions for session {session_id}: {e}")
-        raise HTTPException(500, f"Failed to fetch versions: {str(e)}")
+        raise HTTPException(500, "获取版本列表失败")
 
 
 @router.post("/version/{version_id}/approve")
@@ -119,7 +119,7 @@ def approve_version(version_id: int):
         return {"status": "ok", "version_id": version_id, "action": "approved"}
     except Exception as e:
         logger.error(f"Error approving version {version_id}: {e}")
-        raise HTTPException(500, f"Failed to approve version: {str(e)}")
+        raise HTTPException(500, "审批通过操作失败")
 
 
 @router.post("/version/{version_id}/reject")
@@ -132,7 +132,7 @@ def reject_version(version_id: int):
         return {"status": "ok", "version_id": version_id, "action": "rejected"}
     except Exception as e:
         logger.error(f"Error rejecting version {version_id}: {e}")
-        raise HTTPException(500, f"Failed to reject version: {str(e)}")
+        raise HTTPException(500, "驳回操作失败")
 
 
 @router.get("/records")
@@ -143,4 +143,4 @@ def get_all_approval_records(limit: int = Query(50, ge=1, le=200)):
         return {"records": records, "count": len(records)}
     except Exception as e:
         logger.error(f"Error fetching approval records: {e}")
-        raise HTTPException(500, f"Failed to fetch approval records: {str(e)}")
+        raise HTTPException(500, "获取审批记录失败")

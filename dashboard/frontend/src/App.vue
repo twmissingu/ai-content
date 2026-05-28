@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useDashboardStore } from './stores/dashboard'
 import { useToast } from './composables/useToast'
+import { useWebSocket } from './composables/useWebSocket'
 import ErrorBoundary from './components/ErrorBoundary.vue'
 
 const route = useRoute()
@@ -10,6 +11,8 @@ const store = useDashboardStore()
 const toast = useToast()
 
 const connectionStatusText = computed(() => {
+  if (wsConnected.value) return '在线'
+  if (wsReconnecting.value) return '重连中'
   switch (store.connectionStatus) {
     case 'connected': return '在线'
     case 'reconnecting': return '重连中'
@@ -23,11 +26,46 @@ const tabs = [
   { name: 'Topics', label: '选题', icon: '🔥', path: '/topics' },
   { name: 'Data', label: '数据', icon: '📈', path: '/data' },
   { name: 'Kb', label: '知识库', icon: '🗄️', path: '/kb' },
+  { name: 'Config', label: '配置', icon: '⚙️', path: '/config' },
 ]
 
 const isRefreshing = ref(false)
 const isDark = ref(false)
 let refreshInterval: ReturnType<typeof setInterval> | null = null
+
+// WebSocket for real-time pipeline updates
+const { isConnected: wsConnected, isReconnecting: wsReconnecting } = useWebSocket({
+  url: '/ws/pipeline',
+  onMessage: (data) => {
+    store.handleWsMessage(data)
+  },
+  onConnect: () => {
+    // When WS connects, reduce polling frequency
+    if (refreshInterval) {
+      clearInterval(refreshInterval)
+      refreshInterval = null
+    }
+    // Only poll for non-WS data (approval, topics, config) at longer intervals
+    refreshInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        store.fetchApprovalQueue()
+        store.fetchTopics()
+      }
+    }, 30000)
+  },
+  onDisconnect: () => {
+    // When WS disconnects, restore fast polling
+    if (refreshInterval) {
+      clearInterval(refreshInterval)
+    }
+    refreshInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        store.fetchPipeline()
+        store.fetchApprovalQueue()
+      }
+    }, 10000)
+  },
+})
 
 async function refreshAll() {
   isRefreshing.value = true
@@ -62,15 +100,18 @@ onMounted(() => {
     document.documentElement.classList.add('dark')
   }
 
-  refreshAll()
+  // Initial data load (WS handles pipeline updates after connect)
+  store.fetchApprovalQueue()
+  store.fetchTopics()
+  store.fetchConfig()
 
-  // Auto-refresh every 10s, but only when page is visible
+  // Fallback polling for non-WS data
   refreshInterval = setInterval(() => {
     if (document.visibilityState === 'visible') {
-      store.fetchPipeline()
       store.fetchApprovalQueue()
+      store.fetchTopics()
     }
-  }, 10000)
+  }, 30000)
 })
 
 onUnmounted(() => {
@@ -112,7 +153,7 @@ onUnmounted(() => {
         <!-- Connection Status Indicator -->
         <div
           class="connection-status"
-          :class="store.connectionStatus"
+          :class="wsConnected ? 'connected' : wsReconnecting ? 'reconnecting' : store.connectionStatus"
           :title="connectionStatusText"
         >
           <span class="status-dot"></span>

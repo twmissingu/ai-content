@@ -15,7 +15,7 @@ const skeletonClass = `skeleton-${props.type}`
 </script>
 
 <template>
-  <div class="skeleton-loader">
+  <div class="skeleton-loader" aria-hidden="true">
     <div 
       v-for="i in count" 
       :key="i"

@@ -1,5 +1,64 @@
 # Changelog
 
+## [0.7.0] - 2026-05-28
+
+### Frontend UX Upgrade
+
+- **PipelineView**: Failed agent retry button, sub-task progress bars, inline error display
+- **ApprovalView**: Keyboard shortcut hint bar, platform tags, empty state guidance links
+- **DataView**: Chart.js professional charts replacing CSS hand-drawn bar charts, new article/topic stats cards
+- **App.vue**: Connection status indicator, notification bell (pending approval count), header layout optimization
+- **Dashboard Store**: Request retry with exponential backoff, connection state tracking
+- **Accessibility**: Global `:focus-visible` styles, focus trap in ConfirmDialog, DOMPurify XSS sanitization on markdown rendering, touch target minimum sizes (32px), `aria-hidden` on decorative elements
+- **Dark mode**: Fixed hardcoded colors, all use CSS variables for theme compatibility
+- **Error states**: User-facing error banners with retry buttons on TopicsView, KbView, PipelineView
+
+### Security Hardening
+
+- API Key uses `hmac.compare_digest` for timing-safe comparison
+- Rate limiter adds `_MAX_CLIENTS` eviction to prevent memory leak
+- Failed actions correctly moved to `FAILED_DIR` instead of `PROCESSED_DIR`
+- HTTPException messages sanitized — no internal details leaked to clients
+- CORS origins restricted to localhost by default (configurable via `CORS_ORIGINS`)
+
+### Architecture Optimization
+
+- **Database package split**: `database.py` → `database/` package with 7 domain modules (core, sessions, versions, tokens, config_ops, traces, prompts)
+- **WebSocket real-time push**: `ws.py` — `ConnectionManager` polls status files every 3s, broadcasts changes to connected clients
+- **Batch trace queries**: `get_trace_summaries_batch()` replaces N+1 pattern in sessions endpoint
+- Removed all 17 `sys.path.insert` — now uses `pyproject.toml` + `pip install -e .`
+- FTS5 search fixed double tokenization (jieba + trigram conflict)
+- AI-slop patterns externalized to `config/proofread_patterns.json`
+- Background actions reuse `skills/action.py` protocol
+
+### New Features
+
+- **Prompt version management**: CRUD API for prompt templates (`/api/prompts`), database-backed versioning, import from `config/prompts/*.txt`
+- **Pipeline traces**: Execution trace API (`/api/pipeline/traces`) — per-stage timing, token usage, error tracking
+- **Quality gates configuration**: `config/quality_gates.json` with configurable thresholds (proofread: 60, critique: 70, title: 75)
+- **Quality flywheel**: `GET /api/config/quality-flywheel` — analyzes approval history to recommend threshold adjustments
+- **Config API**: Schedule, writing styles, quality gates, sources, budget — all configurable via REST API
+
+### Agent Improvements
+
+- Writer pipeline integrates quality gate thresholds from `config/quality_gates.json`
+- Scout trace fallback uses `except Exception` instead of `except ImportError`
+- Writer removed redundant `import re` inside `_sanitize_text`
+- Trace completion failure logged at debug level (non-fatal)
+
+### Testing
+
+- 390+ tests passing
+- Coverage: 76% → 80%+
+- New test files: `test_api_data.py`, `test_api_config.py`, `test_api_kb.py`, `test_api_traces.py`, `test_api_approval.py`, `test_search.py`, `test_feishu.py`, `test_background.py`
+- Three-role deep review: PM, Full-stack Engineer, UI/UX Designer perspectives
+
+### Cleanup
+
+- Deleted 13 redundant files (scan_actions.py/sh, run_*.sh, formatting*.md, .env.example, etc.)
+
+---
+
 ## [0.6.0] - 2026-05-28
 
 ### Architecture Improvements

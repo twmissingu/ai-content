@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from config.settings import KB_DIR, PROJECT_ROOT, STATUS_DIR
 from dashboard.backend.database import check_budget_limit, get_pipeline_sessions
 from dashboard.backend.helpers import detect_timeout, read_json
-from dashboard.backend.models import TriggerRequest
+from dashboard.backend.models import TriggerRequest, RerunRequest
 
 logger = logging.getLogger("gaoding.dashboard")
 
@@ -148,4 +148,39 @@ def trigger_agent(req: TriggerRequest, request: Request):
         }
     except Exception as e:
         logger.error(f"Failed to trigger {req.agent}: {e}")
-        raise HTTPException(500, f"Failed to trigger {req.agent}: {str(e)}")
+        raise HTTPException(500, f"触发 {req.agent} 失败")
+
+
+@router.post("/rerun")
+def rerun_from_stage(req: RerunRequest, request: Request):
+    """Re-run the writer pipeline from a specific stage (1-7).
+
+    Stages: 1=抓原文, 2=初稿, 3=审校, 4=批评修订, 5=排版, 6=标题, 7=配图
+    """
+    if not 1 <= req.stage <= 7:
+        raise HTTPException(400, f"Invalid stage: {req.stage}. Must be 1-7.")
+
+    skills_dir = PROJECT_ROOT / "skills"
+    venv_python = PROJECT_ROOT / ".venv" / "bin" / "python"
+    script = skills_dir / "writer.py"
+
+    cmd = [str(venv_python), str(script), "--rerun-from", str(req.stage)]
+
+    try:
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(PROJECT_ROOT),
+        )
+        logger.info(f"Re-run from stage {req.stage} (PID: {process.pid})")
+        return {
+            "status": "ok",
+            "agent": "writer",
+            "stage": req.stage,
+            "pid": process.pid,
+            "message": f"Writer re-run from stage {req.stage}",
+        }
+    except Exception as e:
+        logger.error(f"Failed to re-run from stage {req.stage}: {e}")
+        raise HTTPException(500, "重新执行失败")

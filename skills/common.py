@@ -119,7 +119,7 @@ def get_agent_logger(
 # ═══════════════════════════════════════════════════════════════════════
 
 def load_prompt(template_name: str, **kwargs) -> str:
-    """Load a prompt template from config/prompts/ and format with kwargs.
+    """Load a prompt template, checking database first then falling back to file.
 
     Args:
         template_name: Template filename (without .txt extension)
@@ -128,6 +128,16 @@ def load_prompt(template_name: str, **kwargs) -> str:
     Returns:
         Formatted prompt string
     """
+    # Try database first (prompt version management)
+    try:
+        from dashboard.backend.database import get_prompt
+        db_prompt = get_prompt(template_name)
+        if db_prompt and db_prompt.get("template"):
+            return db_prompt["template"].format(**kwargs)
+    except Exception:
+        pass  # DB unavailable, fall back to file
+
+    # Fall back to file
     from config.settings import CONFIG_DIR
     template_path = CONFIG_DIR / "prompts" / f"{template_name}.txt"
     if not template_path.exists():
@@ -243,13 +253,14 @@ class AgentBase:
     name: str = "unknown"
     version: str = "1.0.0"
     
-    def __init__(self, enable_metrics: bool = True):
+    def __init__(self, enable_metrics: bool = True, session_id: Optional[int] = None):
         self.logger = get_agent_logger(self.name)
         self._start_time = datetime.now(timezone.utc)
         self._start_timestamp = self._start_time.strftime("%Y%m%d_%H%M%S")
         self._status_path = STATUS_DIR / f"{self.name}.json"
         self._lock = threading.Lock()
-        
+        self._session_id = session_id
+
         # Metrics
         self._enable_metrics = enable_metrics
         self._metrics = None
@@ -259,6 +270,9 @@ class AgentBase:
                 self._metrics = metrics_mod.AgentMetrics(self.name)
             except Exception:
                 self._metrics = None
+
+        # Trace context (lazy-loaded)
+        self._trace_ctx = None
     
     @property
     def metrics(self):
@@ -266,15 +280,35 @@ class AgentBase:
         return self._metrics
     
     def start_stage(self, stage_name: str) -> None:
-        """Start timing a pipeline stage (metrics)."""
+        """Start timing a pipeline stage (metrics + trace)."""
         if self._metrics:
             self._metrics.start_stage(stage_name)
-    
+        # Start trace
+        try:
+            from dashboard.backend.database import create_trace
+            self._trace_ctx = {
+                "trace_id": create_trace(self._session_id, self.name, stage_name, stage_name),
+                "start_time": time.monotonic(),
+            }
+        except Exception:
+            self._trace_ctx = None
+
     def end_stage(self, stage_name: str) -> float:
         """End timing a pipeline stage. Returns duration in seconds."""
+        duration = 0.0
         if self._metrics:
-            return self._metrics.end_stage(stage_name)
-        return 0.0
+            duration = self._metrics.end_stage(stage_name)
+        # Complete trace
+        if self._trace_ctx:
+            try:
+                from dashboard.backend.database import complete_trace, update_trace_duration
+                elapsed_ms = int((time.monotonic() - self._trace_ctx["start_time"]) * 1000)
+                complete_trace(self._trace_ctx["trace_id"], status="completed")
+                update_trace_duration(self._trace_ctx["trace_id"], elapsed_ms)
+            except Exception as e:
+                self.logger.debug(f"Trace completion failed (non-fatal): {e}")
+            self._trace_ctx = None
+        return duration
     
     def record_llm_call(
         self,

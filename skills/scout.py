@@ -30,8 +30,10 @@ from config.settings import (
     TMP_DIR,
 )
 from skills.action import write_topic_pending
+from skills.agent_schemas import ScoutOutput, TopicCandidate
 from skills.common import AgentBase, agent_main, get_agent_logger, load_prompt, write_status as _write_status_fn
 from skills.llm import chat_structured, set_current_agent
+from skills.topic_analyzer import analyze_topic_competition
 
 # Module-level logger for standalone functions
 logger = get_agent_logger("scout")
@@ -382,6 +384,17 @@ def score_candidate(candidate: dict, cold_start: bool) -> dict | None:
     viral = int(result.get("viral_score", 50))
     saturation = int(result.get("saturation_score", 50))
     novelty = int(result.get("novelty_score", 50))
+
+    # Adjust saturation with actual history analysis
+    try:
+        competition = analyze_topic_competition(candidate['title'], source)
+        history_saturation = competition['saturation']['saturation_score']
+        # Blend LLM saturation (60%) with history-based saturation (40%)
+        saturation = int(saturation * 0.6 + history_saturation * 0.4)
+        if competition['recommendation'] == 'skip':
+            logger.info(f"Topic '{candidate['title'][:30]}' flagged as oversaturated: {competition['reason']}")
+    except Exception:
+        pass  # History analysis is supplementary, not blocking
     feasibility = int(result.get("feasibility_score", 50))
     direction = result.get("direction", "general")
 
@@ -464,6 +477,18 @@ def _score_candidate_wrapper(args: tuple[dict, bool]) -> Optional[dict]:
 
 
 def main():
+    # Try to create a pipeline session for tracing
+    session_id = None
+    try:
+        from dashboard.backend.database import create_pipeline_session
+        session_id = create_pipeline_session(
+            date=RUN_DATE,
+            period="am" if SESSION == "morning" else "pm",
+            topic=f"Scout {SESSION}",
+        )
+    except Exception:
+        pass
+
     _write_status("collecting", 5, f"Starting scout {SESSION} session")
     logger.info(f"{SESSION} session started at {RUN_TIMESTAMP}")
 
@@ -472,43 +497,54 @@ def main():
 
     # Step 1: Collect
     _write_status("collecting", 15, "Collecting from all sources")
-    candidates = collect_all()
+    try:
+        from dashboard.backend.database import trace_stage
+        with trace_stage(session_id, "scout", "collect", "采集选题") as t:
+            candidates = collect_all()
+            t["output"] = f"{len(candidates)} raw candidates"
+    except Exception:
+        candidates = collect_all()
     logger.info(f"Collected {len(candidates)} raw candidates")
 
     # Step 2: Dedup & filter
     _write_status("dedup", 35, f"Deduplicating {len(candidates)} candidates")
-    candidates = dedup_and_filter(candidates)
+    try:
+        with trace_stage(session_id, "scout", "dedup", "去重过滤") as t:
+            candidates = dedup_and_filter(candidates)
+            t["output"] = f"{len(candidates)} unique"
+    except Exception:
+        candidates = dedup_and_filter(candidates)
     logger.info(f"After dedup: {len(candidates)} unique")
 
     # Step 3: Score candidates via LLM (concurrent)
     _write_status("scoring", 50, f"Scoring {len(candidates)} candidates via LLM")
     scored: list[dict] = []
-    
+
     if candidates:
         # Use ThreadPoolExecutor for concurrent scoring
         with ThreadPoolExecutor(max_workers=MAX_SCORING_WORKERS) as executor:
             # Prepare tasks
             tasks = [(c, cold_start) for c in candidates]
-            
+
             # Submit all tasks
             future_to_candidate = {
                 executor.submit(_score_candidate_wrapper, task): task[0]
                 for task in tasks
             }
-            
+
             # Collect results as they complete
             completed = 0
             for future in as_completed(future_to_candidate):
                 completed += 1
                 candidate = future_to_candidate[future]
-                
+
                 # Update progress
                 _write_status(
                     "scoring",
                     50 + int(30 * completed / max(len(candidates), 1)),
                     f"Scoring {completed}/{len(candidates)}: {candidate['title'][:30]}"
                 )
-                
+
                 try:
                     result = future.result(timeout=60)
                     if result:
@@ -528,20 +564,46 @@ def main():
     final = [c for c in scored if c["final_score"] >= threshold][:CANDIDATE_CAP]
     logger.info(f"Final candidates meeting threshold: {len(final)}")
 
-    # Step 6: Write to pending
-    _write_status("writing", 85, f"Writing {len(final)} candidates to queue/pending/")
+    # Step 6: Validate via schema
+    validated_final = []
     for c in final:
-        write_topic_pending(c)
+        try:
+            validated = TopicCandidate.model_validate(c)
+            validated_final.append(c)
+        except Exception as e:
+            logger.warning(f"Schema validation failed for '{c.get('title', '?')[:30]}': {e}")
 
-    # Step 7: Write summary status
+    # Step 7: Write to pending
+    _write_status("writing", 85, f"Writing {len(validated_final)} candidates to queue/pending/")
+    try:
+        with trace_stage(session_id, "scout", "write", "写入队列") as t:
+            for c in validated_final:
+                write_topic_pending(c)
+            t["output"] = f"{len(validated_final)} candidates"
+    except Exception:
+        for c in validated_final:
+            write_topic_pending(c)
+
+    # Step 8: Validate full output and write summary status
+    try:
+        ScoutOutput(
+            session=SESSION,
+            topics=[TopicCandidate.model_validate(c) for c in validated_final],
+            total_collected=len(candidates),
+            total_selected=len(validated_final),
+            sources_used=list({c.get("source", "unknown") for c in validated_final}),
+        )
+    except Exception as e:
+        logger.warning(f"ScoutOutput validation failed: {e}")
+
     summary = {
         "agent": "scout",
         "stage": "completed",
         "progress_pct": 100,
-        "detail": f"{SESSION} session: {len(final)} candidates pushed (from {len(candidates)} raw)",
+        "detail": f"{SESSION} session: {len(validated_final)} candidates pushed (from {len(candidates)} raw)",
         "started_at": RUN_TIMESTAMP,
         "completed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "candidate_count": len(final),
+        "candidate_count": len(validated_final),
         "cold_start": cold_start,
         "session": SESSION,
         "error": None,

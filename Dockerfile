@@ -5,6 +5,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
+# Create non-root user
+RUN groupadd -r gaoding && useradd -r -g gaoding -d /app -s /sbin/nologin gaoding
+
 # Set work directory
 WORKDIR /app
 
@@ -48,11 +51,17 @@ RUN mkdir -p /app/data/logs \
     /app/queue/topics \
     /app/queue/tmp
 
+# Set ownership
+RUN chown -R gaoding:gaoding /app
+
 # Expose port
 EXPOSE 8710
 
 # Environment variables
 ENV CORS_ORIGINS="http://localhost:5173"
+
+# Switch to non-root user
+USER gaoding
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

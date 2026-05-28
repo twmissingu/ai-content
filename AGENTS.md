@@ -1,7 +1,7 @@
 # AGENTS.md
 
 仓库：`ai-content` — AI 内容生产系统「稿定」的源代码与规格文档库。
-状态：**Phase 4 完成**（架构重构 + 提示词优化 + 前端 UX 升级 + 测试补全）。
+状态：**v0.7.0**（架构重构 + 提示词优化 + 前端 UX 升级 + 测试补全 + 安全加固）。
 版本：[v0.7.0](CHANGELOG.md) — 2026-05-28
 
 ---
@@ -94,40 +94,55 @@ skills/                            Agent 实现代码（Python）
 
 dashboard/                         Web Dashboard
   ├── backend/
-  │   ├── main.py                  FastAPI 入口（中间件 + 路由挂载）
+  │   ├── main.py                  FastAPI 入口（中间件 + 路由挂载，版本 0.7.0）
   │   ├── routes/                  路由模块
   │   │   ├── pipeline.py          管线状态、触发
   │   │   ├── approval.py          审批队列和操作
   │   │   ├── topics.py            选题候选
   │   │   ├── data.py              数据分析
   │   │   ├── kb.py                知识库搜索
-  │   │   ├── config.py            系统配置
-  │   │   └── health.py            健康检查
-  │   ├── auth.py                  API Key 认证中间件
+  │   │   ├── config.py            系统配置（含质量飞轮）
+  │   │   ├── health.py            健康检查
+  │   │   ├── traces.py            管线执行追踪（/api/pipeline/traces）
+  │   │   └── prompts.py           提示词版本管理（/api/prompts）
+  │   ├── database/                SQLite 数据层（拆分为 7 个模块）
+  │   │   ├── core.py              连接管理、缓存、初始化（get_db, init_db）
+  │   │   ├── sessions.py          管线会话 CRUD
+  │   │   ├── versions.py          平台版本 + 审批记录 + 质量飞轮
+  │   │   ├── tokens.py            Token 用量 + 预算控制
+  │   │   ├── config_ops.py        配置键值存取
+  │   │   ├── traces.py            执行追踪（批量查询优化）
+  │   │   └── prompts.py           提示词版本管理
+  │   ├── auth.py                  API Key 认证中间件（hmac.compare_digest）
   │   ├── background.py            后台任务（action 扫描、预算监控）
   │   ├── config_service.py        配置管理服务
-  │   ├── database.py              SQLite 数据层
+  │   ├── ws.py                    WebSocket 实时推送（ConnectionManager）
   │   ├── feishu.py                飞书通知
   │   ├── helpers.py               共享工具函数
   │   ├── models.py                Pydantic 请求模型
-  │   └── search.py                FTS5 全文搜索
+  │   └── search.py                FTS5 全文搜索（trigram tokenizer）
   └── frontend/                    Vue 3 + Vite 前端（端口 5173）
 
 config/                            运行态配置
   ├── settings.py                  所有运行时配置（路径、LLM、调度）
   ├── models.json                  模型价格配置
-  ├── quality_gates.json           质量门禁阈值
-  ├── proofread_patterns.json      AI-slop 检测模式
-  ├── prompts/                     Agent 提示词模板
-  │   ├── scout_scoring.txt        Scout 评分提示词
-  │   ├── writer_draft.txt         Writer 初稿提示词
-  │   ├── writer_proofread.txt     Writer 审校提示词
-  │   ├── writer_critique_scorer.txt  批评修订评分提示词
-  │   ├── writer_critique_critic.txt  批评修订反驳提示词
-  │   ├── writer_title.txt         标题优化提示词
-  │   └── feedback_strategy.txt    策略分析提示词
+  ├── quality_gates.json           质量门禁阈值（proofread: 60, critique: 70, title: 75）
+  ├── proofread_patterns.json      AI-slop 检测模式（23 个 regex）
+  ├── prompts/                     Agent 提示词模板（24 个文件）
+  │   ├── *.txt                    数据库导入的提示词（7 个，启动时自动导入）
+  │   │   ├── scout_scoring.txt    Scout 评分提示词
+  │   │   ├── writer_draft.txt     Writer 初稿提示词
+  │   │   ├── writer_proofread.txt Writer 审校提示词
+  │   │   ├── writer_critique_*.txt  批评修订（scorer + critic）
+  │   │   ├── writer_title.txt     标题优化提示词
+  │   │   └── feedback_strategy.txt  策略分析提示词
+  │   └── *.md                     内容模板（17 个，8 类型 × 2 平台 + persona_bible）
+  │       ├── persona_bible.md     统一人设圣经（所有模板引用）
+  │       ├── {type}_{platform}.md 8 类型 × 2 平台 = 16 个写作模板
+  │       └── types: news, opinion, insight, roundup, sharing,
+  │                   tech_science, tool_update, tutorial
   ├── schedule.json                调度配置
-  └── writing_styles.json          写作风格预设
+  └── writing_styles.json          写作风格预设（8 类型 + 3 默认）
 
 pyproject.toml                     Python 包声明（pip install -e .）
 pytest.ini                         测试配置
@@ -161,6 +176,9 @@ kb/                                 知识库（Markdown）
 | Knowledge | 知识沉淀 Agent，归档文章到 kb/ |
 | queue/ | Agent 间通信目录（JSON 文件系统） |
 | kb/ | 知识库（Markdown + wikilink） |
+| Traces | 管线执行追踪，每阶段记录耗时、Token、状态 |
+| WebSocket | 实时状态推送（`/ws/pipeline`），3s 轮询 + hash 变更检测 |
+| 质量飞轮 | 审批数据分析 → 推荐质量门禁阈值调整 |
 
 ### 平台分发矩阵
 
@@ -256,4 +274,8 @@ print(f'API Key : {\"OK\" if LLM_API_KEY else \"MISSING\"}')
 - 不添加仓库中不存在的文件除非用户明确要求。
 - 项目使用 `pyproject.toml` 声明为 Python 包，通过 `pip install -e .` 安装后可直接 import。
 - 提示词模板存放在 `config/prompts/` 目录，使用 `skills/common.py` 的 `load_prompt()` 加载。
+- 提示词支持数据库版本管理（`/api/prompts` CRUD），`.txt` 文件启动时自动导入。
 - AI-slop 检测模式存放在 `config/proofread_patterns.json`，支持通过 Dashboard 管理。
+- 质量门禁阈值存放在 `config/quality_gates.json`，Writer 管线各阶段读取对应阈值。
+- 数据库层已拆分为 `dashboard/backend/database/` 包（7 个领域模块），通过 `__init__.py` 统一导出。
+- WebSocket 实时推送在 `dashboard/backend/ws.py`，前端通过 `ws://host/ws/pipeline` 接收状态变更。

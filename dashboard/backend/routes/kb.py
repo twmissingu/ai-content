@@ -109,4 +109,5 @@ def reindex_kb():
         stats = index_all_kb(force=True)
         return {"status": "ok", "stats": stats}
     except Exception as e:
-        raise HTTPException(500, f"Reindex failed: {e}")
+        logger.error(f"Reindex failed: {e}")
+        raise HTTPException(500, "重建索引失败")

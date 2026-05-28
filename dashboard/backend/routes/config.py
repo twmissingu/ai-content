@@ -19,6 +19,7 @@ from dashboard.backend.config_service import (
     update_source,
     update_writing_style,
 )
+from dashboard.backend.database import get_quality_flywheel_data
 from dashboard.backend.helpers import load_schedule
 from dashboard.backend.models import ConfigUpdate
 
@@ -56,7 +57,8 @@ def get_config_section(section: str):
     try:
         return getter()
     except Exception as e:
-        raise HTTPException(500, f"Error reading {section}: {e}")
+        logger.error(f"Error reading {section}: {e}")
+        raise HTTPException(500, f"读取配置失败: {section}")
 
 
 @router.post("/schedule")
@@ -83,7 +85,8 @@ def update_schedule_config(update: ConfigUpdate):
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
-        raise HTTPException(500, f"Error updating schedule: {e}")
+        logger.error(f"Error updating schedule: {e}")
+        raise HTTPException(500, "更新调度配置失败")
 
 
 @router.post("/styles/{style_name}")
@@ -95,7 +98,8 @@ def update_style_config(style_name: str, updates: dict):
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
-        raise HTTPException(500, f"Error updating style: {e}")
+        logger.error(f"Error updating style: {e}")
+        raise HTTPException(500, "更新写作风格失败")
 
 
 @router.post("/gates")
@@ -105,7 +109,8 @@ def update_gates_config(updates: dict):
         result = update_quality_gates(updates)
         return {"status": "ok", "config": result}
     except Exception as e:
-        raise HTTPException(500, f"Error updating gates: {e}")
+        logger.error(f"Error updating gates: {e}")
+        raise HTTPException(500, "更新质量门禁失败")
 
 
 @router.post("/sources/{source_name}")
@@ -115,7 +120,8 @@ def update_source_config(source_name: str, updates: dict):
         result = update_source(source_name, updates)
         return {"status": "ok", "source": source_name, "config": result}
     except Exception as e:
-        raise HTTPException(500, f"Error updating source: {e}")
+        logger.error(f"Error updating source: {e}")
+        raise HTTPException(500, "更新数据源配置失败")
 
 
 @router.post("/budget")
@@ -125,7 +131,8 @@ def update_budget_config(updates: dict):
         result = update_budget(updates)
         return {"status": "ok", "config": result}
     except Exception as e:
-        raise HTTPException(500, f"Error updating budget: {e}")
+        logger.error(f"Error updating budget: {e}")
+        raise HTTPException(500, "更新预算配置失败")
 
 
 @router.get("/style-prompt/{style_name}")
@@ -135,3 +142,18 @@ def get_style_prompt(style_name: str):
     if not prompt:
         raise HTTPException(404, f"Unknown style: {style_name}")
     return {"style": style_name, "prompt": prompt}
+
+
+@router.get("/quality-flywheel")
+def get_quality_flywheel():
+    """Get quality gate recommendations based on approval history.
+
+    Analyzes approved/rejected article scores to suggest optimal thresholds.
+    This is the 'quality flywheel' — the system learns from human feedback
+    to automatically calibrate quality gates.
+    """
+    try:
+        return get_quality_flywheel_data()
+    except Exception as e:
+        logger.error(f"Error getting flywheel data: {e}")
+        raise HTTPException(500, "获取质量飞轮数据失败")

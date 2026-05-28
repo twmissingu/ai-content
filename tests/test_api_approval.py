@@ -103,3 +103,154 @@ class TestApprovalRecords:
         resp = client.get("/api/approval/records")
         assert resp.status_code == 200
         assert "records" in resp.json()
+
+    def test_records_with_custom_limit(self, client):
+        resp = client.get("/api/approval/records?limit=10")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "records" in data
+        assert len(data["records"]) <= 10
+
+    def test_records_db_error(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.get_approval_records",
+            lambda limit=50: (_ for _ in ()).throw(Exception("DB error")),
+        )
+        resp = client.get("/api/approval/records")
+        assert resp.status_code == 500
+
+
+class TestApprovalQueueDB:
+    """Test queue with database pending versions."""
+
+    def test_queue_includes_db_items(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.get_pending_versions",
+            lambda: [{"id": 42, "platform": "xiaohongshu", "topic": "AI趋势", "score": 88}],
+        )
+        resp = client.get("/api/approval/queue")
+        articles = resp.json()["articles"]
+        db_articles = [a for a in articles if a["source"] == "database"]
+        assert len(db_articles) == 1
+        assert db_articles[0]["id"] == "db_42"
+        assert db_articles[0]["db_version_id"] == 42
+
+    def test_queue_db_error_handled(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.get_pending_versions",
+            lambda: (_ for _ in ()).throw(Exception("DB error")),
+        )
+        resp = client.get("/api/approval/queue")
+        assert resp.status_code == 200  # error is logged, not raised
+
+
+class TestApprovalActDB:
+    """Test approval_act with db_ prefix targets."""
+
+    def test_approve_db_target(self, client, monkeypatch):
+        recorded = {}
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.create_approval_record",
+            lambda **kw: recorded.update(kw) or None,
+        )
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.update_platform_version",
+            lambda **kw: None,
+        )
+        resp = client.post("/api/approval/act", json={
+            "action": "approve",
+            "target_id": "db_42",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert recorded.get("version_id") == 42
+        assert recorded.get("action") == "pass"
+
+    def test_reject_db_target(self, client, monkeypatch):
+        recorded = {}
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.create_approval_record",
+            lambda **kw: recorded.update(kw) or None,
+        )
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.update_platform_version",
+            lambda **kw: None,
+        )
+        resp = client.post("/api/approval/act", json={
+            "action": "reject",
+            "target_id": "db_99",
+            "reason": "质量不达标",
+        })
+        assert resp.status_code == 200
+        assert recorded.get("action") == "reject"
+
+    def test_db_target_partial_on_error(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.create_approval_record",
+            lambda **kw: (_ for _ in ()).throw(Exception("DB write failed")),
+        )
+        resp = client.post("/api/approval/act", json={
+            "action": "approve",
+            "target_id": "db_42",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "partial"
+        assert "warning" in data
+
+
+class TestApproveVersion:
+    def test_approve_version(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.update_platform_version",
+            lambda *a, **kw: None,
+        )
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.create_approval_record",
+            lambda *a, **kw: None,
+        )
+        resp = client.post("/api/approval/version/10/approve")
+        assert resp.status_code == 200
+        assert resp.json()["action"] == "approved"
+
+    def test_approve_version_error(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.update_platform_version",
+            lambda *a, **kw: (_ for _ in ()).throw(Exception("not found")),
+        )
+        resp = client.post("/api/approval/version/999/approve")
+        assert resp.status_code == 500
+
+
+class TestRejectVersion:
+    def test_reject_version(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.update_platform_version",
+            lambda *a, **kw: None,
+        )
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.create_approval_record",
+            lambda *a, **kw: None,
+        )
+        resp = client.post("/api/approval/version/10/reject")
+        assert resp.status_code == 200
+        assert resp.json()["action"] == "rejected"
+
+    def test_reject_version_error(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.update_platform_version",
+            lambda *a, **kw: (_ for _ in ()).throw(Exception("not found")),
+        )
+        resp = client.post("/api/approval/version/999/reject")
+        assert resp.status_code == 500
+
+
+class TestSessionVersionsError:
+    def test_versions_db_error(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.get_platform_versions",
+            lambda sid: (_ for _ in ()).throw(Exception("DB error")),
+        )
+        resp = client.get("/api/approval/versions/1")
+        assert resp.status_code == 500

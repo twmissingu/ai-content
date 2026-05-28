@@ -24,10 +24,12 @@ const config = statusConfig[props.status] || { label: props.status, icon: '❓',
 </script>
 
 <template>
-  <span 
+  <span
     class="status-badge"
     :class="[config.class, size]"
     :title="config.label"
+    :aria-label="`状态: ${config.label}`"
+    role="status"
   >
     <span class="badge-icon">{{ config.icon }}</span>
     <span class="badge-label">{{ config.label }}</span>

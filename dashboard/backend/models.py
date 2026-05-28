@@ -34,3 +34,13 @@ class TriggerRequest(BaseModel):
     agent: str  # scout | writer
     session: Optional[str] = None  # morning | evening (for scout)
     topic_id: Optional[str] = None  # specific topic for writer
+
+
+class RerunRequest(BaseModel):
+    stage: int  # 1-7, which stage to re-run from
+
+
+class PromptSaveRequest(BaseModel):
+    name: str
+    template: str
+    variables: Optional[list[str]] = None

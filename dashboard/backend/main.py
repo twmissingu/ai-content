@@ -3,6 +3,7 @@
 Slim entry point: middleware setup, route mounting, lifespan management.
 """
 
+import json
 import logging
 import os
 import threading
@@ -20,8 +21,9 @@ from dashboard.backend.background import (
     scan_loop,
     scanner_stop_event,
 )
-from dashboard.backend.database import init_db
+from dashboard.backend.database import init_db, import_prompts_from_files
 from dashboard.backend.search import auto_index_if_needed
+from dashboard.backend.ws import ws_manager
 
 # Configure logging
 logging.basicConfig(
@@ -38,6 +40,9 @@ from dashboard.backend.routes.data import router as data_router
 from dashboard.backend.routes.kb import router as kb_router
 from dashboard.backend.routes.config import router as config_router
 from dashboard.backend.routes.health import router as health_router
+from dashboard.backend.routes.traces import router as traces_router
+from dashboard.backend.routes.prompts import router as prompts_router
+from fastapi import WebSocket as WSProtocol
 
 # Import rate limiter
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -133,6 +138,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error initializing search index: {e}")
 
+    try:
+        imported = import_prompts_from_files()
+        if imported:
+            logger.info(f"Imported {imported} prompt templates from files")
+    except Exception as e:
+        logger.error(f"Error importing prompts: {e}")
+
     thread = threading.Thread(target=scan_loop, daemon=True, name="action-scanner")
     thread.start()
     logger.info("Background action scanner started (10s interval)")
@@ -141,8 +153,11 @@ async def lifespan(app: FastAPI):
     budget_thread.start()
     logger.info("Budget monitor started")
 
+    ws_manager.start_watcher()
+
     yield
 
+    ws_manager.stop_watcher()
     scanner_stop_event.set()
     budget_stop_event.set()
     logger.info("Background tasks stopped")
@@ -172,6 +187,30 @@ app.include_router(data_router)
 app.include_router(kb_router)
 app.include_router(config_router)
 app.include_router(health_router)
+app.include_router(traces_router)
+app.include_router(prompts_router)
+
+
+@app.websocket("/ws/pipeline")
+async def websocket_pipeline(websocket: WSProtocol):
+    """WebSocket endpoint for real-time pipeline status updates."""
+    await ws_manager.connect(websocket)
+    try:
+        # Send initial status immediately
+        status = ws_manager._build_status()
+        await websocket.send_text(json.dumps(status, ensure_ascii=False))
+        # Keep connection alive, handle client messages
+        while True:
+            data = await websocket.receive_text()
+            # Client can send ping/pong or request specific data
+            if data == "ping":
+                await websocket.send_text('{"type":"pong"}')
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+    finally:
+        await ws_manager.disconnect(websocket)
 
 
 if __name__ == "__main__":

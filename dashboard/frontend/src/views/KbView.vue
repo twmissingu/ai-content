@@ -10,19 +10,23 @@ const searched = ref(false)
 const loading = ref(false)
 const loadingSections = ref(false)
 const selectedSection = ref<string | null>(null)
+const searchError = ref<string | null>(null)
+const sectionsError = ref<string | null>(null)
 
 async function search() {
   if (!query.value.trim()) return
   searched.value = true
   loading.value = true
-  
+  searchError.value = null
+
   try {
     const sectionParam = selectedSection.value ? `&section=${selectedSection.value}` : ''
     const res = await fetch(`${API_BASE}/api/kb/search?q=${encodeURIComponent(query.value)}${sectionParam}`)
+    if (!res.ok) throw new Error(`搜索失败 (${res.status})`)
     const data = await res.json()
     results.value = data.results || []
   } catch (e) {
-    console.error('Search failed:', e)
+    searchError.value = e instanceof Error ? e.message : '搜索失败，请重试'
     results.value = []
   } finally {
     loading.value = false
@@ -31,13 +35,14 @@ async function search() {
 
 async function fetchSections() {
   loadingSections.value = true
+  sectionsError.value = null
   try {
     const res = await fetch(`${API_BASE}/api/kb/sections`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     sections.value = data.sections || []
   } catch (e) {
-    console.error('Failed to fetch sections:', e)
+    sectionsError.value = e instanceof Error ? e.message : '加载分类失败'
     sections.value = []
   } finally {
     loadingSections.value = false
@@ -67,6 +72,7 @@ function clearSearch() {
   results.value = []
   searched.value = false
   selectedSection.value = null
+  searchError.value = null
 }
 
 function highlightMatch(text: string, keyword: string): string {
@@ -102,11 +108,13 @@ fetchSections()
           @keyup.enter="search"
           class="search-input"
           placeholder="搜索知识库文章..."
+          aria-label="搜索知识库文章"
         >
-        <button 
-          v-if="query" 
+        <button
+          v-if="query"
           class="btn btn-ghost btn-sm clear-btn"
           @click="clearSearch"
+          aria-label="清除搜索"
         >
           ✕
         </button>
@@ -121,18 +129,29 @@ fetchSections()
       </div>
     </div>
 
+    <!-- Sections Error -->
+    <div v-if="sectionsError" class="card error-banner" role="alert">
+      <span>⚠️ {{ sectionsError }}</span>
+      <button class="btn btn-ghost btn-sm" @click="fetchSections">重试</button>
+    </div>
+
     <!-- Sections Overview -->
     <div class="sections-grid">
       <div v-if="loadingSections" class="card section-card loading">
         <SkeletonLoader type="text" width="80%" :count="2" />
       </div>
       <template v-else>
-        <div 
-          v-for="s in sections" 
+        <div
+          v-for="s in sections"
           :key="s.name"
           class="card section-card"
           :class="{ active: selectedSection === s.name }"
+          role="button"
+          tabindex="0"
+          :aria-pressed="selectedSection === s.name"
           @click="selectSection(s.name)"
+          @keydown.enter="selectSection(s.name)"
+          @keydown.space.prevent="selectSection(s.name)"
         >
           <span class="section-icon">{{ getSectionIcon(s.name) }}</span>
           <div class="section-info">
@@ -156,11 +175,17 @@ fetchSections()
 
       <!-- Results -->
       <template v-else>
+        <!-- Search Error -->
+        <div v-if="searchError" class="card error-banner" role="alert">
+          <span>⚠️ {{ searchError }}</span>
+          <button class="btn btn-ghost btn-sm" @click="search">重试</button>
+        </div>
+
         <div class="results-header">
           <span class="results-count">找到 {{ results.length }} 条结果</span>
           <span v-if="selectedSection" class="results-filter">
             筛选: {{ selectedSection }}
-            <button class="btn btn-ghost btn-xs" @click="selectedSection = null; search()">✕</button>
+            <button class="btn btn-ghost btn-xs" @click="selectedSection = null; search()" aria-label="清除筛选">✕</button>
           </span>
         </div>
 
@@ -538,6 +563,23 @@ fetchSections()
   font-size: var(--text-sm);
   color: var(--text-secondary);
   line-height: 1.8;
+}
+
+/* ── Error Banner ────────────────────────────────────────────── */
+.error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--danger-light);
+  color: var(--danger);
+  font-size: var(--text-md);
+  border-left: 3px solid var(--danger);
+}
+
+.error-banner .btn {
+  flex-shrink: 0;
 }
 
 /* ── Responsive ──────────────────────────────────────────────── */

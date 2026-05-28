@@ -7,6 +7,7 @@ const routes = [
   { path: '/topics', name: 'Topics', component: () => import('../views/TopicsView.vue') },
   { path: '/data', name: 'Data', component: () => import('../views/DataView.vue') },
   { path: '/kb', name: 'Kb', component: () => import('../views/KbView.vue') },
+  { path: '/config', name: 'Config', component: () => import('../views/ConfigView.vue') },
 ]
 
 export default createRouter({

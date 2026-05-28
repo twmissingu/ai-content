@@ -159,6 +159,233 @@ class TestAISlopPatterns:
         assert score >= 70
 
 
+class TestLoadQualityGates:
+    """Test _load_quality_gates function."""
+
+    def test_defaults_when_no_file(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("skills.writer.CONFIG_DIR", tmp_path / "nonexistent")
+        from skills.writer import _load_quality_gates
+        result = _load_quality_gates()
+        assert "proofread_threshold" in result
+        assert "critique_threshold" in result
+        assert "max_rewrite_rounds" in result
+
+    def test_loads_from_file(self, tmp_path, monkeypatch):
+        import json
+        monkeypatch.setattr("skills.writer.CONFIG_DIR", tmp_path)
+        (tmp_path / "quality_gates.json").write_text(json.dumps({
+            "proofread_threshold": 80,
+            "critique_threshold": 85,
+            "title_threshold": 90,
+            "max_rewrite_rounds": 5,
+        }))
+        from skills.writer import _load_quality_gates
+        result = _load_quality_gates()
+        assert result["proofread_threshold"] == 80
+        assert result["max_rewrite_rounds"] == 5
+
+    def test_defaults_on_json_error(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("skills.writer.CONFIG_DIR", tmp_path)
+        (tmp_path / "quality_gates.json").write_text("not json{")
+        from skills.writer import _load_quality_gates
+        result = _load_quality_gates()
+        assert "proofread_threshold" in result
+
+
+class TestReadTopic:
+    """Test _read_topic method."""
+
+    def test_reads_by_topic_id(self, writer_agent, tmp_path, monkeypatch):
+        import json
+        monkeypatch.setattr("skills.writer.PENDING_DIR", tmp_path)
+        topic = {"title": "AI趋势", "score": 85}
+        (tmp_path / "topic_ai-trend.json").write_text(json.dumps(topic))
+        result = writer_agent._read_topic("topic_ai-trend")
+        assert result["title"] == "AI趋势"
+
+    def test_reads_by_partial_id(self, writer_agent, tmp_path, monkeypatch):
+        import json
+        monkeypatch.setattr("skills.writer.PENDING_DIR", tmp_path)
+        topic = {"title": "Python技巧", "score": 90}
+        (tmp_path / "topic_abc-python-123.json").write_text(json.dumps(topic))
+        result = writer_agent._read_topic("python")
+        assert result["title"] == "Python技巧"
+
+    def test_reads_highest_scored(self, writer_agent, tmp_path, monkeypatch):
+        import json, time
+        monkeypatch.setattr("skills.writer.PENDING_DIR", tmp_path)
+        (tmp_path / "topic_old.json").write_text(json.dumps({"title": "Old", "score": 50}))
+        time.sleep(0.01)
+        (tmp_path / "topic_new.json").write_text(json.dumps({"title": "New", "score": 95}))
+        result = writer_agent._read_topic()
+        assert result["title"] == "New"
+
+    def test_raises_when_no_topics(self, writer_agent, tmp_path, monkeypatch):
+        monkeypatch.setattr("skills.writer.PENDING_DIR", tmp_path)
+        with pytest.raises(SystemExit):
+            writer_agent._read_topic()
+
+
+class TestReadArticleForRewrite:
+    """Test _read_article_for_rewrite method."""
+
+    def test_reads_meta_and_content(self, writer_agent, tmp_path, monkeypatch):
+        import json
+        monkeypatch.setattr("skills.writer.REVIEW_DIR", tmp_path)
+        monkeypatch.setattr("skills.writer.ACTIONS_DIR", tmp_path)
+        meta = {"topic": "AI", "platform": "wechat"}
+        (tmp_path / "art-001.meta.json").write_text(json.dumps(meta))
+        (tmp_path / "art-001.md").write_text("# Article\nContent here")
+        content, meta_out, reason = writer_agent._read_article_for_rewrite("art-001")
+        assert "Article" in content
+        assert meta_out["topic"] == "AI"
+
+    def test_finds_reject_reason(self, writer_agent, tmp_path, monkeypatch):
+        import json
+        monkeypatch.setattr("skills.writer.REVIEW_DIR", tmp_path)
+        monkeypatch.setattr("skills.writer.ACTIONS_DIR", tmp_path)
+        (tmp_path / "art-002.meta.json").write_text(json.dumps({"topic": "X"}))
+        (tmp_path / "art-002.md").write_text("content")
+        (tmp_path / "reject_art-002.json").write_text(json.dumps({"reason": "AI腔太重"}))
+        _, _, reason = writer_agent._read_article_for_rewrite("art-002")
+        assert reason == "AI腔太重"
+
+    def test_fallback_when_not_found(self, writer_agent, tmp_path, monkeypatch):
+        import json
+        monkeypatch.setattr("skills.writer.REVIEW_DIR", tmp_path)
+        monkeypatch.setattr("skills.writer.ACTIONS_DIR", tmp_path)
+        monkeypatch.setattr("skills.writer.PENDING_DIR", tmp_path)
+        (tmp_path / "topic_missing.json").write_text(json.dumps({"title": "Fallback"}))
+        content, meta, reason = writer_agent._read_article_for_rewrite("nonexistent")
+        assert content == ""
+        assert meta["title"] == "Fallback"
+
+
+
+class TestFetchSource:
+    """Test _fetch_source method."""
+
+    def test_empty_url(self, writer_agent):
+        result = writer_agent._fetch_source("")
+        assert "无原文" in result
+
+    def test_successful_fetch(self, writer_agent, monkeypatch):
+        import subprocess
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Fetched content " * 100
+        monkeypatch.setattr("skills.writer.subprocess", MagicMock(run=MagicMock(return_value=mock_result)))
+        result = writer_agent._fetch_source("https://example.com")
+        assert "Fetched content" in result
+
+    def test_failed_fetch(self, writer_agent, monkeypatch):
+        import subprocess
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        monkeypatch.setattr("skills.writer.subprocess", MagicMock(run=MagicMock(return_value=mock_result)))
+        result = writer_agent._fetch_source("https://bad-url.com")
+        assert "抓取失败" in result
+
+    def test_timeout_fetch(self, writer_agent, monkeypatch):
+        import subprocess
+        def raise_timeout(*a, **kw):
+            raise subprocess.TimeoutExpired(cmd="hermes", timeout=30)
+        monkeypatch.setattr("skills.writer.subprocess", MagicMock(run=raise_timeout))
+        result = writer_agent._fetch_source("https://slow.com")
+        assert "抓取失败" in result
+
+
+class TestLoadAISlopPatterns:
+    """Test _load_ai_slop_patterns method."""
+
+    def test_returns_empty_when_no_file(self, writer_agent, tmp_path, monkeypatch):
+        import json
+        monkeypatch.setattr("config.settings.CONFIG_DIR", tmp_path / "nonexistent")
+        monkeypatch.setattr("skills.writer.WriterAgent._AI_SLOP_PATTERNS", None)
+        result = writer_agent._load_ai_slop_patterns()
+        assert result == []
+
+    def test_loads_patterns(self, writer_agent, tmp_path, monkeypatch):
+        import json
+        monkeypatch.setattr("config.settings.CONFIG_DIR", tmp_path)
+        patterns = [{"pattern": r"test_pattern[，,]", "severity": 3}]
+        (tmp_path / "proofread_patterns.json").write_text(json.dumps(patterns))
+        result = writer_agent._load_ai_slop_patterns()
+        assert len(result) >= 1
+        found = any(p[1] == 3 for p in result)
+        assert found
+
+
+class TestProofreadExtended:
+    """Test _proofread additional branches."""
+
+    def test_below_threshold_rewrites(self, writer_agent):
+        """When score is below threshold, LLM suggestion triggers rewrite."""
+        text = "值得注意的是，这个问题很复杂。综上所述，我们需要深入思考。"
+
+        with patch('skills.writer.chat_structured') as mock_structured, \
+             patch('skills.writer.chat') as mock_chat:
+            mock_structured.return_value = {"score": 40, "suggestion": "需要更自然"}
+            mock_chat.return_value = "重写后的自然文本"
+
+            cleaned, score = writer_agent._proofread(text)
+
+        assert score < 100  # had AI-slop patterns
+
+
+class TestBatchScreenshot:
+    """Test _batch_screenshot method."""
+
+    def test_returns_html_when_no_playwright(self, writer_agent, tmp_path):
+        html1 = tmp_path / "test1.html"
+        html1.write_text("<html>test1</html>")
+        html2 = tmp_path / "test2.html"
+        html2.write_text("<html>test2</html>")
+
+        with patch.dict('sys.modules', {'playwright': None, 'playwright.sync_api': None}):
+            result = writer_agent._batch_screenshot([html1, html2])
+
+        assert len(result) == 2
+        assert all(p.endswith(".html") for p in result)
+
+    def test_screenshots_successfully(self, writer_agent, tmp_path):
+        html1 = tmp_path / "test1.html"
+        html1.write_text("<html>test1</html>")
+
+        mock_page = MagicMock()
+        mock_browser = MagicMock()
+        mock_browser.new_page.return_value = mock_page
+
+        mock_pw_module = MagicMock()
+        mock_pw_module.sync_playwright.return_value = MagicMock(
+            __enter__=MagicMock(return_value=MagicMock(chromium=MagicMock(launch=MagicMock(return_value=mock_browser)))),
+            __exit__=MagicMock(return_value=False),
+        )
+
+        with patch.dict('sys.modules', {'playwright': mock_pw_module, 'playwright.sync_api': mock_pw_module}):
+            result = writer_agent._batch_screenshot([html1])
+
+        assert len(result) == 1
+        assert result[0].endswith(".png")
+
+    def test_browser_launch_failure(self, writer_agent, tmp_path):
+        html1 = tmp_path / "test1.html"
+        html1.write_text("<html>test1</html>")
+
+        mock_pw_module = MagicMock()
+        mock_pw_module.sync_playwright.return_value = MagicMock(
+            __enter__=MagicMock(return_value=MagicMock(chromium=MagicMock(launch=MagicMock(side_effect=Exception("browser not found"))))),
+            __exit__=MagicMock(return_value=False),
+        )
+
+        with patch.dict('sys.modules', {'playwright': mock_pw_module, 'playwright.sync_api': mock_pw_module}):
+            result = writer_agent._batch_screenshot([html1])
+
+        assert len(result) == 1
+        assert result[0].endswith(".html")  # falls back to HTML
+
+
 class TestGenerateHtmlTemplates:
     """Test _generate_html_templates method."""
 

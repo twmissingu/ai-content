@@ -2,20 +2,20 @@
   "tool_update_wechat": {
     "name": "AI工具版本更新-微信",
     "platform": "wechat",
-    "length": 1500,
-    "tone": "口语化+观点鲜明",
-    "stance": "重度用户视角，场景化解读",
-    "structure": "反差开头 → 痛点-方案-感受逐个拆解 → 分层升级建议 → 互动",
-    "illustrations": 0
+    "length": 2000,
+    "tone": "数据驱动+体验诚实+吐槽真实感",
+    "stance": "第一时间实测，值不值得你折腾",
+    "structure": "时效钩子 → 跑分数据 → 真实体验 → 价格分析 → 适用人群 → 行业展望",
+    "illustrations": 6
   },
   "tool_update_xhs": {
     "name": "AI工具版本更新-小红书",
     "platform": "xiaohongshu",
     "length": 500,
-    "tone": "口语化+emoji+短句",
-    "stance": "朋友安利视角",
-    "structure": "3秒钩子 → Emoji要点列表 → 总结互动",
-    "illustrations": 1
+    "tone": "直接+感叹+emoji+数据",
+    "stance": "30秒知道值不值得试",
+    "structure": "钩子 → 3-5个核心要点 → 互动引导",
+    "illustrations": 3
   },
   "tech_science_wechat": {
     "name": "技术科普-微信",
@@ -33,6 +33,114 @@
     "tone": "口语化+冷知识+emoji",
     "stance": "30秒让人get一个技术概念",
     "structure": "冷知识钩子 → 3-5个Emoji要点 → 一句话总结 → 收藏引导",
+    "illustrations": 1
+  },
+  "tutorial_wechat": {
+    "name": "教程类-微信",
+    "platform": "wechat",
+    "length": 4000,
+    "tone": "口语化+手把手+有态度",
+    "stance": "带读者从零到一完成一件事",
+    "structure": "引言 → 安装 → 界面 → 设置 → 插件 → 实战入门 → 实战进阶 → 收尾",
+    "illustrations": 8
+  },
+  "tutorial_xhs": {
+    "name": "教程类-小红书",
+    "platform": "xiaohongshu",
+    "length": 600,
+    "tone": "口语化+效果前置+emoji",
+    "stance": "30秒知道能干嘛+怎么装",
+    "structure": "钩子 → 是什么 → 怎么装 → 亮点功能 → 效果展示 → 收藏引导",
+    "illustrations": 4
+  },
+  "sharing_wechat": {
+    "name": "分享类-微信",
+    "platform": "wechat",
+    "length": 3000,
+    "tone": "故事化+有思考+真实感",
+    "stance": "我发现了一个好东西，试了，想明白了，你也值得知道",
+    "structure": "个人故事 → 问题 → 发现 → 原版介绍 → 独立思考改进 → 演示 → 升华",
+    "illustrations": 0
+  },
+  "sharing_xhs": {
+    "name": "分享类-小红书",
+    "platform": "xiaohongshu",
+    "length": 500,
+    "tone": "口语化+感叹+emoji",
+    "stance": "一句话说清发现了什么+值不值得试",
+    "structure": "钩子 → 是什么 → 怎么用 → 我的改进 → 试了效果 → 感悟 → 收藏引导",
+    "illustrations": 1
+  },
+  "news_wechat": {
+    "name": "新闻类-微信",
+    "platform": "wechat",
+    "length": 6000,
+    "tone": "信息密度高+有体验+有吐槽",
+    "stance": "我蹲完了全程，整理好了，附带一手体验",
+    "structure": "开场定性 → 分类板块（模型/产品/Agent/电商/其他）→ 收尾升华",
+    "illustrations": 10
+  },
+  "news_xhs": {
+    "name": "新闻类-小红书",
+    "platform": "xiaohongshu",
+    "length": 600,
+    "tone": "直接+感叹+emoji",
+    "stance": "挑最值得说的3-5个点",
+    "structure": "钩子 → 3-5个最有看点的要点 → 互动引导",
+    "illustrations": 4
+  },
+  "insight_wechat": {
+    "name": "经验总结类-微信",
+    "platform": "wechat",
+    "length": 4500,
+    "tone": "故事化+有深度+谦逊但有力",
+    "stance": "我踩了无数坑，沉淀下来的东西",
+    "structure": "个人故事 → 底层认知 → 方法论框架 → 逐步展开 → 底线原则 → 数据指标 → 收尾",
+    "illustrations": 0
+  },
+  "insight_xhs": {
+    "name": "经验总结类-小红书",
+    "platform": "xiaohongshu",
+    "length": 500,
+    "tone": "金句化+emoji+真实感",
+    "stance": "3-5条最值钱的经验，条目式",
+    "structure": "核心洞察 → 3-5条经验要点 → 底线 → 收藏引导",
+    "illustrations": 1
+  },
+  "opinion_wechat": {
+    "name": "观点评论类-微信",
+    "platform": "wechat",
+    "length": 2500,
+    "tone": "思辨+不安感+敢下判断",
+    "stance": "我看到一个现象，想说点真话",
+    "structure": "反差钩子 → 观察与现象 → 核心论点（公理/框架）→ 跨领域类比 → 升华",
+    "illustrations": 0
+  },
+  "opinion_xhs": {
+    "name": "观点评论类-小红书",
+    "platform": "xiaohongshu",
+    "length": 500,
+    "tone": "直接+思辨+emoji",
+    "stance": "30秒知道我的观点+为什么",
+    "structure": "反差钩子 → 核心论点 → 3-5个论据 → 升华 → 互动引导",
+    "illustrations": 1
+  },
+  "roundup_wechat": {
+    "name": "盘点合集类-微信",
+    "platform": "wechat",
+    "length": 3000,
+    "tone": "精选感+有体验+有排序",
+    "stance": "我挑了N个真正好用的，你直接拿走",
+    "structure": "痛点铺垫 → 筛选标准 → 逐个推荐（每个300-500字）→ 使用建议",
+    "illustrations": 3
+  },
+  "roundup_xhs": {
+    "name": "盘点合集类-小红书",
+    "platform": "xiaohongshu",
+    "length": 600,
+    "tone": "清单体+emoji+一句话推荐",
+    "stance": "N个好东西，每个一句话说清楚",
+    "structure": "钩子 → N个推荐（每个emoji+一句话）→ 互动引导",
     "illustrations": 1
   },
   "wechat_default": {

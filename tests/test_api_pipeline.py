@@ -107,3 +107,124 @@ class TestPipelineTrigger:
     def test_invalid_topic_id_rejected(self, client):
         resp = client.post("/api/pipeline/trigger", json={"agent": "writer", "topic_id": "../../../etc"})
         assert resp.status_code == 400
+
+    def test_successful_trigger_scout(self, client, tmp_path, monkeypatch):
+        import subprocess
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        monkeypatch.setattr("dashboard.backend.routes.pipeline.subprocess", MagicMock(Popen=MagicMock(return_value=mock_proc)))
+        monkeypatch.setattr("dashboard.backend.routes.pipeline.PROJECT_ROOT", tmp_path)
+        resp = client.post("/api/pipeline/trigger", json={"agent": "scout", "session": "morning"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert data["agent"] == "scout"
+        assert data["pid"] == 12345
+
+    def test_successful_trigger_writer(self, client, tmp_path, monkeypatch):
+        mock_proc = MagicMock()
+        mock_proc.pid = 12346
+        monkeypatch.setattr("dashboard.backend.routes.pipeline.subprocess", MagicMock(Popen=MagicMock(return_value=mock_proc)))
+        monkeypatch.setattr("dashboard.backend.routes.pipeline.PROJECT_ROOT", tmp_path)
+        resp = client.post("/api/pipeline/trigger", json={"agent": "writer"})
+        assert resp.status_code == 200
+        assert resp.json()["agent"] == "writer"
+
+    def test_trigger_with_topic_id(self, client, tmp_path, monkeypatch):
+        mock_proc = MagicMock()
+        mock_proc.pid = 12347
+        monkeypatch.setattr("dashboard.backend.routes.pipeline.subprocess", MagicMock(Popen=MagicMock(return_value=mock_proc)))
+        monkeypatch.setattr("dashboard.backend.routes.pipeline.PROJECT_ROOT", tmp_path)
+        resp = client.post("/api/pipeline/trigger", json={"agent": "writer", "topic_id": "topic-123"})
+        assert resp.status_code == 200
+
+    def test_trigger_subprocess_error(self, client, tmp_path, monkeypatch):
+        from dashboard.backend.routes.pipeline import _trigger_timestamps
+        _trigger_timestamps.clear()
+
+        def raise_popen(*a, **kw):
+            raise OSError("binary not found")
+        monkeypatch.setattr("dashboard.backend.routes.pipeline.subprocess", MagicMock(Popen=raise_popen))
+        monkeypatch.setattr("dashboard.backend.routes.pipeline.PROJECT_ROOT", tmp_path)
+        resp = client.post("/api/pipeline/trigger", json={"agent": "scout"})
+        assert resp.status_code == 500
+
+    def test_rate_limiting(self, client, tmp_path, monkeypatch):
+        mock_proc = MagicMock()
+        mock_proc.pid = 12348
+        monkeypatch.setattr("dashboard.backend.routes.pipeline.subprocess", MagicMock(Popen=MagicMock(return_value=mock_proc)))
+        monkeypatch.setattr("dashboard.backend.routes.pipeline.PROJECT_ROOT", tmp_path)
+        # Clear rate limiter
+        from dashboard.backend.routes.pipeline import _trigger_timestamps
+        _trigger_timestamps.clear()
+
+        for _ in range(5):
+            client.post("/api/pipeline/trigger", json={"agent": "scout"})
+        resp = client.post("/api/pipeline/trigger", json={"agent": "scout"})
+        assert resp.status_code == 429
+
+
+class TestPipelineTimelineDB:
+    def test_timeline_includes_db_sessions(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "dashboard.backend.routes.pipeline.get_pipeline_sessions",
+            lambda limit=14: {
+                "items": [
+                    {"id": 1, "date": "2026-05-28", "period": "morning", "topic": "AI趋势", "status": "completed", "started_at": None, "completed_at": None},
+                ],
+                "total": 1,
+            },
+        )
+        resp = client.get("/api/pipeline/timeline")
+        data = resp.json()
+        db_sessions = [s for s in data["sessions"] if s["source"] == "database"]
+        assert len(db_sessions) == 1
+        assert db_sessions[0]["id"] == 1
+
+
+class TestPipelineStatusTimeout:
+    def test_timeout_flag_set(self, client, tmp_path, monkeypatch):
+        import time
+        status_dir = tmp_path / "queue" / "status"
+        status_dir.mkdir(parents=True, exist_ok=True)
+        # Create a status file with old started_at and incomplete progress
+        (status_dir / "writer.json").write_text(json.dumps({
+            "agent": "writer",
+            "stage": "drafting",
+            "progress_pct": 30,
+            "started_at": "20200101_000000",  # very old
+        }))
+        monkeypatch.setattr("dashboard.backend.routes.pipeline.STATUS_DIR", status_dir)
+        resp = client.get("/api/pipeline/status")
+        data = resp.json()
+        # writer should have timeout flag
+        if "writer" in data["agents"]:
+            assert data["agents"]["writer"].get("timeout") is True
+
+
+class TestPipelineRerun:
+    def test_rerun_valid_stage(self, client, monkeypatch):
+        mock_popen = MagicMock()
+        mock_popen.pid = 12345
+        monkeypatch.setattr("dashboard.backend.routes.pipeline.subprocess.Popen", lambda *a, **kw: mock_popen)
+        resp = client.post("/api/pipeline/rerun", json={"stage": 3})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["stage"] == 3
+        assert data["pid"] == 12345
+
+    def test_rerun_invalid_stage_low(self, client):
+        resp = client.post("/api/pipeline/rerun", json={"stage": 0})
+        assert resp.status_code == 400
+
+    def test_rerun_invalid_stage_high(self, client):
+        resp = client.post("/api/pipeline/rerun", json={"stage": 8})
+        assert resp.status_code == 400
+
+    def test_rerun_subprocess_error(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "dashboard.backend.routes.pipeline.subprocess.Popen",
+            MagicMock(side_effect=OSError("spawn failed")),
+        )
+        resp = client.post("/api/pipeline/rerun", json={"stage": 2})
+        assert resp.status_code == 500

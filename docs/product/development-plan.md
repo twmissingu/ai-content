@@ -1,8 +1,9 @@
 # 开发计划书 — 稿定（AI 内容生产系统）
 
 > 基于 PRD v1.4  
+> **当前状态：v0.7.0（Phase 1-3 已完成，详见 [CHANGELOG.md](../../CHANGELOG.md)）**  
 > 环境状态：Hermes v0.14.0 已安装，Python 3.14.5/Node v26 就绪  
-> 仓库状态：Phase 2 实现中（核心管线 + Dashboard 已编码，详见下方备注）
+> 仓库状态：~~Phase 2 实现中~~ → 核心管线 + Dashboard + 测试 + 安全加固已全部完成
 
 ---
 

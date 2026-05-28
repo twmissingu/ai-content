@@ -5,6 +5,7 @@ import { useToast } from '../composables/useToast'
 import StatusBadge from '../components/StatusBadge.vue'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import TraceTimeline from '../components/TraceTimeline.vue'
 
 const store = useDashboardStore()
 const toast = useToast()
@@ -13,6 +14,36 @@ const toast = useToast()
 const quickApprovingId = ref<string | null>(null)
 const quickRejectingId = ref<string | null>(null)
 const quickRejectReason = ref('')
+
+// Trace state
+const expandedTraceSession = ref<number | null>(null)
+
+function toggleTraceSession(sessionId: number) {
+  if (expandedTraceSession.value === sessionId) {
+    expandedTraceSession.value = null
+    store.clearActiveTraceSummary()
+  } else {
+    expandedTraceSession.value = sessionId
+    store.fetchTraceSummary(sessionId)
+  }
+}
+
+function formatDuration(ms: number | null): string {
+  if (ms === null || ms === undefined) return '-'
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+  const m = Math.floor(ms / 60000)
+  const s = Math.floor((ms % 60000) / 1000)
+  return `${m}m${s}s`
+}
+
+async function handleRerun(stage: number) {
+  try {
+    await store.rerunFromStage(stage)
+  } catch (e) {
+    toast.error(`重跑失败: ${e instanceof Error ? e.message : '未知错误'}`)
+  }
+}
 
 // Pending review articles (from approval queue, show top 3)
 const pendingArticles = computed(() => store.approvalQueue.slice(0, 3))
@@ -145,6 +176,10 @@ onMounted(() => {
   }, 60000) // Update every minute
   // Fetch approval queue for pending review section
   store.fetchApprovalQueue()
+  // Fetch trace sessions for execution history
+  store.fetchTraceSessions()
+  // Fetch quality flywheel data
+  store.fetchFlywheel()
 })
 
 onUnmounted(() => {
@@ -276,8 +311,8 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
           <span class="budget-separator">/</span>
           <span class="budget-limit">${{ store.budget.budget?.toFixed(2) || '15.00' }}</span>
         </div>
-        <div class="progress-bar">
-          <div 
+        <div class="progress-bar" role="progressbar" :aria-valuenow="Math.min(store.budget.percentage || 0, 100)" aria-valuemin="0" aria-valuemax="100" :aria-label="`预算使用 ${store.budget.percentage?.toFixed(1) || 0}%`">
+          <div
             class="progress-bar-fill"
             :class="{
               success: (store.budget.percentage || 0) < 60,
@@ -348,7 +383,11 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
               v-for="article in store.approvalQueue.slice(0, 3)"
               :key="article.id"
               class="kanban-card"
+              role="button"
+              tabindex="0"
               @click="$router.push('/approval')"
+              @keydown.enter="$router.push('/approval')"
+              @keydown.space.prevent="$router.push('/approval')"
             >
               <div class="kanban-card-title">{{ article.meta.topic || '未知选题' }}</div>
               <div class="kanban-card-meta">
@@ -356,7 +395,15 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
                 <span>📝 {{ article.meta.word_count || 0 }}字</span>
               </div>
             </div>
-            <div v-if="store.approvalQueue.length > 3" class="kanban-more">
+            <div
+              v-if="store.approvalQueue.length > 3"
+              class="kanban-more"
+              role="link"
+              tabindex="0"
+              @click="$router.push('/approval')"
+              @keydown.enter="$router.push('/approval')"
+              @keydown.space.prevent="$router.push('/approval')"
+            >
               +{{ store.approvalQueue.length - 3 }} 更多
             </div>
           </div>
@@ -378,6 +425,94 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Execution History -->
+    <div v-if="store.traceSessions.length > 0" class="card execution-history-card">
+      <div class="card-header">
+        <h3 class="card-title">📊 执行历史</h3>
+        <button class="btn btn-ghost btn-xs" @click="store.fetchTraceSessions()">
+          🔄 刷新
+        </button>
+      </div>
+      <div class="execution-list">
+        <div
+          v-for="session in store.traceSessions.slice(0, 10)"
+          :key="session.id"
+          class="execution-item"
+          :class="{ expanded: expandedTraceSession === session.id }"
+          role="button"
+          tabindex="0"
+          :aria-expanded="expandedTraceSession === session.id"
+          @click="toggleTraceSession(session.id)"
+          @keydown.enter="toggleTraceSession(session.id)"
+          @keydown.space.prevent="toggleTraceSession(session.id)"
+        >
+          <div class="execution-row">
+            <div class="execution-info">
+              <span class="execution-topic">{{ session.topic || '未知选题' }}</span>
+              <span class="execution-meta">
+                {{ session.date }} {{ session.period === 'am' ? '上午' : '下午' }}
+              </span>
+            </div>
+            <div class="execution-stats">
+              <span class="execution-stages">
+                {{ session.stage_count }} 阶段
+              </span>
+              <span class="execution-duration">
+                {{ formatDuration(session.total_duration_ms) }}
+              </span>
+              <span
+                v-if="session.failed_stages.length > 0"
+                class="execution-failed"
+              >
+                {{ session.failed_stages.length }} 失败
+              </span>
+              <StatusBadge :status="session.status" />
+            </div>
+            <span class="execution-expand">
+              {{ expandedTraceSession === session.id ? '▼' : '▶' }}
+            </span>
+          </div>
+
+          <!-- Expanded trace detail -->
+          <div v-if="expandedTraceSession === session.id" class="execution-detail" @click.stop>
+            <TraceTimeline
+              :summary="store.activeTraceSummary"
+              :loading="store.isLoading('traceSummary')"
+              :show-rerun="true"
+              @rerun="handleRerun"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quality Flywheel -->
+    <div v-if="store.flywheelData?.recommended_thresholds" class="card flywheel-card">
+      <div class="card-header">
+        <h3 class="card-title">🎯 质量飞轮</h3>
+        <span class="flywheel-badge">自动校准</span>
+      </div>
+      <p class="flywheel-message">{{ store.flywheelData.message }}</p>
+      <div class="flywheel-thresholds">
+        <div class="flywheel-threshold">
+          <span class="flywheel-label">审校阈值</span>
+          <span class="flywheel-value">{{ store.flywheelData.recommended_thresholds.proofread_threshold }}</span>
+        </div>
+        <div class="flywheel-threshold">
+          <span class="flywheel-label">批评阈值</span>
+          <span class="flywheel-value">{{ store.flywheelData.recommended_thresholds.critique_threshold }}</span>
+        </div>
+        <div class="flywheel-threshold">
+          <span class="flywheel-label">标题阈值</span>
+          <span class="flywheel-value">{{ store.flywheelData.recommended_thresholds.title_threshold }}</span>
+        </div>
+      </div>
+      <div class="flywheel-meta">
+        基于 {{ store.flywheelData.sample_size }} 条审批记录
+        ({{ store.flywheelData.approved_scores?.length || 0 }} 通过 / {{ store.flywheelData.rejected_scores?.length || 0 }} 驳回)
       </div>
     </div>
 
@@ -418,7 +553,7 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
 
         <!-- Progress Bar -->
         <div class="agent-progress">
-          <div class="progress-bar">
+          <div class="progress-bar" role="progressbar" :aria-valuenow="agent.progress_pct || 0" aria-valuemin="0" aria-valuemax="100" :aria-label="`${getAgentLabel(agent.name)} 进度 ${agent.progress_pct || 0}%`">
             <div
               class="progress-bar-fill"
               :class="getProgressColor(agent.progress_pct || 0)"
@@ -442,7 +577,7 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
             >
               <span class="sub-worker-name">{{ workerName }}</span>
               <div class="sub-worker-progress">
-                <div class="progress-bar progress-bar-sm">
+                <div class="progress-bar progress-bar-sm" role="progressbar" :aria-valuenow="worker.progress_pct || 0" aria-valuemin="0" aria-valuemax="100" :aria-label="`${workerName} 进度 ${worker.progress_pct || 0}%`">
                   <div
                     class="progress-bar-fill"
                     :class="worker.status === 'completed' ? 'success' : worker.status === 'failed' ? 'danger' : 'primary'"
@@ -502,6 +637,7 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
                 v-model="quickRejectReason"
                 class="input reject-reason-input"
                 placeholder="驳回原因..."
+                aria-label="驳回原因"
                 @keyup.enter="quickReject(article.id)"
               />
               <button
@@ -1030,7 +1166,7 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
 
 .alert-warning {
   background: var(--warning-light);
-  color: #7c6c00;
+  color: var(--warning-dark);
 }
 
 .alert-danger {
@@ -1044,8 +1180,9 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
 
 .retry-btn {
   flex-shrink: 0;
-  padding: 2px 8px;
+  padding: var(--space-xs) var(--space-sm);
   font-size: var(--text-xs);
+  min-height: 28px;
   color: var(--danger);
   border-color: var(--danger);
 }
@@ -1260,6 +1397,159 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
 .btn-xs {
   padding: 4px 8px;
   font-size: var(--text-xs);
+}
+
+/* ── Execution History ───────────────────────────────────── */
+.execution-history-card {
+  overflow: hidden;
+}
+
+.execution-history-card .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.execution-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.execution-item {
+  border-bottom: 1px solid var(--divider);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.execution-item:last-child {
+  border-bottom: none;
+}
+
+.execution-item:hover {
+  background: var(--bg-hover);
+}
+
+.execution-item.expanded {
+  background: var(--bg-hover);
+}
+
+.execution-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+}
+
+.execution-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.execution-topic {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.execution-meta {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.execution-stats {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-shrink: 0;
+}
+
+.execution-stages,
+.execution-duration {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.execution-failed {
+  font-size: var(--text-xs);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.execution-expand {
+  font-size: var(--text-xs);
+  color: var(--text-disabled);
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+
+.execution-detail {
+  padding: 0 var(--space-lg) var(--space-lg) calc(var(--space-lg) + 44px);
+  border-top: 1px solid var(--divider);
+}
+
+/* ── Quality Flywheel ───────────────────────────────────────── */
+.flywheel-card {
+  background: linear-gradient(135deg, var(--bg-card) 0%, var(--success-light) 100%);
+  border-left: 3px solid var(--success);
+}
+
+.flywheel-card .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.flywheel-badge {
+  font-size: var(--text-xs);
+  color: var(--success);
+  background: var(--success-light);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+}
+
+.flywheel-message {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-md) 0;
+}
+
+.flywheel-thresholds {
+  display: flex;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-md);
+}
+
+.flywheel-threshold {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.flywheel-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.flywheel-value {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--success);
+}
+
+.flywheel-meta {
+  font-size: var(--text-xs);
+  color: var(--text-disabled);
 }
 
 /* ── Responsive ──────────────────────────────────────────────── */

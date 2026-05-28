@@ -109,6 +109,60 @@ export interface ApprovalActionResponse {
   warning?: string
 }
 
+export interface PipelineTrace {
+  id: number
+  session_id: number | null
+  agent: string
+  stage: string
+  stage_name: string | null
+  input_summary: string | null
+  output_summary: string | null
+  status: 'running' | 'completed' | 'failed' | 'skipped'
+  duration_ms: number | null
+  tokens_used: number
+  error_message: string | null
+  created_at: string
+  completed_at: string | null
+}
+
+export interface TraceSummary {
+  stages: PipelineTrace[]
+  total_tokens: number
+  total_duration_ms: number
+  failed_stages: string[]
+  stage_count: number
+}
+
+export interface TraceSession {
+  id: number
+  date: string
+  period: string
+  topic: string
+  status: string
+  started_at: string | null
+  completed_at: string | null
+  stage_count: number
+  total_tokens: number
+  total_duration_ms: number
+  failed_stages: string[]
+}
+
+export interface FlywheelData {
+  recommended_thresholds: {
+    proofread_threshold: number
+    critique_threshold: number
+    title_threshold: number
+  }
+  message: string
+  sample_size: number
+}
+
+interface WsPipelineStatus {
+  type: 'pipeline_status'
+  agents?: Record<string, AgentStatus>
+  budget?: BudgetStatus
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // Store
 // ═══════════════════════════════════════════════════════════════════════
@@ -125,6 +179,9 @@ export const useDashboardStore = defineStore('dashboard', () => {
   const topics = ref<Topic[]>([])
   const config = ref<ConfigData>({})
   const budget = ref<BudgetStatus | null>(null)
+  const traceSessions = ref<TraceSession[]>([])
+  const activeTraceSummary = ref<TraceSummary | null>(null)
+  const flywheelData = ref<FlywheelData | null>(null)
   const error = ref<string | null>(null)
 
   // Track individual loading states
@@ -192,6 +249,15 @@ export const useDashboardStore = defineStore('dashboard', () => {
   }
 
   // ── Actions ───────────────────────────────────────────────────────
+
+  function handleWsMessage(data: WsPipelineStatus) {
+    if (data.type === 'pipeline_status') {
+      agents.value = data.agents || {}
+      budget.value = data.budget || null
+      error.value = null
+      updateConnectionStatus(true)
+    }
+  }
 
   async function fetchPipeline() {
     setLoading('pipeline', true)
@@ -312,6 +378,67 @@ export const useDashboardStore = defineStore('dashboard', () => {
     error.value = null
   }
 
+  async function fetchTraceSessions(limit = 20) {
+    setLoading('traces', true)
+    try {
+      const data = await fetchJson<{ sessions: TraceSession[] }>(`/api/pipeline/traces/sessions?limit=${limit}`)
+      traceSessions.value = data.sessions || []
+      error.value = null
+    } catch (e) {
+      handleError(e, 'fetchTraceSessions')
+    } finally {
+      setLoading('traces', false)
+    }
+  }
+
+  async function fetchTraceSummary(sessionId: number) {
+    setLoading('traceSummary', true)
+    try {
+      const data = await fetchJson<TraceSummary>(`/api/pipeline/traces/summary/${sessionId}`)
+      activeTraceSummary.value = data
+      error.value = null
+    } catch (e) {
+      handleError(e, 'fetchTraceSummary')
+    } finally {
+      setLoading('traceSummary', false)
+    }
+  }
+
+  async function rerunFromStage(stage: number): Promise<void> {
+    setLoading('rerun', true)
+    try {
+      await fetchJson('/api/pipeline/rerun', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage }),
+      })
+      toast.success(`从阶段 ${stage} 重新执行`)
+      await fetchPipeline()
+    } catch (e) {
+      handleError(e, 'rerunFromStage')
+      throw e
+    } finally {
+      setLoading('rerun', false)
+    }
+  }
+
+  async function fetchFlywheel() {
+    setLoading('flywheel', true)
+    try {
+      const data = await fetchJson<FlywheelData>('/api/config/quality-flywheel')
+      flywheelData.value = data
+      error.value = null
+    } catch (e) {
+      handleError(e, 'fetchFlywheel')
+    } finally {
+      setLoading('flywheel', false)
+    }
+  }
+
+  function clearActiveTraceSummary() {
+    activeTraceSummary.value = null
+  }
+
   function isLoading(key: string): boolean {
     return loadingStates.value[key] || false
   }
@@ -324,6 +451,9 @@ export const useDashboardStore = defineStore('dashboard', () => {
     topics,
     config,
     budget,
+    traceSessions,
+    activeTraceSummary,
+    flywheelData,
     loading,
     error,
     loadingStates,
@@ -334,6 +464,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     isAgentRunning,
 
     // Actions
+    handleWsMessage,
     fetchPipeline,
     fetchApprovalQueue,
     fetchTopics,
@@ -343,5 +474,10 @@ export const useDashboardStore = defineStore('dashboard', () => {
     confirmTopic,
     clearError,
     isLoading,
+    fetchTraceSessions,
+    fetchTraceSummary,
+    rerunFromStage,
+    fetchFlywheel,
+    clearActiveTraceSummary,
   }
 })

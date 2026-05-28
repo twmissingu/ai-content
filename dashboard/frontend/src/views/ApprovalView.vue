@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
 import { useToast } from '../composables/useToast'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
+import PaginationBar from '../components/PaginationBar.vue'
 
 const store = useDashboardStore()
 const toast = useToast()
@@ -38,7 +40,7 @@ const processingIds = ref<Set<string>>(new Set())
 const renderedContent = computed(() => {
   const article = store.approvalQueue.find(a => a.id === selectedId.value)
   if (!article?.content_preview) return ''
-  return marked(article.content_preview) as string
+  return DOMPurify.sanitize(marked(article.content_preview) as string)
 })
 
 async function fetchVersions(sessionId: number) {
@@ -194,8 +196,17 @@ const rejectPresets = [
   '需要补充案例',
 ]
 
+function isInputElement(el: EventTarget | null): boolean {
+  if (!el || !(el instanceof HTMLElement)) return false
+  const tag = el.tagName.toLowerCase()
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable
+}
+
 // Keyboard shortcuts
 function handleKeydown(e: KeyboardEvent) {
+  // Skip shortcuts when user is typing in an input
+  if (isInputElement(e.target)) return
+
   // Escape: cancel all
   if (e.key === 'Escape') {
     selectedId.value = null
@@ -204,19 +215,16 @@ function handleKeydown(e: KeyboardEvent) {
     rejectReason.value = ''
     if (isBatchMode.value) toggleBatchMode()
   }
-  // Ctrl+A: select all in batch mode
+  // Ctrl+A: select all in batch mode (only when not in input)
   if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
     e.preventDefault()
     if (!isBatchMode.value) toggleBatchMode()
     toggleSelectAll()
   }
-  // Enter: approve selected article (when not in reject input)
-  if (e.key === 'Enter' && selectedId.value && !showRejectInput.value) {
+  // Enter: show approve confirmation for selected article
+  if (e.key === 'Enter' && selectedId.value && !showRejectInput.value && !showApproveConfirm.value) {
     e.preventDefault()
-    const article = store.approvalQueue.find(a => a.id === selectedId.value)
-    if (article && !processingIds.has(article.id)) {
-      confirmApprove(article.id)
-    }
+    showApproveConfirm.value = selectedId.value
   }
   // R: start reject on selected article
   if (e.key === 'r' && selectedId.value && !showRejectInput.value && !showApproveConfirm.value) {
@@ -224,6 +232,32 @@ function handleKeydown(e: KeyboardEvent) {
     showRejectInput.value = selectedId.value
   }
 }
+
+// Focus management: move focus to reject input when it appears
+watch(showRejectInput, async (id) => {
+  if (id) {
+    await nextTick()
+    const input = document.querySelector(`.reject-input`) as HTMLInputElement
+    input?.focus()
+  }
+})
+
+// Focus management: move focus to approve confirm button when it appears
+watch(showApproveConfirm, async (id) => {
+  if (id) {
+    await nextTick()
+    const btn = document.querySelector('.article-actions .btn-success') as HTMLButtonElement
+    btn?.focus()
+  }
+})
+
+// Pagination
+const currentPage = ref(1)
+const pageSize = 10
+const paginatedArticles = computed(() => {
+  const start = (currentPage.value - 1) * pageSize
+  return store.approvalQueue.slice(start, start + pageSize)
+})
 
 // Register keyboard handler
 import { onMounted, onUnmounted } from 'vue'
@@ -311,7 +345,7 @@ onUnmounted(() => {
 
     <!-- Article List -->
     <div
-      v-for="article in store.approvalQueue"
+      v-for="article in paginatedArticles"
       :key="article.id"
       class="card article-card"
       :class="{ 'selected': isBatchMode && selectedIds.has(article.id) }"
@@ -321,13 +355,14 @@ onUnmounted(() => {
         <input
           type="checkbox"
           :checked="selectedIds.has(article.id)"
+          :aria-label="`选择 ${article.meta.topic || '未知选题'}`"
           @click.stop
           @change="toggleSelection(article.id)"
         >
       </div>
 
       <!-- Article Header -->
-      <div class="article-header" @click="select(article.id)">
+      <div class="article-header" role="button" tabindex="0" @click="select(article.id)" @keydown.enter="select(article.id)" @keydown.space.prevent="select(article.id)">
         <div class="article-info">
           <h3 class="article-title">{{ article.meta.topic || '未知选题' }}</h3>
           <div class="article-meta">
@@ -408,6 +443,7 @@ onUnmounted(() => {
               class="input reject-input"
               placeholder="请输入驳回原因..."
               :disabled="processingIds.has(article.id)"
+              :aria-label="`驳回原因 - ${article.meta.topic || article.id}`"
               @keyup.enter="doReject(article.id)"
             >
             <button 
@@ -498,11 +534,20 @@ onUnmounted(() => {
       </transition>
 
       <!-- Expand Hint -->
-      <div v-if="selectedId !== article.id" class="expand-hint" @click="select(article.id)">
+      <div v-if="selectedId !== article.id" class="expand-hint" @click="select(article.id)" role="button" tabindex="0" :aria-label="`预览文章 - ${article.meta.topic || article.id}`" @keydown.enter="select(article.id)" @keydown.space.prevent="select(article.id)">
         <span class="expand-icon">👁️</span>
         <span>点击预览文章内容</span>
       </div>
     </div>
+
+    <!-- Pagination -->
+    <PaginationBar
+      v-if="store.approvalQueue.length > pageSize"
+      :total="store.approvalQueue.length"
+      :page-size="pageSize"
+      :current-page="currentPage"
+      @update:currentPage="currentPage = $event"
+    />
 
     <!-- Keyboard Shortcuts Hint -->
     <div v-if="store.approvalQueue.length > 0" class="keyboard-hints">
@@ -573,8 +618,8 @@ onUnmounted(() => {
 }
 
 .batch-checkbox input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   cursor: pointer;
 }
 
@@ -595,6 +640,7 @@ onUnmounted(() => {
   top: var(--space-md);
   left: var(--space-md);
   z-index: 10;
+  padding: var(--space-xs);
 }
 
 .batch-select input[type="checkbox"] {
@@ -737,7 +783,8 @@ onUnmounted(() => {
 
 .preset-btn {
   font-size: var(--text-xs);
-  padding: 2px 8px;
+  padding: var(--space-xs) var(--space-sm);
+  min-height: 28px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-full);
   white-space: nowrap;

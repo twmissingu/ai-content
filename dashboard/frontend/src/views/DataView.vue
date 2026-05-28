@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
 import { Bar } from 'vue-chartjs'
@@ -154,7 +154,7 @@ const budgetStatus = computed(() => {
             <span class="stat-unit">/ 月</span>
           </div>
           <div v-if="budgetStatus" class="stat-progress">
-            <div class="progress-bar">
+            <div class="progress-bar" role="progressbar" :aria-valuenow="Math.round(budgetStatus.percentage)" aria-valuemin="0" aria-valuemax="100" :aria-label="`预算使用 ${budgetStatus.percentage.toFixed(0)}%`">
               <div
                 class="progress-bar-fill"
                 :class="{

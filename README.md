@@ -31,7 +31,13 @@ The system is domain-agnostic, human-in-the-loop, and designed for daily operati
 - 📊 **Two-layer LLM scoring** — attention score + increment score with cold-start fallback
 - ✍️ **3 parallel platform versions** — WeChat (2000-3000 words), Xiaohongshu (300-800 chars + emoji), Douyin (15-60s video script)
 - ✅ **7-stage quality pipeline** — fetch source → LLM draft → AI-slop proofread → critique & rewrite → format → titles → illustrate
-- 🎛️ **Web Dashboard** — real-time pipeline status, approval queue with multi-version preview, topic management, cost tracking
+- 🎛️ **Web Dashboard** — real-time pipeline status (WebSocket), approval queue with multi-version preview, topic management, cost tracking
+- 🔐 **API authentication** — optional `X-API-Key` header, timing-safe comparison
+- 📡 **WebSocket real-time push** — pipeline status changes broadcast to all connected clients (3s polling + hash detection)
+- 📝 **Prompt version management** — database-backed template versioning, CRUD API, auto-import from files
+- 📈 **Execution tracing** — per-stage timing, token usage, error tracking with batch query optimization
+- 🔄 **Quality flywheel** — analyzes approval history to recommend quality gate threshold adjustments
+- ♿ **Accessibility** — focus traps, `:focus-visible` styles, touch targets, DOMPurify XSS sanitization, ARIA attributes
 - 🚫 **Never auto-publishes** — content goes to platform draft boxes, you hit "publish"
 - 🔄 **Daily feedback loop** — data recovery → viral detection → strategy update → scout weight tuning
 - 📦 **Zero external dependencies for communication** — JSON file system as agent message queue
@@ -55,7 +61,11 @@ Hermes Cron ─→ Scout Agent ─→ queue/pending/ ─→ You confirm
                      Knowledge Agent ─→ kb/ (archive)
                      Feedback Agent (22:00) ─→ kb/viral/ + kb/strategy/
 
-                     Web Dashboard (FastAPI + Vue 3) monitors everything
+                     Web Dashboard (FastAPI + Vue 3)
+                       ├── REST API (9 route modules)
+                       ├── WebSocket /ws/pipeline (real-time status)
+                       ├── SQLite (7 domain modules, WAL mode)
+                       └── Background threads (action scanner + budget monitor)
 ```
 
 ---
@@ -174,15 +184,25 @@ python3 dashboard/backend/main.py
 │   ├── publisher_toutiao.py   Toutiao Playwright automation
 │   ├── feedback.py            Data recovery & analysis
 │   ├── knowledge.py           Article archiving
+│   ├── common.py              AgentBase, metrics, load_prompt
 │   ├── llm.py                 Shared LLM utility
 │   └── action.py              JSON file protocol
 ├── dashboard/                 # Web Dashboard
-│   ├── backend/main.py        FastAPI (port 8710)
+│   ├── backend/
+│   │   ├── main.py            FastAPI (port 8710, middleware + routers)
+│   │   ├── routes/            9 route modules (pipeline, approval, topics, data, kb, config, health, traces, prompts)
+│   │   ├── database/          SQLite data layer (7 modules: core, sessions, versions, tokens, config_ops, traces, prompts)
+│   │   ├── ws.py              WebSocket real-time push
+│   │   ├── auth.py            API Key authentication
+│   │   └── ...                background, config_service, search, feishu, helpers, models
 │   └── frontend/              Vue 3 + Vite (port 5173)
 ├── docs/                      # Documentation
 │   ├── product/               # Product specs (PRD, dev plan)
 │   └── manual/                # User manuals, setup guides
 ├── config/                    # Runtime configuration
+│   ├── prompts/               24 prompt templates (7 .txt + 17 .md)
+│   ├── quality_gates.json     Quality gate thresholds
+│   └── ...                    settings, models, styles, patterns, schedule
 ├── scripts/                   # Operational scripts
 ├── queue/                     # Agent communication (JSON files)
 ├── kb/                        # Knowledge base (Markdown)

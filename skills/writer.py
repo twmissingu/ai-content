@@ -33,6 +33,7 @@ from config.settings import (
     TONE,
     STANCE,
 )
+from skills.agent_schemas import ArticleDraft, QualityGateResult
 from skills.common import AgentBase, agent_main, load_prompt
 from skills.llm import chat, chat_structured, LLMError
 
@@ -85,7 +86,19 @@ class WriterAgent(AgentBase):
     version = "1.0.0"
 
     def __init__(self, worker_type: str = "wechat"):
-        super().__init__(enable_metrics=True)
+        # Create pipeline session for tracing
+        session_id = None
+        try:
+            from dashboard.backend.database import create_pipeline_session
+            session_id = create_pipeline_session(
+                date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                period="am",
+                topic=f"Writer {worker_type}",
+            )
+        except Exception:
+            pass
+
+        super().__init__(enable_metrics=True, session_id=session_id)
         self.worker_type = worker_type
         self._status_path = STATUS_DIR / f"writer-worker-{worker_type}.json"
         self._run_timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -177,7 +190,6 @@ class WriterAgent(AgentBase):
         if not text:
             return ""
         # Remove common injection patterns
-        import re
         # Remove markdown code blocks that might contain instructions
         text = re.sub(r'```[\s\S]*?```', '', text)
         # Remove system/instruction-like patterns
@@ -276,6 +288,18 @@ class WriterAgent(AgentBase):
                 self.record_llm_call(duration=duration, success=True)
 
         self.end_stage("proofread")
+
+        # Validate quality gate result
+        try:
+            QualityGateResult(
+                gate_name="proofread",
+                score=final_score,
+                threshold=self._quality_gates["proofread_threshold"],
+                passed=final_score >= self._quality_gates["proofread_threshold"],
+            )
+        except Exception as e:
+            self.logger.warning(f"QualityGateResult validation failed: {e}")
+
         return cleaned, final_score
 
     # ── Stage 4: Critique & rewrite (multi-perspective editorial board) ──
@@ -317,6 +341,19 @@ class WriterAgent(AgentBase):
 
         # ── Combine scores (scorer 70% + critic 30%) ──
         score = int(scorer_score * 0.7 + critic_score * 0.3)
+
+        # Validate quality gate result
+        try:
+            QualityGateResult(
+                gate_name="critique",
+                score=score,
+                threshold=self._quality_gates["critique_threshold"],
+                passed=score >= self._quality_gates["critique_threshold"],
+                issues=critic_issues[:3],
+                suggestions=scorer_suggestions[:3],
+            )
+        except Exception as e:
+            self.logger.warning(f"QualityGateResult validation failed: {e}")
 
         if score >= self._quality_gates["critique_threshold"] or round_num >= self._quality_gates["max_rewrite_rounds"]:
             return text, score, score >= QUALITY_THRESHOLD
@@ -488,29 +525,151 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
         return self._batch_screenshot(html_files)
 
     # ── Main pipeline ──────────────────────────────────────────────
-    def run(self, topic_id: Optional[str] = None, rewrite_mode: bool = False):
+    def run(self, topic_id: Optional[str] = None, rewrite_mode: bool = False,
+            rerun_from: Optional[int] = None):
         """Main pipeline execution."""
         # Support --topic-file for router compatibility
         topic_file_arg = None
         work_dir_arg = None
+        rerun_from_arg = rerun_from
         for i, arg in enumerate(sys.argv):
             if arg == "--topic-file" and i + 1 < len(sys.argv):
                 topic_file_arg = Path(sys.argv[i + 1])
             elif arg == "--work-dir" and i + 1 < len(sys.argv):
                 work_dir_arg = Path(sys.argv[i + 1])
+            elif arg == "--rerun-from" and i + 1 < len(sys.argv):
+                rerun_from_arg = int(sys.argv[i + 1])
 
         if topic_id is None:
             topic_id = sys.argv[1] if len(sys.argv) > 1 else None
-        
+
         if not rewrite_mode:
             rewrite_mode = "--rewrite" in sys.argv
-        
+
         rewrite_target = topic_id if rewrite_mode else None
 
         # If topic_file_arg given, use that instead of scanning pending/
         _topic_from_file = None
         if topic_file_arg and topic_file_arg.exists():
             _topic_from_file = json.loads(topic_file_arg.read_text())
+
+        # ── Mode: Re-run from specific stage ─────────────────────────
+        if rerun_from_arg and 1 <= rerun_from_arg <= 7:
+            self.logger.info(f"Re-run mode: starting from stage {rerun_from_arg}")
+            self.write_status("重跑", 0, f"从阶段 {rerun_from_arg} 重新执行")
+
+            # Find the last article in review/ to re-run
+            review_files = sorted(REVIEW_DIR.glob("*.md"), key=os.path.getmtime, reverse=True)
+            if not review_files:
+                self.logger.error("No articles in review/ to re-run")
+                return
+
+            article_path = review_files[0]
+            meta_path = REVIEW_DIR / f"{article_path.stem}.meta.json"
+            if not meta_path.exists():
+                self.logger.error(f"Meta not found: {meta_path}")
+                return
+
+            meta = json.loads(meta_path.read_text())
+            text = article_path.read_text(encoding="utf-8")
+            # Remove the title line
+            if text.startswith("# "):
+                text = text.split("\n", 1)[1].strip()
+
+            topic = {"title": meta.get("topic", "Unknown"), "description": ""}
+            source_url = meta.get("source_url", "")
+            proofread_score = meta.get("proofread_score", 70)
+            critique_scores = meta.get("critique_scores", [])
+            title_candidates = meta.get("title_candidates", [])
+            final_title = meta.get("topic", "Unknown")
+            images = meta.get("images", [])
+
+            # Run stages from rerun_from_arg
+            if rerun_from_arg <= 2:
+                self.write_status("LLM初稿", 20, "重新生成初稿")
+                self.start_stage("draft")
+                source_material = self._fetch_source(source_url) if source_url else "无原文"
+                text = self._draft(topic, source_material)
+                self.end_stage("draft")
+
+            if rerun_from_arg <= 3:
+                self.write_status("AI腔审校", 35, "检测并移除AI腔")
+                text, proofread_score = self._proofread(text)
+
+            if rerun_from_arg <= 4:
+                self.write_status("批评修订", 50, "评委评分中")
+                self.start_stage("critique")
+                critique_scores = []
+                for round_num in range(1, self._quality_gates["max_rewrite_rounds"] + 1):
+                    text, score, passed = self._critique(text, topic["title"], round_num)
+                    critique_scores.append(score)
+                    if passed:
+                        break
+                self.end_stage("critique")
+
+            if rerun_from_arg <= 5:
+                self.write_status("排版", 75, "格式化排版")
+                self.start_stage("format")
+                text = self._format(text)
+                self.end_stage("format")
+
+            if rerun_from_arg <= 6:
+                self.write_status("标题优化", 85, "生成候选标题")
+                self.start_stage("titles")
+                final_title, title_candidates = self._generate_titles(text, topic["title"])
+                self.end_stage("titles")
+
+            if rerun_from_arg <= 7:
+                self.write_status("配图", 92, "生成配图")
+                self.start_stage("illustrate")
+                images = self._illustrate(text, topic["title"])
+                self.end_stage("illustrate")
+
+            # Write output
+            self.write_status("完成", 95, "写入输出文件")
+            out_path = REVIEW_DIR / f"{self._run_timestamp}-{self.worker_type}.md"
+            out_meta = REVIEW_DIR / f"{self._run_timestamp}-{self.worker_type}.meta.json"
+            out_path.write_text(f"# {final_title}\n\n{text}", encoding="utf-8")
+            title_score = title_candidates[0]["score"] if title_candidates else 0
+            out_meta_data = {
+                "topic": topic["title"],
+                "source_url": source_url,
+                "platform_standard": self.worker_type,
+                "proofread_score": proofread_score,
+                "critique_scores": critique_scores,
+                "revised_rounds": len(critique_scores),
+                "title_score": title_score,
+                "title_candidates": title_candidates,
+                "word_count": len(text),
+                "images": images,
+                "status": "completed",
+                "rerun_from": rerun_from_arg,
+            }
+            out_meta.write_text(json.dumps(out_meta_data, ensure_ascii=False, indent=2))
+
+            # Validate output via schema
+            try:
+                ArticleDraft.model_validate({
+                    "title": final_title,
+                    "content": text,
+                    "word_count": len(text),
+                    "topic": topic["title"],
+                    "platform": self.worker_type,
+                    "proofread_score": proofread_score,
+                    "critique_scores": critique_scores,
+                    "title_candidates": title_candidates,
+                    "source_url": source_url,
+                    "images": images,
+                })
+            except Exception as e:
+                self.logger.warning(f"ArticleDraft validation failed: {e}")
+
+            self.write_completed(
+                detail=f"从阶段{rerun_from_arg}重跑完成 · 评分{proofread_score}/{critique_scores[-1] if critique_scores else 0}",
+                article=str(out_path),
+                meta=str(out_meta),
+            )
+            return
 
         # ── Mode: Rewrite ──────────────────────────────────────────
         if rewrite_mode and rewrite_target:
@@ -636,6 +795,23 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
             "status": "completed",
         }
         meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
+
+        # Validate output via schema
+        try:
+            ArticleDraft.model_validate({
+                "title": final_title,
+                "content": text,
+                "word_count": len(text),
+                "topic": topic["title"],
+                "platform": self.worker_type,
+                "proofread_score": proofread_score,
+                "critique_scores": critique_scores,
+                "title_candidates": title_candidates,
+                "source_url": source_url,
+                "images": images,
+            })
+        except Exception as e:
+            self.logger.warning(f"ArticleDraft validation failed: {e}")
 
         # Final status with metrics
         self.write_completed(
