@@ -5,12 +5,8 @@ Runs daily via system cron. Removes entire session directories
 whose timestamp is > 7 days old.
 """
 
-import os
 import sys
 import time
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.settings import IMAGES_DIR
 

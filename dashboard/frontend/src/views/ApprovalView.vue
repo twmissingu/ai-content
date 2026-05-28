@@ -304,6 +304,9 @@ onUnmounted(() => {
       <div class="empty-state-description">
         所有文章已审批完毕，等待下一轮 Writer 生产
       </div>
+      <router-link to="/pipeline" class="btn btn-primary">
+        📊 查看管线状态
+      </router-link>
     </div>
 
     <!-- Article List -->
@@ -341,6 +344,11 @@ onUnmounted(() => {
             <span class="meta-item">
               <span class="meta-icon">📝</span>
               {{ article.meta.word_count || 0 }} 字
+            </span>
+            <span v-if="article.meta.platform" class="meta-divider">·</span>
+            <span v-if="article.meta.platform" class="meta-item platform-tag">
+              <span class="meta-icon">📱</span>
+              {{ article.meta.platform }}
             </span>
           </div>
         </div>
@@ -493,6 +501,26 @@ onUnmounted(() => {
       <div v-if="selectedId !== article.id" class="expand-hint" @click="select(article.id)">
         <span class="expand-icon">👁️</span>
         <span>点击预览文章内容</span>
+      </div>
+    </div>
+
+    <!-- Keyboard Shortcuts Hint -->
+    <div v-if="store.approvalQueue.length > 0" class="keyboard-hints">
+      <div class="hint-item">
+        <kbd>Enter</kbd>
+        <span>通过</span>
+      </div>
+      <div class="hint-item">
+        <kbd>R</kbd>
+        <span>驳回</span>
+      </div>
+      <div class="hint-item">
+        <kbd>Esc</kbd>
+        <span>取消</span>
+      </div>
+      <div class="hint-item">
+        <kbd>Ctrl+A</kbd>
+        <span>全选</span>
       </div>
     </div>
   </div>
@@ -675,6 +703,17 @@ onUnmounted(() => {
 
 .meta-divider {
   color: var(--text-disabled);
+}
+
+.platform-tag {
+  background: var(--primary-light);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  color: var(--primary);
+}
+
+.platform-tag .meta-icon {
+  font-size: var(--text-sm);
 }
 
 .article-actions {
@@ -961,6 +1000,47 @@ onUnmounted(() => {
 /* ── Empty State ─────────────────────────────────────────────── */
 .empty-state {
   padding: var(--space-4xl);
+  text-align: center;
+}
+
+.empty-state .btn {
+  margin-top: var(--space-lg);
+}
+
+/* ── Keyboard Hints ─────────────────────────────────────────── */
+.keyboard-hints {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-xl);
+  padding: var(--space-md);
+  background: var(--bg-hover);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-light);
+}
+
+.hint-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 var(--space-sm);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 /* ── Responsive ──────────────────────────────────────────────── */

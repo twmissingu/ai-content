@@ -419,13 +419,40 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
         <!-- Progress Bar -->
         <div class="agent-progress">
           <div class="progress-bar">
-            <div 
+            <div
               class="progress-bar-fill"
               :class="getProgressColor(agent.progress_pct || 0)"
               :style="{ width: (agent.progress_pct || 0) + '%' }"
             ></div>
           </div>
           <span class="progress-text">{{ agent.progress_pct || 0 }}%</span>
+        </div>
+
+        <!-- Sub-workers (for Writer with multiple stages) -->
+        <div v-if="agent.workers && Object.keys(agent.workers).length > 0" class="sub-workers">
+          <div class="sub-workers-header">
+            <span class="sub-workers-label">子任务进度</span>
+          </div>
+          <div class="sub-workers-list">
+            <div
+              v-for="(worker, workerName) in agent.workers"
+              :key="workerName"
+              class="sub-worker-item"
+              :class="`status-${worker.status}`"
+            >
+              <span class="sub-worker-name">{{ workerName }}</span>
+              <div class="sub-worker-progress">
+                <div class="progress-bar progress-bar-sm">
+                  <div
+                    class="progress-bar-fill"
+                    :class="worker.status === 'completed' ? 'success' : worker.status === 'failed' ? 'danger' : 'primary'"
+                    :style="{ width: (worker.progress_pct || 0) + '%' }"
+                  ></div>
+                </div>
+                <span class="sub-worker-pct">{{ worker.progress_pct || 0 }}%</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Detail -->
@@ -438,7 +465,13 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
           ⚠️ 运行超时
         </div>
         <div v-if="agent.error" class="agent-alert alert-danger">
-          ❌ {{ agent.error }}
+          <span class="alert-message">❌ {{ agent.error }}</span>
+          <button
+            class="btn btn-ghost btn-xs retry-btn"
+            @click="openTriggerDialog(agent.name)"
+          >
+            🔄 重试
+          </button>
         </div>
       </div>
     </div>
@@ -1003,6 +1036,91 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
 .alert-danger {
   background: var(--danger-light);
   color: var(--danger);
+}
+
+.alert-message {
+  flex: 1;
+}
+
+.retry-btn {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: var(--text-xs);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.retry-btn:hover {
+  background: var(--danger);
+  color: white;
+}
+
+/* ── Sub-workers ────────────────────────────────────────────── */
+.sub-workers {
+  border-top: 1px solid var(--divider);
+  padding-top: var(--space-sm);
+}
+
+.sub-workers-header {
+  margin-bottom: var(--space-xs);
+}
+
+.sub-workers-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.sub-workers-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.sub-worker-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--border-color);
+}
+
+.sub-worker-item.status-completed {
+  border-left-color: var(--success);
+}
+
+.sub-worker-item.status-running {
+  border-left-color: var(--primary);
+}
+
+.sub-worker-item.status-failed {
+  border-left-color: var(--danger);
+}
+
+.sub-worker-name {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  min-width: 80px;
+}
+
+.sub-worker-progress {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.progress-bar-sm {
+  height: 3px;
+}
+
+.sub-worker-pct {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  min-width: 32px;
+  text-align: right;
 }
 
 /* ── Empty State ─────────────────────────────────────────────── */

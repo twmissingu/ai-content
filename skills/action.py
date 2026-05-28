@@ -152,6 +152,7 @@ def scan_actions() -> list[ActionFile]:
     for f in files:
         try:
             data = json.loads(f.read_text(encoding='utf-8'))
+            data["_source_path"] = str(f)
             results.append(ActionFile(data))
         except (json.JSONDecodeError, OSError) as e:
             # Malformed file — move to failed actions dir

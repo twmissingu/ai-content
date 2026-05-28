@@ -1,7 +1,19 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
+import { Bar } from 'vue-chartjs'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js'
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
 const store = useDashboardStore()
 const costData = ref<any[]>([])
@@ -26,17 +38,76 @@ async function fetchCost() {
 
 onMounted(fetchCost)
 
-function maxCost(): number {
-  if (costData.value.length === 0) return 1
-  return Math.max(...costData.value.map(d => d.cost), 0.01)
-}
-
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
   return `${date.getMonth() + 1}/${date.getDate()}`
 }
 
 const recentCosts = computed(() => costData.value.slice(-14))
+
+const chartData = computed(() => ({
+  labels: recentCosts.value.map(d => formatDate(d.date)),
+  datasets: [{
+    label: '每日成本 ($)',
+    data: recentCosts.value.map(d => d.cost),
+    backgroundColor: 'rgba(26, 115, 232, 0.6)',
+    borderColor: 'rgba(26, 115, 232, 1)',
+    borderWidth: 1,
+    borderRadius: 4,
+    hoverBackgroundColor: 'rgba(26, 115, 232, 0.8)',
+  }],
+}))
+
+const chartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      display: false,
+    },
+    tooltip: {
+      backgroundColor: 'rgba(0, 0, 0, 0.8)',
+      titleFont: {
+        size: 12,
+      },
+      bodyFont: {
+        size: 14,
+        weight: 'bold' as const,
+      },
+      padding: 12,
+      cornerRadius: 8,
+      callbacks: {
+        label: (context: any) => `$${context.parsed.y.toFixed(4)}`,
+      },
+    },
+  },
+  scales: {
+    x: {
+      grid: {
+        display: false,
+      },
+      ticks: {
+        font: {
+          size: 11,
+        },
+        color: 'rgba(0, 0, 0, 0.5)',
+      },
+    },
+    y: {
+      beginAtZero: true,
+      grid: {
+        color: 'rgba(0, 0, 0, 0.05)',
+      },
+      ticks: {
+        font: {
+          size: 11,
+        },
+        color: 'rgba(0, 0, 0, 0.5)',
+        callback: (value: any) => `$${value}`,
+      },
+    },
+  },
+}))
 
 const budgetStatus = computed(() => {
   const budget = store.config?.budget
@@ -84,7 +155,7 @@ const budgetStatus = computed(() => {
           </div>
           <div v-if="budgetStatus" class="stat-progress">
             <div class="progress-bar">
-              <div 
+              <div
                 class="progress-bar-fill"
                 :class="{
                   success: budgetStatus.percentage < 60,
@@ -99,25 +170,32 @@ const budgetStatus = computed(() => {
         </div>
       </div>
 
-      <!-- Placeholder Section -->
-      <div class="card placeholder-section">
-        <div class="placeholder-header">
-          <span class="placeholder-icon">🚀</span>
-          <div class="placeholder-title">Phase 3 即将推出</div>
-          <div class="placeholder-subtitle">更多数据分析功能开发中</div>
+      <!-- Article Count Card -->
+      <div class="card stat-card articles-card">
+        <div class="stat-icon">📝</div>
+        <div class="stat-content">
+          <div class="stat-label">待审批文章</div>
+          <div class="stat-value">
+            {{ store.pendingCount }}
+            <span class="stat-unit">篇</span>
+          </div>
+          <div class="stat-hint">
+            <router-link to="/approval" class="stat-link">前往审批 →</router-link>
+          </div>
         </div>
-        <div class="placeholder-features">
-          <div class="placeholder-feature">
-            <span class="feature-icon">📊</span>
-            <span class="feature-name">文章总数</span>
+      </div>
+
+      <!-- Topics Count Card -->
+      <div class="card stat-card topics-card">
+        <div class="stat-icon">🔥</div>
+        <div class="stat-content">
+          <div class="stat-label">候选选题</div>
+          <div class="stat-value">
+            {{ store.topics.length }}
+            <span class="stat-unit">个</span>
           </div>
-          <div class="placeholder-feature">
-            <span class="feature-icon">👀</span>
-            <span class="feature-name">总阅读量</span>
-          </div>
-          <div class="placeholder-feature">
-            <span class="feature-icon">📈</span>
-            <span class="feature-name">平均互动率</span>
+          <div class="stat-hint">
+            <router-link to="/topics" class="stat-link">查看选题 →</router-link>
           </div>
         </div>
       </div>
@@ -138,28 +216,10 @@ const budgetStatus = computed(() => {
 
       <!-- Chart -->
       <div v-else-if="recentCosts.length > 0" class="chart-container">
-        <div class="chart-bars">
-          <div 
-            v-for="d in recentCosts" 
-            :key="d.date" 
-            class="chart-bar-wrapper"
-          >
-            <div class="chart-bar-tooltip">
-              <div class="tooltip-date">{{ d.date }}</div>
-              <div class="tooltip-value">${{ d.cost.toFixed(4) }}</div>
-            </div>
-            <div 
-              class="chart-bar"
-              :style="{ height: (d.cost / maxCost() * 100) + '%' }"
-            ></div>
-            <div class="chart-bar-label">{{ formatDate(d.date) }}</div>
-          </div>
-        </div>
-        <div class="chart-y-axis">
-          <span>${{ maxCost().toFixed(3) }}</span>
-          <span>${{ (maxCost() / 2).toFixed(3) }}</span>
-          <span>$0</span>
-        </div>
+        <Bar
+          :data="chartData"
+          :options="chartOptions"
+        />
       </div>
 
       <!-- Empty State -->
@@ -295,70 +355,32 @@ const budgetStatus = computed(() => {
   margin-top: var(--space-xs);
 }
 
-/* ── Placeholder Section ─────────────────────────────────────── */
-.placeholder-section {
-  border: 2px dashed var(--border-color);
-  background: var(--bg-hover);
-  padding: var(--space-2xl);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-xl);
-  text-align: center;
-}
-
-.placeholder-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
-.placeholder-icon {
-  font-size: 48px;
-  opacity: 0.6;
-}
-
-.placeholder-title {
-  font-size: var(--text-xl);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.placeholder-subtitle {
-  font-size: var(--text-md);
-  color: var(--text-tertiary);
-}
-
-.placeholder-features {
-  display: flex;
-  gap: var(--space-lg);
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.placeholder-feature {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-sm) var(--space-md);
-  background: var(--bg-card);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-color);
-}
-
-.feature-icon {
-  font-size: var(--text-lg);
-}
-
-.feature-name {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-}
-
 /* ── Cost Card ───────────────────────────────────────────────── */
 .cost-card {
   background: linear-gradient(135deg, var(--bg-card) 0%, var(--success-light) 100%);
+}
+
+.articles-card {
+  background: linear-gradient(135deg, var(--bg-card) 0%, var(--primary-light) 100%);
+}
+
+.topics-card {
+  background: linear-gradient(135deg, var(--bg-card) 0%, var(--warning-light) 100%);
+}
+
+.stat-hint {
+  margin-top: var(--space-sm);
+}
+
+.stat-link {
+  font-size: var(--text-sm);
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.stat-link:hover {
+  text-decoration: underline;
 }
 
 /* ── Chart Card ──────────────────────────────────────────────── */
@@ -367,86 +389,8 @@ const budgetStatus = computed(() => {
 }
 
 .chart-container {
-  display: flex;
-  gap: var(--space-lg);
-  height: 200px;
-  padding-top: var(--space-lg);
-}
-
-.chart-bars {
-  flex: 1;
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-sm);
-  height: 100%;
-}
-
-.chart-bar-wrapper {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  height: 100%;
-  position: relative;
-}
-
-.chart-bar {
-  width: 100%;
-  min-height: 4px;
-  background: linear-gradient(180deg, var(--primary) 0%, var(--primary-light) 100%);
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  transition: height var(--transition-slow);
-  cursor: pointer;
-}
-
-.chart-bar:hover {
-  opacity: 0.8;
-}
-
-.chart-bar-tooltip {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--text-primary);
-  color: white;
-  padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-md);
-  font-size: var(--text-xs);
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--transition-fast);
-}
-
-.chart-bar-wrapper:hover .chart-bar-tooltip {
-  opacity: 1;
-}
-
-.tooltip-date {
-  font-weight: 500;
-  margin-bottom: 2px;
-}
-
-.tooltip-value {
-  color: var(--success-light);
-}
-
-.chart-bar-label {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  margin-top: var(--space-sm);
-  white-space: nowrap;
-}
-
-.chart-y-axis {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  min-width: 48px;
-  text-align: right;
+  height: 250px;
+  padding: var(--space-md);
 }
 
 /* ── Loading State ───────────────────────────────────────────── */
@@ -531,9 +475,13 @@ const budgetStatus = computed(() => {
   .stats-grid {
     grid-template-columns: 1fr 1fr;
   }
-  
+
   .platforms-grid {
     grid-template-columns: 1fr;
+  }
+
+  .chart-container {
+    height: 200px;
   }
 }
 

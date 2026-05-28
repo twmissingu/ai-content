@@ -141,13 +141,25 @@ export const useDashboardStore = defineStore('dashboard', () => {
   })
 
   // ── Helper ────────────────────────────────────────────────────────
-  async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
-    const res = await fetch(`${API_BASE}${url}`, options)
-    if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      throw new Error(`HTTP ${res.status}: ${text || res.statusText}`)
+  async function fetchJson<T>(url: string, options?: RequestInit, retries = 2): Promise<T> {
+    let lastError: Error | null = null
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await fetch(`${API_BASE}${url}`, options)
+        if (!res.ok) {
+          const text = await res.text().catch(() => '')
+          throw new Error(`HTTP ${res.status}: ${text || res.statusText}`)
+        }
+        return res.json()
+      } catch (e) {
+        lastError = e instanceof Error ? e : new Error(String(e))
+        if (attempt < retries) {
+          // Exponential backoff: 500ms, 1000ms
+          await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt)))
+        }
+      }
     }
-    return res.json()
+    throw lastError
   }
 
   function setLoading(key: string, value: boolean) {
@@ -161,6 +173,24 @@ export const useDashboardStore = defineStore('dashboard', () => {
     return message
   }
 
+  // ── Connection Status ────────────────────────────────────────────
+  const connectionStatus = ref<'connected' | 'reconnecting' | 'disconnected'>('connected')
+  let consecutiveFailures = 0
+
+  function updateConnectionStatus(success: boolean) {
+    if (success) {
+      consecutiveFailures = 0
+      connectionStatus.value = 'connected'
+    } else {
+      consecutiveFailures++
+      if (consecutiveFailures >= 3) {
+        connectionStatus.value = 'disconnected'
+      } else {
+        connectionStatus.value = 'reconnecting'
+      }
+    }
+  }
+
   // ── Actions ───────────────────────────────────────────────────────
 
   async function fetchPipeline() {
@@ -170,8 +200,10 @@ export const useDashboardStore = defineStore('dashboard', () => {
       agents.value = data.agents || {}
       budget.value = data.budget || null
       error.value = null
+      updateConnectionStatus(true)
     } catch (e) {
       handleError(e, 'fetchPipeline')
+      updateConnectionStatus(false)
     } finally {
       setLoading('pipeline', false)
     }
@@ -295,6 +327,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     loading,
     error,
     loadingStates,
+    connectionStatus,
 
     // Computed
     pendingCount,

@@ -2,15 +2,15 @@
 
 import json
 import logging
-import os
 import subprocess
 import threading
 import time
 from pathlib import Path
 
-from config.settings import ACTIONS_DIR, FAILED_DIR, PROCESSED_DIR, PROJECT_ROOT
+from config.settings import FAILED_DIR, PROJECT_ROOT
 from dashboard.backend.database import check_budget_limit
 from dashboard.backend.feishu import alert_budget_warning
+from skills.action import mark_processed, scan_actions
 
 logger = logging.getLogger("gaoding.dashboard")
 
@@ -25,7 +25,7 @@ DISPATCH_MAP = {
 }
 
 
-def _dispatch_action(action: dict, file_path: Path) -> bool:
+def _dispatch_action(action: dict) -> bool:
     """Dispatch an action to the appropriate agent script."""
     action_type = action.get("action")
     target_id = action.get("target_id", "")
@@ -65,16 +65,18 @@ def scan_loop():
     """Background thread: poll queue/actions/ every 10s."""
     while not scanner_stop_event.is_set():
         try:
-            files = sorted(ACTIONS_DIR.glob("*.json"), key=os.path.getmtime)
-            for f in files:
-                try:
-                    action = json.loads(f.read_text())
-                    success = _dispatch_action(action, f)
-                    dest = PROCESSED_DIR if success else FAILED_DIR
-                    os.rename(f, dest / f.name)
-                except (json.JSONDecodeError, OSError) as e:
-                    logger.error(f"Error processing {f.name}: {e}")
-                    os.rename(f, FAILED_DIR / f.name)
+            actions = scan_actions()
+            for action in actions:
+                source_path = Path(action.get("_source_path", ""))
+                if not source_path.exists():
+                    # scan_actions already moved malformed files to FAILED_ACTIONS_DIR
+                    continue
+                success = _dispatch_action(action)
+                if success:
+                    mark_processed(source_path)
+                else:
+                    FAILED_DIR.mkdir(parents=True, exist_ok=True)
+                    source_path.rename(FAILED_DIR / source_path.name)
         except Exception as e:
             logger.error(f"Scanner loop error: {e}")
         scanner_stop_event.wait(10)

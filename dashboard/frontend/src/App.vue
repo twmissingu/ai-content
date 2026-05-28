@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useDashboardStore } from './stores/dashboard'
 import { useToast } from './composables/useToast'
@@ -8,6 +8,14 @@ import ErrorBoundary from './components/ErrorBoundary.vue'
 const route = useRoute()
 const store = useDashboardStore()
 const toast = useToast()
+
+const connectionStatusText = computed(() => {
+  switch (store.connectionStatus) {
+    case 'connected': return '在线'
+    case 'reconnecting': return '重连中'
+    case 'disconnected': return '离线'
+  }
+})
 
 const tabs = [
   { name: 'Pipeline', label: '管线', icon: '📊', path: '/pipeline' },
@@ -101,6 +109,29 @@ onUnmounted(() => {
         <span class="header-subtitle">AI 内容生产系统</span>
       </div>
       <div class="header-right">
+        <!-- Connection Status Indicator -->
+        <div
+          class="connection-status"
+          :class="store.connectionStatus"
+          :title="connectionStatusText"
+        >
+          <span class="status-dot"></span>
+          <span class="status-text">{{ connectionStatusText }}</span>
+        </div>
+
+        <!-- Notification Bell -->
+        <router-link
+          to="/approval"
+          class="notification-bell"
+          :class="{ 'has-items': store.pendingCount > 0 }"
+          title="待审批"
+        >
+          <span class="bell-icon">🔔</span>
+          <span v-if="store.pendingCount > 0" class="bell-badge">
+            {{ store.pendingCount > 99 ? '99+' : store.pendingCount }}
+          </span>
+        </router-link>
+
         <button
           class="btn btn-ghost btn-sm header-btn"
           @click="toggleDark"
@@ -337,6 +368,85 @@ onUnmounted(() => {
   animation: spin 0.8s linear;
 }
 
+/* ── Connection Status ──────────────────────────────────────── */
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.connection-status .status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.connection-status.reconnecting .status-dot {
+  background: var(--warning);
+  animation: pulse 1.5s infinite;
+}
+
+.connection-status.disconnected .status-dot {
+  background: var(--danger);
+}
+
+.connection-status .status-text {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* ── Notification Bell ──────────────────────────────────────── */
+.notification-bell {
+  display: flex;
+  align-items: center;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  transition: all var(--transition-fast);
+  position: relative;
+}
+
+.notification-bell:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.bell-icon {
+  font-size: var(--text-lg);
+  transition: transform var(--transition-fast);
+}
+
+.notification-bell.has-items .bell-icon {
+  animation: bell-shake 0.5s ease-in-out;
+}
+
+@keyframes bell-shake {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(8deg); }
+  75% { transform: rotate(-8deg); }
+}
+
+.bell-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  background: var(--danger);
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: var(--radius-full);
+  min-width: 16px;
+  text-align: center;
+  line-height: 1.2;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
 /* ── Navigation ──────────────────────────────────────────────── */
 .app-nav {
   background: var(--bg-card);
@@ -476,6 +586,10 @@ onUnmounted(() => {
   }
 
   .header-subtitle {
+    display: none;
+  }
+
+  .connection-status .status-text {
     display: none;
   }
 
