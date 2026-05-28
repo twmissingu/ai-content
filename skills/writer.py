@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config.settings import (
     ACTIONS_DIR,
     DOMAIN,
+    IMAGES_DIR,
     KB_DIR,
     LENGTH,
     MAX_REWRITE_ROUNDS,
@@ -144,27 +145,65 @@ class WriterAgent(AgentBase):
 
         return "[原文抓取失败，将基于选题内容生成]"
 
+    def _sanitize_text(self, text: str, max_length: int = 500) -> str:
+        """Sanitize text to prevent prompt injection."""
+        if not text:
+            return ""
+        # Remove common injection patterns
+        import re
+        # Remove markdown code blocks that might contain instructions
+        text = re.sub(r'```[\s\S]*?```', '', text)
+        # Remove system/instruction-like patterns
+        text = re.sub(r'(?i)(ignore|forget|disregard)\s+(previous|above|all)\s+(instructions?|prompts?|rules?)', '', text)
+        # Remove role-play injection attempts
+        text = re.sub(r'(?i)you\s+are\s+now\s+', '', text)
+        # Limit length
+        return text[:max_length].strip()
+
     def _draft(self, topic: dict, source_material: str) -> str:
         """Stage 2: Generate first draft via LLM."""
-        prompt = f"""你是一个观点鲜明的科技写手。请基于以下信息撰写一篇公众号文章。
+        # Sanitize inputs to prevent prompt injection
+        safe_title = self._sanitize_text(topic['title'], max_length=200)
+        safe_description = self._sanitize_text(topic.get('description', ''), max_length=500)
+        safe_material = self._sanitize_text(source_material, max_length=4000)
 
-选题: {topic['title']}
-来源: {topic.get('description', '')}
-素材: {source_material[:4000]}
+        prompt = f"""你是一个观点鲜明的科技写手，擅长用通俗易懂的语言解释复杂概念。你的文章有明确立场，不写废话。
+
+选题: {safe_title}
+背景: {safe_description}
+素材: {safe_material}
 
 写作要求:
 - 领域: {DOMAIN}
 - 语气: {TONE}
 - 立场: {STANCE}
 - 目标字数: {LENGTH} 字 (中文字符)
-- 结构: 开头3秒抓人 → 层层递进论证 → 总结观点
-- 每段不要太长，多分段
 
-直接输出文章正文，不要额外解释，不要"以下是我为您撰写的文章"这类话开头。
+结构模板（严格按此结构输出）:
+1. 【开头】用一个具体场景、数据或问题抓住读者注意力（3秒法则）
+   - 好例子: "上周，一个只有3人的团队用AI工具做到了传统团队10人的产出。"
+   - 差例子: "在当今数字化转型的浪潮中..."
+2. 【正文】3-5个段落，每段一个核心论点，用案例或数据支撑
+   - 每段以一个明确的论点句开头
+   - 用具体案例、数据或类比支撑
+   - 段落之间有逻辑递进关系
+3. 【结尾】给出明确观点或行动建议，不要空泛总结
+   - 好例子: "如果你还在犹豫是否该用AI辅助写作，我的建议是：先从标题生成开始，3天就能看到效果。"
+   - 差例子: "综上所述，AI的发展值得我们关注。"
+
+风格硬性要求:
+- 每段3-5句，多分段提高可读性
+- 用具体数字代替模糊描述（"提升了30%"而非"大幅提升"）
+- 用类比解释技术概念（"就像..."）
+- 禁止使用: "值得注意的是""不可否认""毋庸置疑""综上所述""总的来说""在这个...的时代""引发了广泛讨论"
+- 可以适当使用反问、设问增加互动感
+- 第一人称叙述，像在和朋友聊天
+
+直接输出文章正文。不要"以下是我撰写的文章"这类话开头，直接进入主题。
 """
         start_time = time.monotonic()
         result = chat(
-            system_prompt="你是一个高质量科技内容写手，文风犀利有观点。",
+            system_prompt="你是一个高质量科技内容写手，文风犀利有观点。你的文章读起来像真人写的博客，不像AI生成的内容。禁止使用'值得注意的是''不可否认''毋庸置疑'等AI腔。",
             user_prompt=prompt,
             temperature=0.8,
         )
@@ -175,34 +214,34 @@ class WriterAgent(AgentBase):
     # ── Stage 3: AI-slop proofread ─────────────────────────────────
     _AI_SLOP_PATTERNS = [
         (r"值得注意的是[，,]", 5),
-        (r"在这个信息[爆炸|过载]的时代", 8),
-        (r"正如我们[上文|前面|之前]所[提到|说过|论述]", 6),
-        (r"让我们[来|一起]", 4),
+        (r"在这个信息(爆炸|过载)的时代", 8),
+        (r"正如我们(上文|前面|之前)所(提到|说过|论述)", 6),
+        (r"让我们(来|一起)", 4),
         (r"首先[，,].*其次[，,].*最后[，,]", 5),
         (r"不可否认[，,]", 5),
-        (r"从某种[角度|意义]上来说", 5),
-        (r"我们需要[清醒地|理性地]认识到", 6),
+        (r"从某种(角度|意义)上来说", 5),
+        (r"我们需要(清醒地|理性地)认识到", 6),
         (r"毋庸置疑[，,]", 5),
-        (r"引发了[广泛|热烈]的讨论", 5),
+        (r"引发了(广泛|热烈)的讨论", 5),
         (r"总的来说[，,]", 4),
         (r"综上所述[，,]", 4),
-        (r"我们可以[看到|发现|得出]", 4),
+        (r"我们可以(看到|发现|得出)", 4),
         (r"不难看出[，,]", 4),
-        (r"在[.*]的[背景|语境|框架]下", 4),
-        (r"这[一|个]问题[值得|需要]我们[深入|认真][思考|探讨|关注]", 6),
+        (r"在.*的(背景|语境|框架)下", 4),
+        (r"这(一|个)问题(值得|需要)我们(深入|认真)(思考|探讨|关注)", 6),
         (r"毫无疑问[，,]", 5),
         (r"事实上[，,]", 3),
         (r"某种意义上[，,]", 3),
         (r"不得不说[，,]", 4),
-        (r"有待[.*]进一步[.*]", 4),
-        (r"值得[我们][深入|认真]思考", 5),
-        (r"我们[有理由|可以]相信[，,]", 5),
+        (r"有待.*进一步.*", 4),
+        (r"值得我们(深入|认真)思考", 5),
+        (r"我们(有理由|可以)相信[，,]", 5),
     ]
 
     def _proofread(self, text: str) -> tuple[str, int]:
         """Stage 3: Remove AI-slop patterns and score."""
         self.start_stage("proofread")
-        
+
         # Regex pass
         issues_found = 0
         cleaned = text
@@ -218,17 +257,26 @@ class WriterAgent(AgentBase):
         # LLM pass
         start_time = time.monotonic()
         llm_result = chat_structured(
-            system_prompt="你是一个AI写作腔调检测专家。检测文本中的AI痕迹，返回0-100的分数和问题列表。",
-            user_prompt=f"""请检测以下文章中"AI腔"的严重程度。
+            system_prompt="你是一个专业的文字编辑，擅长识别AI生成内容的痕迹并使其更自然。你对AI腔零容忍。",
+            user_prompt=f"""请检测以下文章中"AI腔"的严重程度，并给出具体修改建议。
 
-评分规则:
-- 90-100: 几乎没有AI痕迹，自然口语化
-- 70-89: 少量AI句式，可接受
-- 50-69: 明显AI腔，需要修改
-- 0-49: 严重AI腔，基本不可用
+AI腔检测清单（逐项检查）:
+1. 过渡词滥用: "值得注意的是""不可否认""毋庸置疑""事实上""不得不说"
+2. 空泛总结: "综上所述""总的来说""由此可见""不难看出"
+3. 套话开头: "在这个信息爆炸的时代""随着...的发展""在...的背景下"
+4. 机械结构: "首先...其次...最后..."的三段论
+5. 缺乏具体数据: 用"大幅提升""显著改善"代替具体百分比
+6. 情感平淡: 没有个人观点、反问、感叹等情感表达
+7. 万能句式: "这值得我们深思""引发了广泛讨论""有待进一步研究"
+
+评分标准（严格打分，不要给虚高分数）:
+- 90-100: 完全自然，像真人写的博客/公众号，无AI痕迹
+- 70-89: 有少量AI痕迹，但不影响阅读体验
+- 50-69: 明显AI腔，需要润色修改
+- 0-49: 严重AI腔，需要重写
 
 输出JSON:
-{{"score": 0, "issues": ["问题1", "问题2"], "suggestion": "改进建议"}}
+{{"score": 65, "issues": ["问题1: 原文'...'过于套话", "问题2: 第X段缺乏数据支撑"], "suggestion": "具体改进建议: 第X段改为...，第Y段加入...数据"}}
 
 文章:
 {cleaned[:3000]}
@@ -259,51 +307,117 @@ class WriterAgent(AgentBase):
         self.end_stage("proofread")
         return cleaned, final_score
 
-    # ── Stage 4: Critique & rewrite ────────────────────────────────
+    # ── Stage 4: Critique & rewrite (multi-perspective editorial board) ──
     def _critique(self, text: str, topic_title: str, round_num: int) -> tuple[str, int, bool]:
-        """Stage 4: Critic LLM scores the article. If < threshold, rewrite."""
+        """Stage 4: Multi-perspective editorial board review.
+
+        Inspired by FLUX's 3-model editorial board pattern:
+        - Perspective 1 (Scorer): Strict scoring on rubric
+        - Perspective 2 (Critic): Devil's advocate, finds weaknesses
+        Final score = weighted average of both perspectives.
+        """
+        # ── Perspective 1: Strict Scorer ──
         start_time = time.monotonic()
-        result = chat_structured(
-            system_prompt="你是一个严格的写作评委。请从论点、论据、结构、文笔四个维度评分。",
-            user_prompt=f"""请评分以下文章（选题: {topic_title}）。
+        scorer_result = chat_structured(
+            system_prompt="你是一个严格但建设性的写作评委。你给分很吝啬——好文章才给80+，平庸的文章给60以下。你从不给'还行'的文章高分。",
+            user_prompt=f"""请严格评价以下文章（选题: {topic_title}）。
 
-输出JSON格式:
-{{"score": 0, "weakness": "主要弱点", "suggestions": ["改进1", "改进2"]}}
+评分维度（各25分，满分100，每个维度独立打分后求和）:
 
-评分维度:
-- 论点是否鲜明 (0-25)
-- 论据是否充分 (0-25)
-- 结构是否合理 (0-25)
-- 文笔是否有观点 (0-25)
+1. 论点鲜明度 (0-25):
+   - 25: 观点犀利独特，让人眼前一亮，有明确立场
+   - 20: 观点清晰，有一定新意
+   - 15: 观点明确但缺乏新意，人云亦云
+   - 10以下: 观点模糊、没有立场、两边讨好
+
+2. 论据充分度 (0-25):
+   - 25: 有具体数据、真实案例、完整逻辑链
+   - 20: 有具体支撑，偶有薄弱环节
+   - 15: 论据不足，说服力一般
+   - 10以下: 空泛论述，缺乏任何具体支撑
+
+3. 结构合理性 (0-25):
+   - 25: 起承转合流畅，节奏感好，段落间有逻辑递进
+   - 20: 结构清晰，偶有跳跃
+   - 15: 结构松散但可读
+   - 10以下: 逻辑混乱，段落间无关联
+
+4. 文笔观点性 (0-25):
+   - 25: 文风鲜明有记忆点，像真人写的博客
+   - 20: 表达流畅，有个人风格
+   - 15: 中规中矩，无功无过
+   - 10以下: 生硬AI腔、套话连篇、读起来像机器生成
+
+请输出 JSON:
+{{"score": 62, "weakness": "最主要的一个问题（必须具体引用原文句子）", "suggestions": ["改进1: 具体说明要改哪里、改成什么", "改进2: 具体说明要改哪里、改成什么"]}}
 
 文章:
 {text[:4000]}
 """,
             temperature=0.4,
         )
-        duration = time.monotonic() - start_time
-        self.record_llm_call(duration=duration, success=True)
-        
-        score = int(result.get("score", 50))
+        scorer_duration = time.monotonic() - start_time
+        self.record_llm_call(duration=scorer_duration, success=True)
+
+        scorer_score = int(scorer_result.get("score", 50))
+        scorer_weakness = scorer_result.get("weakness", "")
+        scorer_suggestions = scorer_result.get("suggestions", [])
+
+        # ── Perspective 2: Devil's Advocate (finds weaknesses) ──
+        start_time = time.monotonic()
+        critic_result = chat_structured(
+            system_prompt="你是一个挑剔的读者和内容批评家。你的工作是找出文章中所有问题：逻辑漏洞、论据不足、表述模糊、读者可能的质疑。你只关注问题，不夸优点。",
+            user_prompt=f"""请以挑剔读者的视角，找出以下文章的所有问题（选题: {topic_title}）。
+
+重点关注:
+1. 逻辑漏洞: 论证是否有跳跃或矛盾？
+2. 论据质疑: 数据来源是否可靠？案例是否有代表性？
+3. 读者困惑: 哪些地方读者会看不懂或产生歧义？
+4. 遗漏: 文章没提到但读者会关心的重要方面
+5. 可信度: 哪些表述会让读者怀疑作者的专业性？
+
+请输出 JSON:
+{{"critique_score": 55, "issues": ["问题1: 具体说明", "问题2: 具体说明"], "missing": "文章遗漏的关键点"}}
+
+文章:
+{text[:4000]}
+""",
+            temperature=0.6,
+        )
+        critic_duration = time.monotonic() - start_time
+        self.record_llm_call(duration=critic_duration, success=True)
+
+        critic_score = int(critic_result.get("critique_score", 50))
+        critic_issues = critic_result.get("issues", [])
+        critic_missing = critic_result.get("missing", "")
+
+        # ── Combine scores (scorer 70% + critic 30%) ──
+        score = int(scorer_score * 0.7 + critic_score * 0.3)
 
         if score >= QUALITY_THRESHOLD or round_num >= MAX_REWRITE_ROUNDS:
             return text, score, score >= QUALITY_THRESHOLD
 
-        # Rewrite
-        suggestions = result.get("suggestions", [])
-        weakness = result.get("weakness", "")
-        improvement = "\n".join(f"- {s}" for s in suggestions)
-        prompt = f"""你是一个高质量写手。请根据评委反馈重写这篇文章，解决以下问题。
+        # Rewrite — combine feedback from both perspectives
+        all_suggestions = scorer_suggestions + [f"[读者视角] {issue}" for issue in critic_issues[:2]]
+        if critic_missing:
+            all_suggestions.append(f"[遗漏] 需要补充: {critic_missing}")
+        improvement = "\n".join(f"- {s}" for s in all_suggestions)
+        prompt = f"""你是一个高质量写手。请根据编辑委员会的反馈重写这篇文章，解决以下问题。
 
-评委评分: {score}/100
-主要弱点: {weakness}
+编辑委员会评分: {score}/100（评委评 {scorer_score}，批评家评 {critic_score}）
+
+评委指出的主要弱点: {scorer_weakness}
+
+批评家发现的问题:
+{chr(10).join(f'- {issue}' for issue in critic_issues)}
+
 改进建议:
 {improvement}
 
 原文:
 {text}
 
-请直接输出重写后的完整文章，不要额外解释。
+请直接输出重写后的完整文章，不要额外解释。重点解决评委和批评家指出的问题。
 """
         start_time = time.monotonic()
         text = chat(
@@ -337,20 +451,25 @@ class WriterAgent(AgentBase):
         """Stage 6: Generate 3 candidate titles, score each, pick best."""
         start_time = time.monotonic()
         result = chat_structured(
-            system_prompt="你是一个标题优化专家。生成有吸引力但不标题党的标题。",
-            user_prompt=f"""根据以下文章生成3个公众号标题，并为每个打分。
+            system_prompt="你是一个标题优化专家，深谙公众号读者心理。你生成的标题必须让人忍不住点开，但不能是标题党。好的标题=准确+好奇+差异化。",
+            user_prompt=f"""根据以下文章生成3个公众号标题，每个使用不同的标题公式。
 
-评分维度 (各25分):
-- 吸引力: 是否让读者想点开
-- 准确性: 是否准确反映内容
-- 独创性: 是否标题党
-- 关键词: 是否包含关键搜索词
+标题公式（请各用一种）:
+1. 数字型: "X个方法""X天从0到1""提升X%" — 用具体数字给人确定感
+2. 提问型: "为什么...？""...到底该怎么选？" — 用问题引发好奇心
+3. 对比/反差型: "从X到Y""X vs Y""别再X了，试试Y" — 用反差制造张力
+
+评分维度 (各25分，满分100，严格打分):
+- 吸引力 (0-25): 是否让读者在信息流中停下来看？是否制造了信息差/好奇心？
+- 准确性 (0-25): 是否准确反映文章核心观点？标题党扣分
+- 独特性 (0-25): 是否与同类文章标题差异化？搜索结果中是否脱颖而出？
+- SEO (0-25): 是否包含搜索关键词？是否利于平台推荐？
 
 输出JSON:
 {{"candidates": [
-  {{"title": "标题1", "score": 0, "rationale": "理由"}},
-  {{"title": "标题2", "score": 0, "rationale": "理由"}},
-  {{"title": "标题3", "score": 0, "rationale": "理由"}}
+  {{"title": "完整标题（15-30字）", "score": 78, "type": "数字型", "rationale": "具体推荐理由"}},
+  {{"title": "完整标题（15-30字）", "score": 72, "type": "提问型", "rationale": "具体推荐理由"}},
+  {{"title": "完整标题（15-30字）", "score": 68, "type": "对比型", "rationale": "具体推荐理由"}}
 ]}}
 
 选题: {topic_title}
@@ -444,7 +563,7 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
 
     def _illustrate(self, text: str, topic_title: str) -> list[str]:
         """Stage 7: Generate illustrations with batched screenshots."""
-        img_dir = Path("queue/images") / self._run_timestamp
+        img_dir = IMAGES_DIR / self._run_timestamp
         img_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate HTML templates

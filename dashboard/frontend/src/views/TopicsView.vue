@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
+import SkeletonLoader from '../components/SkeletonLoader.vue'
 
 const store = useDashboardStore()
 
@@ -56,8 +57,17 @@ function truncateText(text: string, maxLen: number = 150): string {
       </div>
     </div>
 
+    <!-- Loading Skeletons -->
+    <div v-if="store.isLoading('topics') && store.topics.length === 0" class="topics-grid">
+      <div v-for="i in 3" :key="i" class="card topic-card-skeleton">
+        <SkeletonLoader type="title" width="80%" />
+        <SkeletonLoader type="text" :count="2" />
+        <SkeletonLoader type="card" height="80px" />
+      </div>
+    </div>
+
     <!-- Empty State -->
-    <div v-if="store.topics.length === 0" class="card empty-state">
+    <div v-else-if="store.topics.length === 0" class="card empty-state">
       <div class="empty-state-icon">🔍</div>
       <div class="empty-state-title">暂无候选选题</div>
       <div class="empty-state-description">
@@ -66,7 +76,7 @@ function truncateText(text: string, maxLen: number = 150): string {
     </div>
 
     <!-- Topics Grid -->
-    <div class="topics-grid">
+    <div v-else class="topics-grid">
       <div v-for="topic in store.topics" :key="topic.id" class="card topic-card">
         <!-- Topic Header -->
         <div class="topic-header">

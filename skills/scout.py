@@ -5,6 +5,8 @@ scores each candidate using a two-layer model, enforces content diversity,
 and writes the top candidates to queue/pending/.
 
 Phase 1: single Worker, cold-start parameters.
+
+Uses AgentBase for unified status writing, logging, and metrics.
 """
 
 import json
@@ -31,13 +33,11 @@ from config.settings import (
     TMP_DIR,
 )
 from skills.action import write_topic_pending
+from skills.common import AgentBase, agent_main, get_agent_logger, write_status as _write_status_fn
 from skills.llm import chat_structured, set_current_agent
 
-# Set current agent for token tracking
-set_current_agent("scout")
-
-# Logger
-logger = logging.getLogger("gaoding.scout")
+# Module-level logger for standalone functions
+logger = get_agent_logger("scout")
 
 # Allowed source names for china-hot MCP (security whitelist)
 ALLOWED_CHINA_HOT_SOURCES = frozenset({
@@ -83,21 +83,9 @@ RUN_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 RUN_DATE = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-# ── Status file ────────────────────────────────────────────────────
-def _write_status(stage: str, progress_pct: int, detail: str, error: Any = None):
-    """Write scout status file with atomic write."""
-    from skills.common import atomic_write_json
-    
-    status = {
-        "agent": "scout",
-        "stage": stage,
-        "progress_pct": progress_pct,
-        "detail": detail,
-        "started_at": RUN_TIMESTAMP,
-        "error": str(error) if error else None,
-    }
-    path = STATUS_DIR / "scout.json"
-    atomic_write_json(path, status)
+def _write_status(stage: str, progress_pct: int, detail: str, error: Optional[str] = None) -> None:
+    """Write scout agent status using the standalone write_status function."""
+    _write_status_fn("scout", stage, progress_pct, detail, error, started_at=RUN_TIMESTAMP)
 
 
 # ── Source collectors ──────────────────────────────────────────────
@@ -272,13 +260,40 @@ def collect_all() -> list[dict]:
 
 # ── Dedup & Filter ─────────────────────────────────────────────────
 def _is_same_topic(title_a: str, title_b: str) -> bool:
-    """Simple title-level dedup: check significant word overlap."""
+    """Simple title-level dedup: check significant word overlap.
+
+    Uses both word-level and character-level matching for better CJK support.
+    """
+    # Word-level matching (for mixed Chinese/English)
     words_a = set(re.findall(r'[\w\u4e00-\u9fff]{2,}', title_a.lower()))
     words_b = set(re.findall(r'[\w\u4e00-\u9fff]{2,}', title_b.lower()))
-    if not words_a or not words_b:
-        return False
-    overlap = len(words_a & words_b) / max(len(words_a | words_b), 1)
-    return overlap > 0.4
+
+    if words_a and words_b:
+        word_overlap = len(words_a & words_b) / max(len(words_a | words_b), 1)
+        if word_overlap > 0.5:
+            return True
+
+    # Character-level matching (better for Chinese)
+    chars_a = set(re.findall(r'[\u4e00-\u9fff]', title_a))
+    chars_b = set(re.findall(r'[\u4e00-\u9fff]', title_b))
+
+    # Require significant character overlap (at least 3 chars in common)
+    if chars_a and chars_b and len(chars_a & chars_b) >= 3:
+        char_overlap = len(chars_a & chars_b) / max(len(chars_a | chars_b), 1)
+        if char_overlap > 0.6:
+            return True
+
+    # Check if one title contains the other (require 50% containment)
+    clean_a = re.sub(r'[^\w\u4e00-\u9fff]', '', title_a.lower())
+    clean_b = re.sub(r'[^\w\u4e00-\u9fff]', '', title_b.lower())
+    if len(clean_a) >= 4 and len(clean_b) >= 4:
+        shorter = min(len(clean_a), len(clean_b))
+        longer = max(len(clean_a), len(clean_b))
+        if shorter / longer > 0.5:
+            if clean_a in clean_b or clean_b in clean_a:
+                return True
+
+    return False
 
 
 def _recent_topics(days: int = SAME_TOPIC_BLOCK_DAYS) -> set[str]:
@@ -347,30 +362,57 @@ def score_candidate(candidate: dict, cold_start: bool) -> dict | None:
     freshness_score = 60  # default medium freshness
 
     # Call LLM to score
-    prompt = f"""你是选题评分专家。请对以下选题进行评分，输出 JSON 格式。
+    prompt = f"""你是资深内容选题专家，专注{DOMAIN}领域，擅长判断什么话题能引发科技读者共鸣。
 
-选题: {candidate['title']}
-来源: {source}
-来源权重: {source_weight}
-领域: {DOMAIN}
+## 选题信息
+- 标题: {candidate['title']}
+- 来源: {source}
+- 领域: {DOMAIN}
+- 描述: {candidate.get('description', '无')[:200]}
 
-请从以下维度评分（0-100整数）:
-1. viral_score: 该话题的热度/关注度
-2. saturation_score: 行业内已有多少文章覆盖此话题（越高=越饱和）
-3. novelty_score: 该选题是否有新颖的切入角度
-4. feasibility_score: 该话题是否容易查到资料、产生独特观点
+## 评分任务
+请从以下4个维度评分（0-100整数），每个维度给出具体判断依据:
 
-{"注意：系统处于冷启动阶段，尚无历史数据。请根据话题本身可讨论的深度来评估。" if cold_start else ""}
+### 1. viral_score (热度) — 该话题当前的公众关注度和传播潜力
+- 90+: 全网热议、登上多个平台热搜，如"ChatGPT发布""Sora开放"
+- 70-89: 热度上升中，行业媒体在报道，如"某公司新一轮融资"
+- 50-69: 有一定关注度，但未出圈，如"某开源框架更新"
+- <50: 冷门或小众，如"某技术细节优化"
 
-输出严格的 JSON 格式（不要 markdown）:
-{{"viral_score": 0, "saturation_score": 0, "novelty_score": 0, "feasibility_score": 0, "direction": "方向分类标签", "rationale": "简要评分理由"}}
+### 2. saturation_score (饱和度) — 该话题已被多少媒体/创作者覆盖（注意：高饱和=差）
+- 90+: 烂大街，如"什么是大模型"这类科普文
+- 70-89: 覆盖较多，需要独特角度才有价值
+- 50-69: 适中，有差异化空间
+- <50: 蓝海领域，少有人写
+
+### 3. novelty_score (新颖度) — 是否有独特的切入角度或未被挖掘的维度
+- 90+: 前所未见的角度或颠覆性认知
+- 70-89: 有差异化空间，可从新视角切入
+- 50-69: 常规角度，但可以写得更深
+- <50: 陈词滥调，没有新意
+
+### 4. feasibility_score (可行性) — 能否找到足够素材、产出有价值的观点
+- 90+: 素材丰富，案例数据充足
+- 70-89: 需要一些调研，但可获取
+- 50-69: 素材有限，写作难度较大
+- <50: 难以展开，缺乏支撑
+
+## 方向标签
+请为选题分类一个方向标签，从以下选项中选择:
+AI应用、大模型、创业融资、科技政策、开发者工具、硬件芯片、互联网产品、区块链Web3、SaaS企业服务、自动驾驶、机器人、量子计算、生物科技、其他
+
+{"## 注意：系统刚启动，历史数据不足。请重点评估话题本身的价值和可讨论深度，saturation一律给0分。" if cold_start else ""}
+
+## 输出格式
+严格输出 JSON（不要 markdown 代码块）:
+{{"viral_score": 75, "saturation_score": 40, "novelty_score": 65, "feasibility_score": 80, "direction": "大模型", "rationale": "一句话理由，说明为什么现在写这个话题合适"}}
 """
 
     try:
         result = chat_structured(
-            system_prompt="你是一个严谨的选题评分专家。必须返回合法 JSON。",
+            system_prompt="你是一个严谨的选题评分专家。评分必须基于实际判断，不要给所有选题相近的分数。必须返回合法 JSON，不要返回 markdown 代码块。",
             user_prompt=prompt,
-            temperature=0.4,
+            temperature=0.3,
         )
     except Exception as e:
         return None
@@ -424,7 +466,8 @@ def _enforce_diversity(scored: list[dict]) -> list[dict]:
     and fill remaining slots by score.
     """
     if len(scored) <= MAX_SUB_DIRECTIONS:
-        return scored
+        # Still sort by score even for small lists
+        return sorted(scored, key=lambda x: x.get("final_score", 0), reverse=True)
 
     # Group by direction
     by_dir: dict[str, list[dict]] = {}

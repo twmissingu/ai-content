@@ -100,8 +100,8 @@ class TestWriterIntegration:
         assert meta['status'] == 'completed'
         assert meta['word_count'] > 0
     
-    @patch('skills.llm.chat')
-    @patch('skills.llm.chat_structured')
+    @patch('skills.writer.chat')
+    @patch('skills.writer.chat_structured')
     def test_writer_handles_low_quality(self, mock_structured, mock_chat, temp_dirs, sample_topic, monkeypatch):
         """Test that Writer handles low quality scores with rewriting."""
         # Mock LLM responses - first draft is low quality
@@ -112,64 +112,68 @@ class TestWriterIntegration:
             if call_count <= 2:
                 return "低质量文章..."
             return "改进后的高质量文章..."
-        
+
         mock_chat.side_effect = mock_chat_side_effect
         mock_structured.return_value = {
             "score": 50,  # Below threshold
             "weakness": "论点不够鲜明",
             "suggestions": ["加强论点", "增加案例"]
         }
-        
+
         # Monkeypatch settings
         monkeypatch.chdir(temp_dirs['queue'].parent.parent)
-        
+
         import config.settings
         monkeypatch.setattr(config.settings, 'PENDING_DIR', temp_dirs['pending'])
         monkeypatch.setattr(config.settings, 'REVIEW_DIR', temp_dirs['review'])
         monkeypatch.setattr(config.settings, 'STATUS_DIR', temp_dirs['status'])
         monkeypatch.setattr(config.settings, 'ACTIONS_DIR', temp_dirs['actions'])
-        
+
         # Run writer
         from skills.writer import WriterAgent
         agent = WriterAgent()
         agent._fetch_source = MagicMock(return_value="测试素材")
-        
+
         agent.run()
-        
+
         # Verify multiple LLM calls were made (draft + critique + rewrite)
         assert call_count >= 3, f"Expected at least 3 LLM calls, got {call_count}"
 
 
 class TestPublisherIntegration:
     """Integration tests for Publisher agent."""
-    
+
     def test_publisher_finds_article(self, temp_dirs, monkeypatch):
         """Test that Publisher can find article files."""
         # Create test article
         article_path = temp_dirs['review'] / "20260528-wechat.md"
         article_path.write_text("# 测试文章\n\n这是测试内容...")
-        
+
         meta_path = temp_dirs['review'] / "20260528-wechat.meta.json"
         meta_path.write_text(json.dumps({
             "topic": "测试选题",
             "platform_standard": "wechat",
             "status": "completed"
         }))
-        
+
         # Monkeypatch settings
         monkeypatch.chdir(temp_dirs['queue'].parent.parent)
-        
+
         import config.settings
+        import skills.publisher
         monkeypatch.setattr(config.settings, 'REVIEW_DIR', temp_dirs['review'])
         monkeypatch.setattr(config.settings, 'STATUS_DIR', temp_dirs['status'])
         monkeypatch.setattr(config.settings, 'FAILED_DIR', temp_dirs['failed'])
-        
+        monkeypatch.setattr(skills.publisher, 'REVIEW_DIR', temp_dirs['review'])
+        monkeypatch.setattr(skills.publisher, 'STATUS_DIR', temp_dirs['status'])
+        monkeypatch.setattr(skills.publisher, 'FAILED_DIR', temp_dirs['failed'])
+
         # Run publisher
         from skills.publisher import PublisherAgent
         agent = PublisherAgent()
-        
+
         article, meta = agent.find_article("20260528-wechat")
-        
+
         assert article is not None
         assert meta is not None
         assert meta['topic'] == "测试选题"
@@ -183,30 +187,35 @@ class TestFeedbackIntegration:
         # Create test history
         history_dir = temp_dirs['kb'] / 'history' / '2026-05-28'
         history_dir.mkdir(parents=True)
-        
+
         article_path = history_dir / "test-article.md"
         article_path.write_text("# 测试文章\n\n这是测试内容...")
-        
+
         meta_path = history_dir / "test-article.meta.json"
         meta_path.write_text(json.dumps({
             "topic": "测试选题",
             "word_count": 100
         }))
-        
+
         # Monkeypatch settings
         monkeypatch.chdir(temp_dirs['queue'].parent.parent)
-        
+
         import config.settings
         monkeypatch.setattr(config.settings, 'KB_DIR', temp_dirs['kb'])
         monkeypatch.setattr(config.settings, 'STATUS_DIR', temp_dirs['status'])
         monkeypatch.setattr(config.settings, 'DATA_DIR', temp_dirs['data'])
-        
+
+        # Patch module-level constants in feedback.py
+        import skills.feedback
+        monkeypatch.setattr(skills.feedback, 'KB_DIR', temp_dirs['kb'])
+        monkeypatch.setattr(skills.feedback, 'HISTORY_DIR', temp_dirs['kb'] / 'history')
+
         # Run feedback
         from skills.feedback import FeedbackAgent
         agent = FeedbackAgent()
-        
+
         articles = agent._collect_articles()
-        
+
         assert len(articles) == 1
         assert articles[0]['title'] == "测试文章"
 

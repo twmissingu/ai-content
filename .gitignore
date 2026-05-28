@@ -15,5 +15,8 @@ __pycache__/
 node_modules/
 dist/
 
+# Firecrawl
+.firecrawl/
+
 # OS
 .DS_Store

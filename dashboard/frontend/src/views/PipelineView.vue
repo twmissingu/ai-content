@@ -1,9 +1,50 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
+import { useToast } from '../composables/useToast'
 import StatusBadge from '../components/StatusBadge.vue'
+import SkeletonLoader from '../components/SkeletonLoader.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const store = useDashboardStore()
+const toast = useToast()
+
+// Quick approval state
+const quickApprovingId = ref<string | null>(null)
+const quickRejectingId = ref<string | null>(null)
+const quickRejectReason = ref('')
+
+// Pending review articles (from approval queue, show top 3)
+const pendingArticles = computed(() => store.approvalQueue.slice(0, 3))
+
+async function quickApprove(id: string) {
+  quickApprovingId.value = id
+  try {
+    await store.approve(id)
+    toast.success('已通过')
+    await store.fetchApprovalQueue()
+  } catch (e) {
+    toast.error(`操作失败: ${e instanceof Error ? e.message : '未知错误'}`)
+  } finally {
+    quickApprovingId.value = null
+  }
+}
+
+async function quickReject(id: string) {
+  if (!quickRejectReason.value.trim()) return
+  quickRejectingId.value = id
+  try {
+    await store.reject(id, quickRejectReason.value)
+    toast.success('已驳回')
+    quickRejectReason.value = ''
+    quickRejectingId.value = null
+    await store.fetchApprovalQueue()
+  } catch (e) {
+    toast.error(`操作失败: ${e instanceof Error ? e.message : '未知错误'}`)
+  } finally {
+    quickRejectingId.value = null
+  }
+}
 
 const agentList = computed(() => {
   const entries = Object.entries(store.agents)
@@ -48,6 +89,36 @@ function getProgressColor(pct: number): string {
   return 'primary'
 }
 
+// Manual agent trigger
+const showTriggerDialog = ref(false)
+const triggerTarget = ref<string>('')
+const triggerLoading = ref(false)
+
+function openTriggerDialog(agent: string) {
+  triggerTarget.value = agent
+  showTriggerDialog.value = true
+}
+
+async function confirmTrigger() {
+  triggerLoading.value = true
+  try {
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+    const res = await fetch(`${API_BASE}/api/pipeline/trigger`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent: triggerTarget.value }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    toast.success(`${triggerTarget.value === 'scout' ? 'Scout 选题' : 'Writer 写作'}已触发`)
+    await store.fetchPipeline()
+  } catch (e) {
+    toast.error(`触发失败: ${e instanceof Error ? e.message : '未知错误'}`)
+  } finally {
+    triggerLoading.value = false
+    showTriggerDialog.value = false
+  }
+}
+
 // Current time with auto-refresh
 const currentTime = ref(new Date())
 let timeInterval: ReturnType<typeof setInterval> | null = null
@@ -56,6 +127,8 @@ onMounted(() => {
   timeInterval = setInterval(() => {
     currentTime.value = new Date()
   }, 60000) // Update every minute
+  // Fetch approval queue for pending review section
+  store.fetchApprovalQueue()
 })
 
 onUnmounted(() => {
@@ -123,10 +196,28 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
         <h2 class="page-title">管线状态</h2>
         <p class="page-subtitle">实时监控各 Agent 运行状态</p>
       </div>
-      <button class="btn btn-ghost btn-sm" @click="store.fetchPipeline()">
-        <span>🔄</span> 刷新
-      </button>
+      <div class="page-actions">
+        <button class="btn btn-primary btn-sm" @click="openTriggerDialog('scout')">
+          🔍 执行选题
+        </button>
+        <button class="btn btn-primary btn-sm" @click="openTriggerDialog('writer')">
+          ✍️ 执行写作
+        </button>
+        <button class="btn btn-ghost btn-sm" @click="store.fetchPipeline()">
+          🔄 刷新
+        </button>
+      </div>
     </div>
+
+    <!-- Trigger Confirmation Dialog -->
+    <ConfirmDialog
+      v-model:show="showTriggerDialog"
+      title="手动触发"
+      :message="`确定要立即执行${triggerTarget === 'scout' ? 'Scout 选题' : 'Writer 写作'}吗？`"
+      confirmText="立即执行"
+      :loading="triggerLoading"
+      @confirm="confirmTrigger"
+    />
 
     <!-- Timeline -->
     <div class="card timeline-card">
@@ -186,8 +277,23 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
       </div>
     </div>
 
+    <!-- Agent Cards Loading Skeletons -->
+    <div v-if="store.isLoading('pipeline') && agentList.length === 0" class="agents-grid">
+      <div v-for="i in 4" :key="i" class="card agent-card-skeleton">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+          <SkeletonLoader type="avatar" />
+          <div style="flex: 1;">
+            <SkeletonLoader type="title" width="60%" />
+            <SkeletonLoader type="text" width="40%" />
+          </div>
+        </div>
+        <SkeletonLoader type="text" />
+        <SkeletonLoader type="card" height="32px" />
+      </div>
+    </div>
+
     <!-- Agent Cards -->
-    <div class="agents-grid">
+    <div v-else class="agents-grid">
       <div v-for="agent in agentList" :key="agent.name" class="card agent-card">
         <div class="agent-header">
           <div class="agent-info">
@@ -233,8 +339,71 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
       </div>
     </div>
 
+    <!-- Pending Review Section -->
+    <div v-if="pendingArticles.length > 0" class="card pending-review-card">
+      <div class="card-header">
+        <h3 class="card-title">📝 待审批内容</h3>
+        <a href="/approval" class="view-all-link">查看全部 →</a>
+      </div>
+      <div class="pending-list">
+        <div
+          v-for="article in pendingArticles"
+          :key="article.id"
+          class="pending-item"
+        >
+          <div class="pending-info">
+            <h4 class="pending-title">{{ article.meta.topic || '未知选题' }}</h4>
+            <div class="pending-meta">
+              <span class="meta-tag">📊 {{ article.meta.proofread_score || '-' }}分</span>
+              <span class="meta-tag">📝 {{ article.meta.word_count || 0 }}字</span>
+              <span v-if="article.meta.platform" class="meta-tag">📱 {{ article.meta.platform }}</span>
+            </div>
+          </div>
+          <div class="pending-actions">
+            <template v-if="quickRejectingId === article.id">
+              <input
+                v-model="quickRejectReason"
+                class="input reject-reason-input"
+                placeholder="驳回原因..."
+                @keyup.enter="quickReject(article.id)"
+              />
+              <button
+                class="btn btn-danger btn-xs"
+                :disabled="!quickRejectReason.trim()"
+                @click="quickReject(article.id)"
+              >
+                确认
+              </button>
+              <button
+                class="btn btn-ghost btn-xs"
+                @click="quickRejectingId = null; quickRejectReason = ''"
+              >
+                取消
+              </button>
+            </template>
+            <template v-else>
+              <button
+                class="btn btn-success btn-xs"
+                :disabled="quickApprovingId === article.id"
+                @click="quickApprove(article.id)"
+              >
+                {{ quickApprovingId === article.id ? '...' : '✅ 通过' }}
+              </button>
+              <button
+                class="btn btn-danger btn-xs"
+                :disabled="quickRejectingId !== null"
+                @click="quickRejectingId = article.id"
+              >
+                ❌ 驳回
+              </button>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Empty State -->
-    <div v-if="agentList.length === 0" class="card empty-state">
+    <div v-if="agentList.length === 0 && pendingArticles.length === 0" class="card empty-state">
       <div class="empty-state-animation">
         <div class="empty-state-icon">🤖</div>
         <div class="empty-state-pulse"></div>
@@ -277,6 +446,24 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
   font-size: var(--text-md);
   color: var(--text-tertiary);
   margin: 0;
+}
+
+.page-actions {
+  display: flex;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+
+  .page-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 
 /* ── Timeline ────────────────────────────────────────────────── */
@@ -598,14 +785,114 @@ function getTimelineStatus(item: { hour: number, minute: number }): 'completed' 
   justify-content: center;
 }
 
+/* ── Pending Review Card ─────────────────────────────────────── */
+.pending-review-card {
+  border-left: 3px solid var(--warning);
+}
+
+.pending-review-card .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.view-all-link {
+  font-size: var(--text-sm);
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.view-all-link:hover {
+  text-decoration: underline;
+}
+
+.pending-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.pending-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-md);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  transition: background 0.2s;
+}
+
+.pending-item:hover {
+  background: var(--bg-hover);
+}
+
+.pending-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.pending-title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-xs) 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pending-meta {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.meta-tag {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  background: var(--bg-card);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.pending-actions {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.reject-reason-input {
+  width: 150px;
+  padding: 4px 8px;
+  font-size: var(--text-sm);
+}
+
+.btn-xs {
+  padding: 4px 8px;
+  font-size: var(--text-xs);
+}
+
 /* ── Responsive ──────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .agents-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .timeline {
     justify-content: flex-start;
+  }
+
+  .pending-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .pending-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 }
 </style>

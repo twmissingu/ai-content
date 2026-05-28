@@ -5,6 +5,7 @@ Outputs video script + scene descriptions for TTS + visual generation.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -40,27 +41,51 @@ def _parse_args() -> tuple[dict, Path]:
 def _generate_script(topic: dict) -> dict:
     """Generate a Douyin short video script with scene descriptions."""
     result = chat_structured(
-        system_prompt="你是一个短视频脚本专家。输出结构化脚本 JSON。",
-        user_prompt=f"""为以下选题生成一个15-60秒的抖音短视频脚本。
+        system_prompt=f"你是一个抖音爆款短视频脚本专家，专注{DOMAIN}领域。你擅长用15-60秒讲清楚一个观点并引导互动。你的脚本节奏快、信息密度高、口语化强。",
+        user_prompt=f"""为以下选题生成一个抖音短视频脚本。
 
 选题: {topic['title']}
 描述: {topic.get('description', '')}
 
-输出JSON格式:
-{{"hook": "前三秒抓眼球的一句话",
+## 脚本结构（严格按时长分配）
+
+### 1. Hook (0-3秒) — 生死3秒，必须抓人
+好的Hook示例:
+- 数据冲击: "90%的人不知道，你的手机每天在偷看你"
+- 反问悬念: "为什么苹果从不打价格战？"
+- 反常识: "学编程最不该先学语法"
+- 冲突对立: "程序员说这不可能，产品经理说今天必须上线"
+禁止: "你知道吗""大家好""今天我来分享""最近很多人问"
+
+### 2. 正文 (3-25秒) — 核心内容，一句一个信息点
+- 每句话≤15字（口语化，像说话不像念稿）
+- 一句一个信息点，不要一句话塞两个观点
+- 节奏紧凑，句与句之间不要停顿太久
+- 每句话都要配合画面描述（特写/全景/文字特效/数据图表）
+
+### 3. CTA (最后5秒) — 引导互动
+- 引导点赞/评论/关注（自然融入，不要硬求）
+- 留一个开放性问题引发讨论
+- 好例子: "你觉得AI会取代程序员吗？评论区告诉我"
+
+## 输出JSON格式:
+{{
+  "hook": "前三秒抓眼球的一句话（≤20字）",
   "script": [
-    {{"time_sec": 0, "text": "旁白文字", "visual": "画面描述", "duration": 5}}
+    {{"time_sec": 0, "text": "旁白文字（≤15字/句）", "visual": "具体画面描述", "duration": 5, "mood": "语气/情绪"}},
+    {{"time_sec": 5, "text": "...", "visual": "...", "duration": 5, "mood": "..."}}
   ],
-  "cta": "结尾引导语",
-  "hashtags": ["#tag1", "#tag2"],
-  "total_duration_sec": 30
+  "cta": "结尾引导语（≤25字）",
+  "hashtags": ["#tag1", "#tag2", "#tag3", "#tag4", "#tag5"],
+  "total_duration_sec": 30,
+  "target_audience": "目标受众画像（年龄+身份+兴趣）"
 }}
 
-要求:
-- 语速快、节奏紧凑
-- 前三秒必须抓眼球
-- 核心观点 + 例证
-- 结尾行动引导
+## 技术约束
+- 总时长: 15-60秒（推荐25-35秒）
+- 语速: 3-4字/秒
+- 每个scene的duration: 3-8秒
+- 总scene数: 4-8个
 """
     )
     return result
@@ -80,8 +105,10 @@ def main():
 
     # Format as markdown
     lines = [f"# {script.get('hook', topic['title'])}", ""]
+    lines.append(f"**总时长**: {script.get('total_duration_sec', 0)}秒 | **目标受众**: {script.get('target_audience', '科技爱好者')}", )
+    lines.append("")
     for scene in scenes:
-        lines.append(f"**{scene.get('time_sec', 0)}s** ({scene.get('duration', 5)}s)")
+        lines.append(f"**{scene.get('time_sec', 0)}s** ({scene.get('duration', 5)}s) — {scene.get('mood', '')}")
         lines.append(f"🎤 {scene.get('text', '')}")
         lines.append(f"🎬 {scene.get('visual', '')}")
         lines.append("")

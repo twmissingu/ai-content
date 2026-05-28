@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { useToast } from '../composables/useToast'
 
 // ═══════════════════════════════════════════════════════════════════════
 // Type Definitions
@@ -116,6 +117,8 @@ export interface ApprovalActionResponse {
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
 
 export const useDashboardStore = defineStore('dashboard', () => {
+  const toast = useToast()
+
   // ── State ─────────────────────────────────────────────────────────
   const agents = ref<Record<string, AgentStatus>>({})
   const approvalQueue = ref<ApprovalArticle[]>([])
@@ -123,7 +126,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
   const config = ref<ConfigData>({})
   const budget = ref<BudgetStatus | null>(null)
   const error = ref<string | null>(null)
-  
+
   // Track individual loading states
   const loadingStates = ref<Record<string, boolean>>({})
 
@@ -223,6 +226,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
       })
       await fetchApprovalQueue()
       error.value = null
+      toast.success('文章已批准，已推送到草稿箱')
       return data
     } catch (e) {
       handleError(e, 'approve')
@@ -242,6 +246,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
       })
       await fetchApprovalQueue()
       error.value = null
+      toast.info('文章已驳回，将安排重写')
       return data
     } catch (e) {
       handleError(e, 'reject')
@@ -261,6 +266,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
       })
       await fetchTopics()
       error.value = null
+      toast.success('选题已确认，即将开始写作')
       return data
     } catch (e) {
       handleError(e, 'confirmTopic')

@@ -1,4 +1,26 @@
 {
+  "tool_update_wechat": {
+    "name": "AI工具版本更新-微信",
+    "platform": "wechat",
+    "length": 1500,
+    "tone": "口语化+观点鲜明",
+    "stance": "重度用户视角，场景化解读",
+    "structure": "反差开头 → 痛点-方案-感受逐个拆解 → 分层升级建议 → 互动",
+    "prompt_template": "config/prompts/tool_update_wechat.md",
+    "formatting": "config/prompts/formatting_wechat.md",
+    "illustrations": 0
+  },
+  "tool_update_xhs": {
+    "name": "AI工具版本更新-小红书",
+    "platform": "xiaohongshu",
+    "length": 500,
+    "tone": "口语化+emoji+短句",
+    "stance": "朋友安利视角",
+    "structure": "3秒钩子 → Emoji要点列表 → 总结互动",
+    "prompt_template": "config/prompts/tool_update_xhs.md",
+    "formatting": "config/prompts/formatting_xhs.md",
+    "illustrations": 1
+  },
   "wechat_default": {
     "name": "公众号默认",
     "platform": "wechat",
@@ -6,6 +28,7 @@
     "tone": "口语化",
     "stance": "强烈观点",
     "structure": "开头3秒抓人 → 层层递进论证 → 总结观点",
+    "formatting": "config/prompts/formatting_wechat.md",
     "illustrations": 3
   },
   "xiaohongshu_default": {
@@ -15,6 +38,7 @@
     "tone": "轻松口语化+emoji",
     "stance": "第一人称经验分享",
     "structure": "开头痛点/好奇 → 主体干货 → 结尾互动引导",
+    "formatting": "config/prompts/formatting_xhs.md",
     "illustrations": 6
   },
   "douyin_default": {

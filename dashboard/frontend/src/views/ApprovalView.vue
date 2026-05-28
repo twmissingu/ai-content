@@ -1,13 +1,35 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
+import { useToast } from '../composables/useToast'
 import { marked } from 'marked'
+import SkeletonLoader from '../components/SkeletonLoader.vue'
 
 const store = useDashboardStore()
+const toast = useToast()
 const selectedId = ref<string | null>(null)
 const rejectReason = ref('')
 const showRejectInput = ref<string | null>(null)
 const showApproveConfirm = ref<string | null>(null)
+
+// Version-level operations
+interface PlatformVersion {
+  id: number
+  session_id: number
+  platform: string
+  status: string
+  score: number | null
+  content_path: string | null
+}
+
+const sessionVersions = ref<PlatformVersion[]>([])
+const versionsLoading = ref(false)
+const versionProcessingIds = ref<Set<number>>(new Set())
+
+// Batch operations
+const selectedIds = ref<Set<string>>(new Set())
+const isBatchMode = ref(false)
+const batchProcessing = ref(false)
 
 // Track loading state per article
 const processingIds = ref<Set<string>>(new Set())
@@ -19,8 +41,115 @@ const renderedContent = computed(() => {
   return marked(article.content_preview) as string
 })
 
+async function fetchVersions(sessionId: number) {
+  versionsLoading.value = true
+  try {
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+    const res = await fetch(`${API_BASE}/api/approval/versions/${sessionId}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    sessionVersions.value = data.versions || []
+  } catch (e) {
+    toast.error(`获取版本列表失败: ${e instanceof Error ? e.message : '未知错误'}`)
+    sessionVersions.value = []
+  } finally {
+    versionsLoading.value = false
+  }
+}
+
+async function approveVersion(versionId: number) {
+  versionProcessingIds.value.add(versionId)
+  try {
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+    const res = await fetch(`${API_BASE}/api/approval/version/${versionId}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    toast.success('版本已批准')
+    // Refresh versions list
+    const version = sessionVersions.value.find(v => v.id === versionId)
+    if (version) {
+      version.status = 'approved'
+    }
+  } catch (e) {
+    toast.error(`批准失败: ${e instanceof Error ? e.message : '未知错误'}`)
+  } finally {
+    versionProcessingIds.value.delete(versionId)
+  }
+}
+
+async function rejectVersion(versionId: number) {
+  versionProcessingIds.value.add(versionId)
+  try {
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+    const res = await fetch(`${API_BASE}/api/approval/version/${versionId}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    toast.success('版本已驳回')
+    const version = sessionVersions.value.find(v => v.id === versionId)
+    if (version) {
+      version.status = 'rejected'
+    }
+  } catch (e) {
+    toast.error(`驳回失败: ${e instanceof Error ? e.message : '未知错误'}`)
+  } finally {
+    versionProcessingIds.value.delete(versionId)
+  }
+}
+
+const selectedCount = computed(() => selectedIds.value.size)
+const allSelected = computed(() =>
+  store.approvalQueue.length > 0 && selectedIds.value.size === store.approvalQueue.length
+)
+
 function select(id: string) {
-  selectedId.value = selectedId.value === id ? null : id
+  if (isBatchMode.value) {
+    toggleSelection(id)
+  } else {
+    selectedId.value = selectedId.value === id ? null : id
+  }
+}
+
+function toggleSelection(id: string) {
+  const newSet = new Set(selectedIds.value)
+  if (newSet.has(id)) {
+    newSet.delete(id)
+  } else {
+    newSet.add(id)
+  }
+  selectedIds.value = newSet
+}
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    selectedIds.value = new Set()
+  } else {
+    selectedIds.value = new Set(store.approvalQueue.map(a => a.id))
+  }
+}
+
+function toggleBatchMode() {
+  isBatchMode.value = !isBatchMode.value
+  if (!isBatchMode.value) {
+    selectedIds.value = new Set()
+  }
+}
+
+async function batchApprove() {
+  if (selectedIds.value.size === 0) return
+  batchProcessing.value = true
+  try {
+    for (const id of selectedIds.value) {
+      await store.approve(id)
+    }
+    selectedIds.value = new Set()
+    isBatchMode.value = false
+  } finally {
+    batchProcessing.value = false
+  }
 }
 
 async function doReject(id: string) {
@@ -55,6 +184,30 @@ function cancelApprove() {
 }
 
 const pendingCount = computed(() => store.approvalQueue.length)
+
+// Keyboard shortcuts
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    selectedId.value = null
+    showRejectInput.value = null
+    showApproveConfirm.value = null
+    if (isBatchMode.value) toggleBatchMode()
+  }
+  if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault()
+    if (!isBatchMode.value) toggleBatchMode()
+    toggleSelectAll()
+  }
+}
+
+// Register keyboard handler
+import { onMounted, onUnmounted } from 'vue'
+onMounted(() => {
+  document.addEventListener('keydown', handleKeydown)
+})
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown)
+})
 </script>
 
 <template>
@@ -65,15 +218,62 @@ const pendingCount = computed(() => store.approvalQueue.length)
         <h2 class="page-title">审批队列</h2>
         <p class="page-subtitle">审核并发布内容到各平台</p>
       </div>
-      <div class="page-stats">
+      <div class="page-actions">
+        <button
+          v-if="pendingCount > 0"
+          class="btn btn-ghost btn-sm"
+          :class="{ 'active': isBatchMode }"
+          @click="toggleBatchMode"
+        >
+          {{ isBatchMode ? '取消批量' : '批量操作' }}
+        </button>
         <span class="stat-badge" :class="{ 'has-items': pendingCount > 0 }">
           {{ pendingCount }} 篇待审
         </span>
       </div>
     </div>
 
+    <!-- Batch Actions Bar -->
+    <transition name="slide">
+      <div v-if="isBatchMode && pendingCount > 0" class="batch-bar">
+        <div class="batch-left">
+          <label class="batch-checkbox">
+            <input
+              type="checkbox"
+              :checked="allSelected"
+              @change="toggleSelectAll"
+            >
+            <span>全选</span>
+          </label>
+          <span class="batch-count">已选 {{ selectedCount }} 篇</span>
+        </div>
+        <div class="batch-right">
+          <button
+            class="btn btn-success btn-sm"
+            :disabled="selectedCount === 0 || batchProcessing"
+            @click="batchApprove"
+          >
+            <span v-if="batchProcessing" class="loading-spinner-sm"></span>
+            {{ batchProcessing ? '处理中...' : `批量通过 (${selectedCount})` }}
+          </button>
+        </div>
+      </div>
+    </transition>
+
+    <!-- Loading Skeletons -->
+    <div v-if="store.isLoading('approval') && store.approvalQueue.length === 0" class="articles-skeleton">
+      <div v-for="i in 3" :key="i" class="card article-card-skeleton" style="padding: 20px;">
+        <SkeletonLoader type="title" width="70%" />
+        <SkeletonLoader type="text" :count="3" />
+        <div style="display: flex; gap: 8px; margin-top: 12px;">
+          <SkeletonLoader type="button" />
+          <SkeletonLoader type="button" />
+        </div>
+      </div>
+    </div>
+
     <!-- Empty State -->
-    <div v-if="store.approvalQueue.length === 0" class="card empty-state">
+    <div v-else-if="store.approvalQueue.length === 0" class="card empty-state">
       <div class="empty-state-icon">✅</div>
       <div class="empty-state-title">暂无待审批文章</div>
       <div class="empty-state-description">
@@ -82,7 +282,22 @@ const pendingCount = computed(() => store.approvalQueue.length)
     </div>
 
     <!-- Article List -->
-    <div v-for="article in store.approvalQueue" :key="article.id" class="card article-card">
+    <div
+      v-for="article in store.approvalQueue"
+      :key="article.id"
+      class="card article-card"
+      :class="{ 'selected': isBatchMode && selectedIds.has(article.id) }"
+    >
+      <!-- Batch Checkbox -->
+      <div v-if="isBatchMode" class="batch-select" @click.stop="toggleSelection(article.id)">
+        <input
+          type="checkbox"
+          :checked="selectedIds.has(article.id)"
+          @click.stop
+          @change="toggleSelection(article.id)"
+        >
+      </div>
+
       <!-- Article Header -->
       <div class="article-header" @click="select(article.id)">
         <div class="article-info">
@@ -184,6 +399,58 @@ const pendingCount = computed(() => store.approvalQueue.length)
             </div>
             <div class="preview-text markdown-body" v-html="renderedContent"></div>
           </div>
+
+          <!-- Version-level operations for database-tracked articles -->
+          <div v-if="article.source === 'database' && article.db_version_id" class="versions-section">
+            <div class="versions-header">
+              <span class="versions-title">平台版本管理</span>
+              <button
+                class="btn btn-ghost btn-sm"
+                :disabled="versionsLoading"
+                @click.stop="fetchVersions(article.db_version_id)"
+              >
+                {{ versionsLoading ? '加载中...' : '刷新版本' }}
+              </button>
+            </div>
+            <div v-if="versionsLoading" class="versions-loading">
+              <SkeletonLoader type="text" :count="2" />
+            </div>
+            <div v-else-if="sessionVersions.length > 0" class="versions-list">
+              <div
+                v-for="version in sessionVersions"
+                :key="version.id"
+                class="version-item"
+                :class="`version-${version.status}`"
+              >
+                <div class="version-info">
+                  <span class="version-platform">{{ version.platform }}</span>
+                  <span class="version-status">{{ version.status }}</span>
+                  <span v-if="version.score" class="version-score">评分: {{ version.score }}</span>
+                </div>
+                <div class="version-actions">
+                  <button
+                    v-if="version.status === 'pending'"
+                    class="btn btn-success btn-sm"
+                    :disabled="versionProcessingIds.has(version.id)"
+                    @click.stop="approveVersion(version.id)"
+                  >
+                    {{ versionProcessingIds.has(version.id) ? '处理中...' : '批准' }}
+                  </button>
+                  <button
+                    v-if="version.status === 'pending'"
+                    class="btn btn-danger btn-sm"
+                    :disabled="versionProcessingIds.has(version.id)"
+                    @click.stop="rejectVersion(version.id)"
+                  >
+                    {{ versionProcessingIds.has(version.id) ? '处理中...' : '驳回' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div v-else class="versions-empty">
+              暂无版本信息
+            </div>
+          </div>
         </div>
       </transition>
 
@@ -201,6 +468,81 @@ const pendingCount = computed(() => store.approvalQueue.length)
   display: flex;
   flex-direction: column;
   gap: var(--space-xl);
+}
+
+/* ── Page Actions ────────────────────────────────────────────── */
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.page-actions .btn.active {
+  background: var(--primary-light);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+/* ── Batch Bar ───────────────────────────────────────────────── */
+.batch-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--primary-light);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--primary);
+}
+
+.batch-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+}
+
+.batch-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.batch-checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.batch-count {
+  font-size: var(--text-sm);
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.batch-right {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+/* ── Batch Select ────────────────────────────────────────────── */
+.batch-select {
+  position: absolute;
+  top: var(--space-md);
+  left: var(--space-md);
+  z-index: 10;
+}
+
+.batch-select input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.article-card.selected {
+  border-color: var(--primary);
+  background: var(--primary-light);
 }
 
 /* ── Page Header ─────────────────────────────────────────────── */
@@ -248,6 +590,7 @@ const pendingCount = computed(() => store.approvalQueue.length)
   flex-direction: column;
   gap: var(--space-md);
   transition: all var(--transition-normal);
+  position: relative;
 }
 
 .article-card:hover {
@@ -455,6 +798,92 @@ const pendingCount = computed(() => store.approvalQueue.length)
 
 .expand-icon {
   font-size: var(--text-md);
+}
+
+/* ── Versions Section ────────────────────────────────────────── */
+.versions-section {
+  margin-top: var(--space-lg);
+  border-top: 1px solid var(--divider);
+  padding-top: var(--space-lg);
+}
+
+.versions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-md);
+}
+
+.versions-title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.versions-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.version-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-md);
+  background: var(--bg-hover);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--border-color);
+}
+
+.version-item.version-pending {
+  border-left-color: var(--warning);
+}
+
+.version-item.version-approved {
+  border-left-color: var(--success);
+}
+
+.version-item.version-rejected {
+  border-left-color: var(--danger);
+}
+
+.version-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.version-platform {
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: capitalize;
+}
+
+.version-status {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--bg-card);
+  border-radius: var(--radius-full);
+}
+
+.version-score {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+.version-actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.versions-loading,
+.versions-empty {
+  padding: var(--space-md);
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
 }
 
 /* ── Loading Spinner ─────────────────────────────────────────── */

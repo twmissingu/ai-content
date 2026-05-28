@@ -25,7 +25,7 @@ from typing import Any, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config.settings import DATA_DIR, KB_DIR, STATUS_DIR
+from config.settings import DATA_DIR, DOMAIN, KB_DIR, STATUS_DIR
 from skills.common import AgentBase, agent_main
 from skills.llm import chat_structured
 
@@ -169,24 +169,53 @@ class FeedbackAgent(AgentBase):
         STRATEGY_DIR.mkdir(parents=True, exist_ok=True)
 
         # Generate strategy via LLM
-        prompt = f"""你是内容策略分析师。基于以下选题数据，生成本周写作策略建议。
+        prompt = f"""你是资深内容策略分析师，专注{DOMAIN}领域。你擅长从有限的数据中发现规律，并给出具体可执行的策略建议（而不是泛泛而谈）。
 
-数据:
+## 历史数据概览
 - 文章总数: {viral.get('article_count', 0)}
-- 标题模式: {json.dumps(viral.get('title_patterns', {}), ensure_ascii=False)}
-- 高频关键词: {json.dumps(viral.get('top_keywords', [])[:5], ensure_ascii=False)}
+- 标题模式分布: {json.dumps(viral.get('title_patterns', {}), ensure_ascii=False)}
+- 高频关键词 TOP5: {json.dumps(viral.get('top_keywords', [])[:5], ensure_ascii=False)}
+- 话题方向分布: {json.dumps(viral.get('topic_directions', {}), ensure_ascii=False)[:500]}
 - 数据来源: {viral.get('data_source', 'local')}
 
-请输出 JSON:
-{{"recommendation": "本周策略建议",
-  "focus_directions": ["方向1", "方向2"],
-  "avoid_topics": ["避免的话题"],
-  "title_style": "推荐的标题风格"}}
+## 分析任务
+请基于以上数据，生成下周的内容策略。每个建议必须具体到可直接执行。
+
+### 1. 内容方向分析
+- 基于关键词和话题分布，判断哪些方向值得深耕（给出理由）
+- 哪些方向已饱和需要回避（给出理由）
+- 如果数据不足，基于{DOMAIN}领域趋势给出合理推断
+
+### 2. 标题策略
+- 基于标题模式分布，推荐最有效的标题公式
+- 给出2个具体的标题模板（可直接套用）
+
+### 3. 差异化机会
+- 分析市场缺什么类型的内容
+- 如何避开同质化竞争
+
+### 4. 下周执行建议
+- 给出3个具体选题（标题级别，不是方向级别）
+- 每个选题说明为什么现在写这个话题合适
+
+## 输出JSON:
+{{
+  "recommendation": "一句话策略总结（具体可执行，如'下周重点写XX方向，用数字型标题'）",
+  "focus_directions": ["值得深耕的方向1（附理由）", "方向2（附理由）"],
+  "avoid_topics": ["已饱和话题1（附理由）"],
+  "title_style": "推荐的标题风格，如'数字型+提问型混合，标题中必须包含具体数字'",
+  "content_gaps": ["市场缺口1（具体描述）", "缺口2"],
+  "suggested_topics": [
+    {{"title": "具体选题标题1", "reason": "推荐理由（为什么现在写、预期效果）"}},
+    {{"title": "具体选题标题2", "reason": "推荐理由"}},
+    {{"title": "具体选题标题3", "reason": "推荐理由"}}
+  ]
+}}
 """
         try:
             start_time = time.monotonic()
             result = chat_structured(
-                system_prompt="你是一个严谨的内容策略分析师。",
+                system_prompt="你是一个严谨的内容策略分析师。基于数据驱动决策，给出具体可执行的建议，而非泛泛而谈。",
                 user_prompt=prompt,
                 temperature=0.5,
             )
@@ -200,6 +229,8 @@ class FeedbackAgent(AgentBase):
                 "focus_directions": [],
                 "avoid_topics": [],
                 "title_style": "保持现状",
+                "content_gaps": [],
+                "suggested_topics": [],
             }
 
         from skills.common import atomic_write_json

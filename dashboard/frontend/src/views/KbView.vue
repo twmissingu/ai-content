@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import SkeletonLoader from '../components/SkeletonLoader.vue'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
 const query = ref('')
@@ -123,8 +124,7 @@ fetchSections()
     <!-- Sections Overview -->
     <div class="sections-grid">
       <div v-if="loadingSections" class="card section-card loading">
-        <div class="loading-spinner"></div>
-        <span>加载分类...</span>
+        <SkeletonLoader type="text" width="80%" :count="2" />
       </div>
       <template v-else>
         <div 
@@ -145,10 +145,13 @@ fetchSections()
 
     <!-- Search Results -->
     <div v-if="searched" class="results-section">
-      <!-- Loading -->
-      <div v-if="loading" class="card loading-state">
-        <div class="loading-spinner large"></div>
-        <span>搜索中...</span>
+      <!-- Loading Skeletons -->
+      <div v-if="loading" class="results-list">
+        <div v-for="i in 3" :key="i" class="card result-card-skeleton" style="padding: 16px;">
+          <SkeletonLoader type="title" width="60%" />
+          <SkeletonLoader type="text" :count="2" />
+          <SkeletonLoader type="text" width="30%" />
+        </div>
       </div>
 
       <!-- Results -->

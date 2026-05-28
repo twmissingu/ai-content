@@ -328,24 +328,17 @@ class AgentBase:
             error=error,
             **extra
         )
-        
+
         # Record error in metrics
         if self._metrics:
             self._metrics.record_error("unknown", error)
-        
+
         # Save metrics
         if save_metrics and self._metrics:
             try:
                 self._metrics.save()
             except Exception:
                 pass
-        self.write_status(
-            stage="error",
-            progress_pct=0,
-            detail=detail or f"Error: {error}",
-            error=error,
-            **extra
-        )
     
     def write_failed_action(
         self,

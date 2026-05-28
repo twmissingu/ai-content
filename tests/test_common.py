@@ -345,5 +345,188 @@ class TestWriteStatusFunction:
         assert status["progress_pct"] == 25
 
 
+class TestJSONFormatter:
+    """Test JSONFormatter logging."""
+
+    def test_format_basic_record(self):
+        from skills.common import JSONFormatter
+        import logging
+
+        formatter = JSONFormatter()
+        record = logging.LogRecord(
+            name="test", level=logging.INFO, pathname="", lineno=0,
+            msg="test message", args=(), exc_info=None,
+        )
+
+        result = formatter.format(record)
+        data = json.loads(result)
+
+        assert data["level"] == "INFO"
+        assert data["message"] == "test message"
+        assert "timestamp" in data
+
+    def test_format_with_exception(self):
+        from skills.common import JSONFormatter
+        import logging
+
+        formatter = JSONFormatter()
+        try:
+            raise ValueError("test error")
+        except ValueError:
+            import sys
+            exc_info = sys.exc_info()
+
+        record = logging.LogRecord(
+            name="test", level=logging.ERROR, pathname="", lineno=0,
+            msg="error occurred", args=(), exc_info=exc_info,
+        )
+
+        result = formatter.format(record)
+        data = json.loads(result)
+
+        assert data["level"] == "ERROR"
+        assert "exception" in data
+        assert "ValueError" in data["exception"]
+
+    def test_format_with_extra_data(self):
+        from skills.common import JSONFormatter
+        import logging
+
+        formatter = JSONFormatter()
+        record = logging.LogRecord(
+            name="test", level=logging.INFO, pathname="", lineno=0,
+            msg="test", args=(), exc_info=None,
+        )
+        record.extra_data = {"key": "value"}
+
+        result = formatter.format(record)
+        data = json.loads(result)
+
+        assert data["data"] == {"key": "value"}
+
+
+class TestGetAgentLogger:
+    """Test get_agent_logger function."""
+
+    def test_returns_logger_adapter(self, tmp_path):
+        from skills.common import get_agent_logger
+
+        logger = get_agent_logger("test_agent", log_dir=tmp_path, enable_file_logging=False)
+
+        assert hasattr(logger, 'info')
+        assert hasattr(logger, 'error')
+
+    def test_creates_log_file(self, tmp_path):
+        from skills.common import get_agent_logger
+
+        logger = get_agent_logger("test_file_agent", log_dir=tmp_path, enable_file_logging=True)
+        logger.info("test message")
+
+        log_file = tmp_path / "test_file_agent.log"
+        assert log_file.exists()
+
+
+class TestValidation:
+    """Test validation functions."""
+
+    def test_validate_source_valid(self):
+        from skills.common import validate_source
+
+        assert validate_source("weibo") == "weibo"
+        assert validate_source("zhihu") == "zhihu"
+
+    def test_validate_source_invalid(self):
+        from skills.common import validate_source
+
+        with pytest.raises(ValueError):
+            validate_source("invalid_source")
+
+    def test_validate_platform_valid(self):
+        from skills.common import validate_platform
+
+        assert validate_platform("wechat") == "wechat"
+        assert validate_platform("xiaohongshu") == "xiaohongshu"
+
+    def test_validate_platform_invalid(self):
+        from skills.common import validate_platform
+
+        with pytest.raises(ValueError):
+            validate_platform("invalid_platform")
+
+    def test_validate_action_valid(self):
+        from skills.common import validate_action
+
+        assert validate_action("approve") == "approve"
+        assert validate_action("reject") == "reject"
+
+    def test_validate_action_invalid(self):
+        from skills.common import validate_action
+
+        with pytest.raises(ValueError):
+            validate_action("invalid_action")
+
+
+class TestSanitizeFilename:
+    """Test sanitize_filename function."""
+
+    def test_removes_slashes(self):
+        from skills.common import sanitize_filename
+
+        result = sanitize_filename("file/with/slashes")
+        assert "/" not in result
+
+    def test_preserves_normal_chars(self):
+        from skills.common import sanitize_filename
+
+        result = sanitize_filename("normal-file_2026")
+        assert result == "normal-file_2026"
+
+    def test_handles_empty_string(self):
+        from skills.common import sanitize_filename
+
+        result = sanitize_filename("")
+        assert result == "unnamed"
+
+
+class TestMaskApiKey:
+    """Test mask_api_key function."""
+
+    def test_masks_long_key(self):
+        from skills.common import mask_api_key
+
+        result = mask_api_key("sk-1234567890abcdef")
+        assert result.startswith("sk-1")
+        assert result.endswith("cdef")
+        assert "***" in result
+
+    def test_masks_short_key(self):
+        from skills.common import mask_api_key
+
+        result = mask_api_key("short")
+        assert "***" in result
+
+
+class TestSafeSubprocessArgs:
+    """Test safe_subprocess_args function."""
+
+    def test_valid_binary(self):
+        from skills.common import safe_subprocess_args
+
+        result = safe_subprocess_args(["python3", "--version"])
+        assert result[0] == "python3"
+
+    def test_invalid_binary(self):
+        from skills.common import safe_subprocess_args
+
+        with pytest.raises(ValueError):
+            safe_subprocess_args(["/nonexistent/binary"])
+
+    def test_dangerous_chars(self):
+        from skills.common import safe_subprocess_args
+
+        with pytest.raises(ValueError):
+            safe_subprocess_args(["python3", "arg; rm -rf /"])
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

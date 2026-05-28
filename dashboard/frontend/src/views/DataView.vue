@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
+import SkeletonLoader from '../components/SkeletonLoader.vue'
 
 const store = useDashboardStore()
 const costData = ref<any[]>([])
@@ -61,8 +62,17 @@ const budgetStatus = computed(() => {
       </button>
     </div>
 
+    <!-- Loading Skeletons -->
+    <div v-if="loading" class="stats-grid">
+      <div v-for="i in 2" :key="i" class="card stat-card-skeleton" style="padding: 20px;">
+        <SkeletonLoader type="title" width="50%" />
+        <SkeletonLoader type="text" width="80%" />
+        <SkeletonLoader type="card" height="24px" />
+      </div>
+    </div>
+
     <!-- Stats Cards -->
-    <div class="stats-grid">
+    <div v-else class="stats-grid">
       <!-- Monthly Cost Card -->
       <div class="card stat-card cost-card">
         <div class="stat-icon">💰</div>

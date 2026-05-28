@@ -12,16 +12,18 @@
 import json
 import logging
 import os
+import re
 import subprocess
 import threading
 import time
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 import uvicorn
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -54,8 +56,10 @@ from dashboard.backend.database import (
     get_db,
     get_pipeline_sessions,
     update_platform_version,
+    get_platform_versions,
     get_pending_versions,
     create_approval_record,
+    get_approval_records,
     log_token_usage,
     get_token_usage_stats,
     set_config_value,
@@ -265,6 +269,20 @@ class TokenLogRequest(BaseModel):
     session_id: Optional[int] = None
 
 
+class TriggerRequest(BaseModel):
+    agent: str  # scout | writer
+    session: Optional[str] = None  # morning | evening (for scout)
+    topic_id: Optional[str] = None  # specific topic for writer
+
+
+# Rate limiter for trigger endpoint
+_trigger_timestamps: dict[str, list[float]] = defaultdict(list)
+_TRIGGER_RATE_LIMIT = 5  # max requests
+_TRIGGER_RATE_WINDOW = 60  # per 60 seconds
+
+_TOPIC_ID_RE = re.compile(r'^[\w\-]+$')
+
+
 # ── Helpers ────────────────────────────────────────────────────────
 def _read_json(path: Path) -> dict:
     try:
@@ -383,6 +401,65 @@ def get_pipeline_timeline():
     return {"sessions": sessions}
 
 
+@app.post("/api/pipeline/trigger")
+def trigger_agent(req: TriggerRequest, request: Request):
+    """Manually trigger an agent (scout or writer) to run immediately."""
+    if req.agent not in ("scout", "writer"):
+        raise HTTPException(400, f"Invalid agent: {req.agent}. Must be 'scout' or 'writer'.")
+
+    # Rate limiting per client IP
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    timestamps = _trigger_timestamps[client_ip]
+    # Remove expired entries
+    _trigger_timestamps[client_ip] = [t for t in timestamps if now - t < _TRIGGER_RATE_WINDOW]
+    if len(_trigger_timestamps[client_ip]) >= _TRIGGER_RATE_LIMIT:
+        raise HTTPException(429, "触发频率过高，请稍后再试")
+    _trigger_timestamps[client_ip].append(now)
+
+    # Validate topic_id format (alphanumeric, hyphens, underscores only)
+    if req.topic_id and not _TOPIC_ID_RE.match(req.topic_id):
+        raise HTTPException(400, f"Invalid topic_id format: {req.topic_id}")
+
+    # Validate session parameter
+    if req.session and req.session not in ("morning", "evening"):
+        raise HTTPException(400, f"Invalid session: {req.session}. Must be 'morning' or 'evening'.")
+
+    # Build command
+    skills_dir = PROJECT_ROOT / "skills"
+    venv_python = PROJECT_ROOT / ".venv" / "bin" / "python"
+
+    if req.agent == "scout":
+        script = skills_dir / "scout.py"
+        session = req.session or "morning"
+        cmd = [str(venv_python), str(script), session]
+    else:
+        script = skills_dir / "writer.py"
+        if req.topic_id:
+            cmd = [str(venv_python), str(script), req.topic_id]
+        else:
+            cmd = [str(venv_python), str(script)]
+
+    # Run in background
+    try:
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(PROJECT_ROOT),
+        )
+        logger.info(f"Triggered {req.agent} (PID: {process.pid})")
+        return {
+            "status": "ok",
+            "agent": req.agent,
+            "pid": process.pid,
+            "message": f"{req.agent} agent started",
+        }
+    except Exception as e:
+        logger.error(f"Failed to trigger {req.agent}: {e}")
+        raise HTTPException(500, f"Failed to trigger {req.agent}: {str(e)}")
+
+
 # ── Routes: Approval ───────────────────────────────────────────────
 @app.get("/api/approval/queue")
 def get_approval_queue():
@@ -460,8 +537,56 @@ def approval_act(req: ApproveRequest):
     if db_warning:
         response["status"] = "partial"
         response["warning"] = db_warning
-    
+
     return response
+
+
+@app.get("/api/approval/versions/{session_id}")
+def get_session_versions(session_id: int):
+    """Get all platform versions for a specific pipeline session."""
+    try:
+        versions = get_platform_versions(session_id)
+        return {"versions": versions, "count": len(versions)}
+    except Exception as e:
+        logger.error(f"Error fetching versions for session {session_id}: {e}")
+        raise HTTPException(500, f"Failed to fetch versions: {str(e)}")
+
+
+@app.post("/api/approval/version/{version_id}/approve")
+def approve_version(version_id: int):
+    """Approve a specific platform version."""
+    try:
+        update_platform_version(version_id, status="approved")
+        create_approval_record(version_id, action="pass")
+        logger.info(f"Version {version_id} approved")
+        return {"status": "ok", "version_id": version_id, "action": "approved"}
+    except Exception as e:
+        logger.error(f"Error approving version {version_id}: {e}")
+        raise HTTPException(500, f"Failed to approve version: {str(e)}")
+
+
+@app.post("/api/approval/version/{version_id}/reject")
+def reject_version(version_id: int):
+    """Reject a specific platform version."""
+    try:
+        update_platform_version(version_id, status="rejected")
+        create_approval_record(version_id, action="reject")
+        logger.info(f"Version {version_id} rejected")
+        return {"status": "ok", "version_id": version_id, "action": "rejected"}
+    except Exception as e:
+        logger.error(f"Error rejecting version {version_id}: {e}")
+        raise HTTPException(500, f"Failed to reject version: {str(e)}")
+
+
+@app.get("/api/approval/records")
+def get_all_approval_records(limit: int = Query(50, ge=1, le=200)):
+    """Get recent approval records across all versions."""
+    try:
+        records = get_approval_records(limit=limit)
+        return {"records": records, "count": len(records)}
+    except Exception as e:
+        logger.error(f"Error fetching approval records: {e}")
+        raise HTTPException(500, f"Failed to fetch approval records: {str(e)}")
 
 
 # ── Routes: Topics ─────────────────────────────────────────────────

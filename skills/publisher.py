@@ -49,7 +49,7 @@ class PublisherAgent(AgentBase):
         if not meta_path.exists():
             for f in REVIEW_DIR.glob(f"*{target_id}*.meta.json"):
                 meta_path = f
-                article_path = REVIEW_DIR / f.stem.replace(".meta", "") + ".md"
+                article_path = REVIEW_DIR / f"{f.stem.replace('.meta', '')}.md"
                 break
 
         if not meta_path.exists():
