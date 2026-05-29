@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from skills.topic_analyzer import (
-    _extract_keywords,
-    _get_history_articles,
+    extract_keywords,
+    get_history_articles,
     _get_pending_topics,
     analyze_topic_competition,
     calculate_saturation,
@@ -16,28 +16,28 @@ from skills.topic_analyzer import (
 
 class TestExtractKeywords:
     def test_extracts_chinese_words(self):
-        kw = _extract_keywords("AI 发展趋势 分析")
+        kw = extract_keywords("AI 发展趋势 分析")
         assert len(kw) > 0
         assert any("ai" in k for k in kw)
 
     def test_extracts_english_words(self):
-        kw = _extract_keywords("Python Tutorial Guide")
+        kw = extract_keywords("Python Tutorial Guide")
         assert "python" in kw
         assert "tutorial" in kw
         assert "guide" in kw
 
     def test_removes_stop_words(self):
-        kw = _extract_keywords("the best for that")
+        kw = extract_keywords("the best for that")
         assert "the" not in kw
         assert "for" not in kw
         assert "that" not in kw
         assert "best" in kw
 
     def test_empty_string(self):
-        assert _extract_keywords("") == set()
+        assert extract_keywords("") == set()
 
     def test_mixed_chinese_english(self):
-        kw = _extract_keywords("Python AI 开发指南")
+        kw = extract_keywords("Python AI 开发指南")
         assert "python" in kw
         assert any("ai" in k for k in kw)
 
@@ -51,7 +51,7 @@ class TestGetHistoryArticles:
         (day_dir / "article1.md").write_text("# AI趋势\n内容一")
         (day_dir / "article2.md").write_text("# Python技巧\n内容二")
 
-        articles = _get_history_articles(days=1)
+        articles = get_history_articles(days=1)
         assert len(articles) == 2
         titles = {a["title"] for a in articles}
         assert "AI趋势" in titles
@@ -63,7 +63,7 @@ class TestGetHistoryArticles:
         old_dir.mkdir(parents=True)
         (old_dir / "old.md").write_text("# 旧文章\n内容")
 
-        articles = _get_history_articles(days=30)
+        articles = get_history_articles(days=30)
         assert len(articles) == 0
 
     def test_non_date_directories_skipped(self, tmp_path, monkeypatch):
@@ -72,12 +72,12 @@ class TestGetHistoryArticles:
         misc_dir.mkdir(parents=True)
         (misc_dir / "note.md").write_text("# 笔记\n内容")
 
-        articles = _get_history_articles()
+        articles = get_history_articles()
         assert len(articles) == 0
 
     def test_empty_history(self, tmp_path, monkeypatch):
         monkeypatch.setattr("skills.topic_analyzer.KB_DIR", tmp_path)
-        articles = _get_history_articles()
+        articles = get_history_articles()
         assert articles == []
 
 

@@ -1,0 +1,23 @@
+{
+  "sources": {
+    "twitter": {"weight": 0.95, "tier": "T1", "label": "X/Twitter"},
+    "materials": {"weight": 0.90, "tier": "T1", "label": "手动素材"},
+    "rss": {"weight": 0.85, "tier": "T1.5", "label": "RSS 订阅"},
+    "github": {"weight": 0.80, "tier": "T1.5", "label": "GitHub"},
+    "web_search": {"weight": 0.75, "tier": "T1.5", "label": "网页搜索"},
+    "zhihu": {"weight": 0.70, "tier": "T1.5", "label": "知乎"},
+    "kr36": {"weight": 0.70, "tier": "T1.5", "label": "36氪"},
+    "bilibili": {"weight": 0.55, "tier": "T2", "label": "B站"},
+    "weibo": {"weight": 0.50, "tier": "T2", "label": "微博"},
+    "toutiao": {"weight": 0.50, "tier": "T2", "label": "头条"},
+    "douyin": {"weight": 0.45, "tier": "T2", "label": "抖音"},
+    "baidu": {"weight": 0.40, "tier": "T2", "label": "百度"}
+  },
+  "tier_multipliers": {
+    "T1": 1.15,
+    "T1.5": 1.08,
+    "T2": 1.0
+  },
+  "default_weight": 0.5,
+  "default_tier": "T2"
+}

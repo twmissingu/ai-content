@@ -23,6 +23,7 @@ from typing import Any, Optional
 
 from config.settings import (
     ACTIONS_DIR,
+    CONFIG_DIR,
     DOMAIN,
     KB_DIR,
     PENDING_DIR,
@@ -51,21 +52,32 @@ SAME_TOPIC_BLOCK_DAYS = 3
 COLD_START_DAYS = 14
 HISTORY_DIR = KB_DIR / "history"
 
-# source_weight initial table (PRD 3.1)
+# ── Source config loader ───────────────────────────────────────────
+def _load_sources_config() -> dict:
+    """Load source weights and tier config from config/sources.json."""
+    config_path = CONFIG_DIR / "sources.json"
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logger.warning(f"Failed to load sources config: {e}, using defaults")
+        return {
+            "sources": {},
+            "tier_multipliers": {"T1": 1.15, "T1.5": 1.08, "T2": 1.0},
+            "default_weight": 0.5,
+            "default_tier": "T2",
+        }
+
+_SOURCES_CONFIG = _load_sources_config()
 SOURCE_WEIGHTS: dict[str, float] = {
-    "twitter": 0.95,
-    "rss": 0.85,
-    "github": 0.80,
-    "web_search": 0.75,
-    "zhihu": 0.70,
-    "kr36": 0.70,
-    "materials": 0.90,
-    "weibo": 0.50,
-    "douyin": 0.45,
-    "baidu": 0.40,
-    "bilibili": 0.55,
-    "toutiao": 0.50,
+    name: info["weight"] for name, info in _SOURCES_CONFIG["sources"].items()
 }
+_SOURCE_TIERS: dict[str, str] = {
+    name: info["tier"] for name, info in _SOURCES_CONFIG["sources"].items()
+}
+TIER_MULTIPLIERS: dict[str, float] = _SOURCES_CONFIG["tier_multipliers"]
+DEFAULT_WEIGHT: float = _SOURCES_CONFIG.get("default_weight", 0.5)
+DEFAULT_TIER: str = _SOURCES_CONFIG.get("default_tier", "T2")
 
 # Scoring thresholds (PRD 3.1)
 ATTENTION_FLOOR = 40
@@ -349,16 +361,106 @@ def _is_cold_start() -> bool:
     return history_count < 5  # less than 5 articles → cold start
 
 
+def calculate_freshness(candidate: dict) -> int:
+    """Calculate freshness score based on available timestamp or hot_value.
+
+    Scoring (PRD 3.1):
+      1h 内  → 90（爆发期）
+      6h 内  → 75
+      24h 内 → 60
+      48h 内 → 40
+      >48h   → 20（已过期）
+    Falls back to hot_value mapping or default 60.
+    """
+    now = datetime.now(timezone.utc)
+
+    # Try explicit timestamp fields
+    for key in ("published_at", "created_at", "timestamp", "date"):
+        raw = candidate.get(key)
+        if not raw:
+            continue
+        try:
+            if isinstance(raw, (int, float)):
+                dt = datetime.fromtimestamp(raw, tz=timezone.utc)
+            else:
+                dt = datetime.fromisoformat(str(raw))
+            hours = (now - dt).total_seconds() / 3600
+            if hours <= 1:
+                return 90
+            if hours <= 6:
+                return 75
+            if hours <= 24:
+                return 60
+            if hours <= 48:
+                return 40
+            return 20
+        except (ValueError, TypeError, OSError):
+            continue
+
+    # Fallback: map hot_value to freshness (higher hot → more recent/trending)
+    hot = candidate.get("hot_value", 0)
+    if hot and isinstance(hot, (int, float)):
+        if hot >= 90:
+            return 90
+        if hot >= 70:
+            return 75
+        if hot >= 50:
+            return 60
+        if hot >= 30:
+            return 40
+        return 20
+
+    return 60  # default medium freshness
+
+
+def calculate_self_repeat(title: str) -> int:
+    """Check KB history for same-entity articles to compute self_repeat score.
+
+    Returns:
+      10 — same entity, same direction (highly repetitive)
+      50 — same entity, different direction
+      100 — novel topic
+    """
+    if not HISTORY_DIR.exists():
+        return 100
+
+    from skills.topic_analyzer import extract_keywords, get_history_articles
+
+    keywords = extract_keywords(title)
+    if not keywords:
+        return 100
+
+    recent = get_history_articles(days=SAME_TOPIC_BLOCK_DAYS)
+    best_overlap = 0.0
+
+    for art in recent:
+        art_keywords = extract_keywords(art.get("title", ""))
+        if not art_keywords:
+            continue
+        overlap = len(keywords & art_keywords) / len(keywords | art_keywords)
+        best_overlap = max(best_overlap, overlap)
+
+    if best_overlap >= 0.3:
+        return 10   # same entity, same direction
+    if best_overlap >= 0.15:
+        return 50   # same entity, different direction
+    return 100       # novel
+
+
+def get_tier(source: str) -> str:
+    """Get tier for a source (T1, T1.5, T2)."""
+    return _SOURCE_TIERS.get(source, DEFAULT_TIER)
+
+
 def score_candidate(candidate: dict, cold_start: bool) -> dict | None:
     """Score a single candidate via LLM using PRD 3.1 formula.
 
     Returns scored candidate or None if below attention floor.
     """
     source = candidate.get("source", "web_search")
-    source_weight = SOURCE_WEIGHTS.get(source, 0.5)
+    source_weight = SOURCE_WEIGHTS.get(source, DEFAULT_WEIGHT)
 
-    # Determine freshness from lack of timestamp — use default
-    freshness_score = 60  # default medium freshness
+    freshness_score = calculate_freshness(candidate)
 
     # Call LLM to score
     cold_start_note = "## 注意：系统刚启动，历史数据不足。请重点评估话题本身的价值和可讨论深度，saturation一律给0分。" if cold_start else ""
@@ -402,7 +504,9 @@ def score_candidate(candidate: dict, cold_start: bool) -> dict | None:
     if cold_start:
         viral = int(source_weight * 100)  # use source_weight instead
         saturation = 0  # no baseline yet
-        # self_repeat_score not used in cold start
+        self_repeat = 100  # no history to compare
+    else:
+        self_repeat = calculate_self_repeat(candidate['title'])
 
     # PRD formula
     attention = min(100,
@@ -414,9 +518,13 @@ def score_candidate(candidate: dict, cold_start: bool) -> dict | None:
     if attention < ATTENTION_FLOOR:
         return None
 
-    self_repeat = 100  # not repeating (we filtered already)
     increment = saturation * 0.40 + novelty * 0.35 + self_repeat * 0.25
-    final_score = attention * 0.55 + increment * 0.25 + feasibility * 0.20
+    raw_score = attention * 0.55 + increment * 0.25 + feasibility * 0.20
+
+    # Apply tier multiplier (PRD 3.1)
+    tier = get_tier(source)
+    tier_multiplier = TIER_MULTIPLIERS.get(tier, 1.0)
+    final_score = raw_score * tier_multiplier
 
     candidate.update({
         "source_weight": round(source_weight, 2),
@@ -425,8 +533,12 @@ def score_candidate(candidate: dict, cold_start: bool) -> dict | None:
         "saturation_score": saturation,
         "novelty_score": novelty,
         "feasibility_score": feasibility,
+        "self_repeat_score": self_repeat,
         "attention_score": round(attention, 1),
         "increment_score": round(increment, 1),
+        "raw_score": round(raw_score, 1),
+        "tier": tier,
+        "tier_multiplier": tier_multiplier,
         "final_score": round(final_score, 1),
         "direction": direction,
     })

@@ -14,7 +14,7 @@ from typing import Optional
 from config.settings import KB_DIR
 
 
-def _extract_keywords(title: str) -> set[str]:
+def extract_keywords(title: str) -> set[str]:
     """Extract significant keywords from a topic title."""
     # CJK + English word extraction
     words = set(re.findall(r'[\w一-鿿]{2,}', title.lower()))
@@ -24,7 +24,7 @@ def _extract_keywords(title: str) -> set[str]:
     return words - stop_words
 
 
-def _get_history_articles(days: int = 30) -> list[dict]:
+def get_history_articles(days: int = 30) -> list[dict]:
     """Get recent articles from knowledge base history."""
     history_dir = KB_DIR / "history"
     articles = []
@@ -52,7 +52,7 @@ def _get_history_articles(days: int = 30) -> list[dict]:
                     "title": title,
                     "path": str(f),
                     "date": d.name,
-                    "keywords": _extract_keywords(title),
+                    "keywords": extract_keywords(title),
                 })
 
     return articles
@@ -72,7 +72,7 @@ def _get_pending_topics() -> list[dict]:
             if title:
                 topics.append({
                     "title": title,
-                    "keywords": _extract_keywords(title),
+                    "keywords": extract_keywords(title),
                 })
         except (json.JSONDecodeError, OSError):
             pass
@@ -90,7 +90,7 @@ def calculate_saturation(title: str, days: int = 30) -> dict:
     - saturation_score: 0-100 (0 = no competition, 100 = oversaturated)
     - similar_titles: List of similar article titles
     """
-    keywords = _extract_keywords(title)
+    keywords = extract_keywords(title)
     if not keywords:
         return {
             "similar_count": 0,
@@ -101,7 +101,7 @@ def calculate_saturation(title: str, days: int = 30) -> dict:
         }
 
     # Check history
-    history = _get_history_articles(days)
+    history = get_history_articles(days)
     similar_count = 0
     similar_titles = []
     max_overlap_ratio = 0.0
@@ -164,7 +164,7 @@ def analyze_topic_competition(title: str, source: str = "unknown") -> dict:
     saturation = calculate_saturation(title)
 
     # Source diversity check
-    history = _get_history_articles(7)
+    history = get_history_articles(7)
     source_count = sum(1 for a in history if source in a.get("path", ""))
     source_overrepresented = source_count > 3
 
