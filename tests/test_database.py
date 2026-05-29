@@ -26,8 +26,9 @@ def mock_db_path(monkeypatch):
     # Reset thread-local connection so next get_db() creates fresh connection
     import threading
     local = db_core._thread_local
-    if hasattr(local, 'conn'):
-        local.conn = None
+    if hasattr(local, 'conn') and local.conn is not None:
+        local.conn.close()
+    local.conn = None
     monkeypatch.setattr(db, 'DATABASE_PATH', TEST_DB_PATH)
     monkeypatch.setattr(db_core, 'DATABASE_PATH', TEST_DB_PATH)
     # Clear query cache to avoid stale results
@@ -35,7 +36,10 @@ def mock_db_path(monkeypatch):
     # Reinitialize database
     db.init_db()
     yield
-    # Cleanup
+    # Cleanup: close connection before deleting DB file
+    if hasattr(local, 'conn') and local.conn is not None:
+        local.conn.close()
+        local.conn = None
     if TEST_DB_PATH.exists():
         TEST_DB_PATH.unlink()
 

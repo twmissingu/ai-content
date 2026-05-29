@@ -21,7 +21,8 @@ def writer_agent():
     agent = WriterAgent.__new__(WriterAgent)
     agent.worker_type = "wechat"
     agent._run_timestamp = "20260528_120000"
-    agent.logger = MagicMock()
+    import logging
+    agent.logger = logging.getLogger("test.writer")
     agent._lock = None
     agent._metrics = None
     agent._quality_gates = {
@@ -269,30 +270,37 @@ class TestFetchSource:
         result = writer_agent._fetch_source("")
         assert "无原文" in result
 
-    def test_successful_fetch(self, writer_agent, monkeypatch):
+    def test_successful_fetch(self, writer_agent):
         import subprocess
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = "Fetched content " * 100
-        monkeypatch.setattr("skills.writer.subprocess", MagicMock(run=MagicMock(return_value=mock_result)))
-        result = writer_agent._fetch_source("https://example.com")
+        with patch.object(subprocess, 'run', return_value=mock_result):
+            result = writer_agent._fetch_source("https://example.com")
         assert "Fetched content" in result
 
-    def test_failed_fetch(self, writer_agent, monkeypatch):
+    def test_failed_fetch(self, writer_agent):
         import subprocess
         mock_result = MagicMock()
         mock_result.returncode = 1
         mock_result.stdout = ""
-        monkeypatch.setattr("skills.writer.subprocess", MagicMock(run=MagicMock(return_value=mock_result)))
-        result = writer_agent._fetch_source("https://bad-url.com")
+        with patch.object(subprocess, 'run', return_value=mock_result):
+            result = writer_agent._fetch_source("https://bad-url.com")
         assert "抓取失败" in result
 
-    def test_timeout_fetch(self, writer_agent, monkeypatch):
+    def test_timeout_fetch(self, writer_agent):
         import subprocess
+
+        original_run = subprocess.run
+
         def raise_timeout(*a, **kw):
             raise subprocess.TimeoutExpired(cmd="hermes", timeout=30)
-        monkeypatch.setattr("skills.writer.subprocess", MagicMock(run=raise_timeout))
-        result = writer_agent._fetch_source("https://slow.com")
+
+        subprocess.run = raise_timeout
+        try:
+            result = writer_agent._fetch_source("https://slow.com")
+        finally:
+            subprocess.run = original_run
         assert "抓取失败" in result
 
 

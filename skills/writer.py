@@ -38,31 +38,24 @@ from skills.common import AgentBase, agent_main, load_prompt
 from skills.llm import chat, chat_structured, LLMError
 
 
+_DEFAULT_GATES = {
+    "proofread_threshold": 60,
+    "critique_threshold": 70,
+    "title_threshold": 75,
+    "max_rewrite_rounds": 3,
+}
+
+
 def _load_quality_gates() -> dict:
     """Load quality gate thresholds from config/quality_gates.json."""
     path = CONFIG_DIR / "quality_gates.json"
     if not path.exists():
-        return {
-            "proofread_threshold": 60,
-            "critique_threshold": 70,
-            "title_threshold": 75,
-            "max_rewrite_rounds": 3,
-        }
+        return dict(_DEFAULT_GATES)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return {
-            "proofread_threshold": data.get("proofread_threshold", 60),
-            "critique_threshold": data.get("critique_threshold", 70),
-            "title_threshold": data.get("title_threshold", 75),
-            "max_rewrite_rounds": data.get("max_rewrite_rounds", 3),
-        }
+        return {k: data.get(k, v) for k, v in _DEFAULT_GATES.items()}
     except (json.JSONDecodeError, OSError):
-        return {
-            "proofread_threshold": 60,
-            "critique_threshold": 70,
-            "title_threshold": 75,
-            "max_rewrite_rounds": 3,
-        }
+        return dict(_DEFAULT_GATES)
 
 # ── Constants ──────────────────────────────────────────────────────
 STAGES = [
@@ -116,7 +109,6 @@ class WriterAgent(AgentBase):
             **extra
         )
     
-    # ── Stage utilities ────────────────────────────────────────────
     def _read_topic(self, topic_id: Optional[str] = None) -> dict:
         """Read a topic from pending/ or from CLI arg."""
         if topic_id:
@@ -226,7 +218,6 @@ class WriterAgent(AgentBase):
         self.record_llm_call(duration=duration, success=True)
         return result
 
-    # ── Stage 3: AI-slop proofread ─────────────────────────────────
     @staticmethod
     def _load_ai_slop_patterns() -> list[tuple[str, int]]:
         """Load AI-slop patterns from config/proofread_patterns.json."""
@@ -302,7 +293,6 @@ class WriterAgent(AgentBase):
 
         return cleaned, final_score
 
-    # ── Stage 4: Critique & rewrite (multi-perspective editorial board) ──
     def _critique(self, text: str, topic_title: str, round_num: int) -> tuple[str, int, bool]:
         """Stage 4: Multi-perspective editorial board review.
 
@@ -391,7 +381,6 @@ class WriterAgent(AgentBase):
         
         return text, score, False  # not passed yet
 
-    # ── Stage 5: Formatting ────────────────────────────────────────
     def _format(self, text: str) -> str:
         """Stage 5: Formatting — spaces, paragraphs, hashtags."""
         # Chinese-English spacing
@@ -407,7 +396,6 @@ class WriterAgent(AgentBase):
             text += hashtags
         return text.strip()
 
-    # ── Stage 6: Title optimization ────────────────────────────────
     def _generate_titles(self, text: str, topic_title: str) -> tuple[str, list[dict]]:
         """Stage 6: Generate 3 candidate titles, score each, pick best."""
         start_time = time.monotonic()
@@ -436,7 +424,6 @@ class WriterAgent(AgentBase):
 
         return best["title"], candidates
 
-    # ── Stage 7: Illustrations ─────────────────────────────────────
     def _generate_html_templates(self, text: str, topic_title: str, img_dir: Path) -> list[Path]:
         """Generate HTML template files for illustrations."""
         html_files = []
@@ -524,11 +511,8 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
         # Batch screenshot (reuses browser instance)
         return self._batch_screenshot(html_files)
 
-    # ── Main pipeline ──────────────────────────────────────────────
-    def run(self, topic_id: Optional[str] = None, rewrite_mode: bool = False,
-            rerun_from: Optional[int] = None):
-        """Main pipeline execution."""
-        # Support --topic-file for router compatibility
+    def _parse_cli_args(self, topic_id, rewrite_mode, rerun_from):
+        """Parse CLI arguments. Returns (topic_id, rewrite_mode, rewrite_target, rerun_from_arg, topic_file_arg, work_dir_arg)."""
         topic_file_arg = None
         work_dir_arg = None
         rerun_from_arg = rerun_from
@@ -547,8 +531,85 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
             rewrite_mode = "--rewrite" in sys.argv
 
         rewrite_target = topic_id if rewrite_mode else None
+        return topic_id, rewrite_mode, rewrite_target, rerun_from_arg, topic_file_arg, work_dir_arg
 
-        # If topic_file_arg given, use that instead of scanning pending/
+    def _run_critique_loop(self, text: str, topic_title: str) -> tuple[str, list[int]]:
+        """Run the critique loop with rewriting. Returns (text, critique_scores)."""
+        self.start_stage("critique")
+        critique_scores: list[int] = []
+        for round_num in range(1, self._quality_gates["max_rewrite_rounds"] + 1):
+            text, score, passed = self._critique(text, topic_title, round_num)
+            critique_scores.append(score)
+            self.write_status("批评修订", 50 + round_num * 10, f"第{round_num}轮: 评分{score}")
+            self.logger.info(f"Stage 4 round {round_num}: score={score}, passed={passed}")
+            if passed:
+                break
+            if round_num < self._quality_gates["max_rewrite_rounds"]:
+                self.write_status("批评修订", 50 + round_num * 10, f"第{round_num}轮未通过，开始第{round_num + 1}轮")
+        self.end_stage("critique")
+        return text, critique_scores
+
+    def _validate_article_draft(self, title, text, topic, source_url,
+                                proofread_score, critique_scores,
+                                title_candidates, images):
+        """Validate output via ArticleDraft schema."""
+        try:
+            ArticleDraft.model_validate({
+                "title": title,
+                "content": text,
+                "word_count": len(text),
+                "topic": topic["title"],
+                "platform": self.worker_type,
+                "proofread_score": proofread_score,
+                "critique_scores": critique_scores,
+                "title_candidates": title_candidates,
+                "source_url": source_url,
+                "images": images,
+            })
+        except Exception as e:
+            self.logger.warning(f"ArticleDraft validation failed: {e}")
+
+    def _write_output(self, text, final_title, topic, source_url,
+                      proofread_score, critique_scores, title_candidates,
+                      images, extra_meta=None):
+        """Write final article + meta to REVIEW_DIR. Returns (article_path, meta_path)."""
+        self.write_status("完成", 95, "写入输出文件")
+        article_path = REVIEW_DIR / f"{self._run_timestamp}-{self.worker_type}.md"
+        meta_path = REVIEW_DIR / f"{self._run_timestamp}-{self.worker_type}.meta.json"
+
+        article_path.write_text(f"# {final_title}\n\n{text}", encoding="utf-8")
+
+        title_score = title_candidates[0]["score"] if title_candidates else 0
+        meta = {
+            "topic": topic["title"],
+            "source_url": source_url,
+            "platform_standard": self.worker_type,
+            "proofread_score": proofread_score,
+            "critique_scores": critique_scores,
+            "revised_rounds": len(critique_scores),
+            "title_score": title_score,
+            "title_candidates": title_candidates,
+            "word_count": len(text),
+            "images": images,
+            "status": "completed",
+        }
+        if extra_meta:
+            meta.update(extra_meta)
+        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
+
+        self._validate_article_draft(
+            final_title, text, topic, source_url,
+            proofread_score, critique_scores, title_candidates, images,
+        )
+        return article_path, meta_path
+
+    # ── Main pipeline ──────────────────────────────────────────────
+    def run(self, topic_id: Optional[str] = None, rewrite_mode: bool = False,
+            rerun_from: Optional[int] = None):
+        """Main pipeline execution."""
+        topic_id, rewrite_mode, rewrite_target, rerun_from_arg, topic_file_arg, work_dir_arg = \
+            self._parse_cli_args(topic_id, rewrite_mode, rerun_from)
+
         _topic_from_file = None
         if topic_file_arg and topic_file_arg.exists():
             _topic_from_file = json.loads(topic_file_arg.read_text())
@@ -558,7 +619,6 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
             self.logger.info(f"Re-run mode: starting from stage {rerun_from_arg}")
             self.write_status("重跑", 0, f"从阶段 {rerun_from_arg} 重新执行")
 
-            # Find the last article in review/ to re-run
             review_files = sorted(REVIEW_DIR.glob("*.md"), key=os.path.getmtime, reverse=True)
             if not review_files:
                 self.logger.error("No articles in review/ to re-run")
@@ -572,7 +632,6 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
 
             meta = json.loads(meta_path.read_text())
             text = article_path.read_text(encoding="utf-8")
-            # Remove the title line
             if text.startswith("# "):
                 text = text.split("\n", 1)[1].strip()
 
@@ -584,7 +643,6 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
             final_title = meta.get("topic", "Unknown")
             images = meta.get("images", [])
 
-            # Run stages from rerun_from_arg
             if rerun_from_arg <= 2:
                 self.write_status("LLM初稿", 20, "重新生成初稿")
                 self.start_stage("draft")
@@ -598,14 +656,7 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
 
             if rerun_from_arg <= 4:
                 self.write_status("批评修订", 50, "评委评分中")
-                self.start_stage("critique")
-                critique_scores = []
-                for round_num in range(1, self._quality_gates["max_rewrite_rounds"] + 1):
-                    text, score, passed = self._critique(text, topic["title"], round_num)
-                    critique_scores.append(score)
-                    if passed:
-                        break
-                self.end_stage("critique")
+                text, critique_scores = self._run_critique_loop(text, topic["title"])
 
             if rerun_from_arg <= 5:
                 self.write_status("排版", 75, "格式化排版")
@@ -625,49 +676,15 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
                 images = self._illustrate(text, topic["title"])
                 self.end_stage("illustrate")
 
-            # Write output
-            self.write_status("完成", 95, "写入输出文件")
-            out_path = REVIEW_DIR / f"{self._run_timestamp}-{self.worker_type}.md"
-            out_meta = REVIEW_DIR / f"{self._run_timestamp}-{self.worker_type}.meta.json"
-            out_path.write_text(f"# {final_title}\n\n{text}", encoding="utf-8")
-            title_score = title_candidates[0]["score"] if title_candidates else 0
-            out_meta_data = {
-                "topic": topic["title"],
-                "source_url": source_url,
-                "platform_standard": self.worker_type,
-                "proofread_score": proofread_score,
-                "critique_scores": critique_scores,
-                "revised_rounds": len(critique_scores),
-                "title_score": title_score,
-                "title_candidates": title_candidates,
-                "word_count": len(text),
-                "images": images,
-                "status": "completed",
-                "rerun_from": rerun_from_arg,
-            }
-            out_meta.write_text(json.dumps(out_meta_data, ensure_ascii=False, indent=2))
-
-            # Validate output via schema
-            try:
-                ArticleDraft.model_validate({
-                    "title": final_title,
-                    "content": text,
-                    "word_count": len(text),
-                    "topic": topic["title"],
-                    "platform": self.worker_type,
-                    "proofread_score": proofread_score,
-                    "critique_scores": critique_scores,
-                    "title_candidates": title_candidates,
-                    "source_url": source_url,
-                    "images": images,
-                })
-            except Exception as e:
-                self.logger.warning(f"ArticleDraft validation failed: {e}")
-
+            article_path, meta_path = self._write_output(
+                text, final_title, topic, source_url,
+                proofread_score, critique_scores, title_candidates, images,
+                extra_meta={"rerun_from": rerun_from_arg},
+            )
             self.write_completed(
                 detail=f"从阶段{rerun_from_arg}重跑完成 · 评分{proofread_score}/{critique_scores[-1] if critique_scores else 0}",
-                article=str(out_path),
-                meta=str(out_meta),
+                article=str(article_path),
+                meta=str(meta_path),
             )
             return
 
@@ -682,7 +699,6 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
 
             topic_title = topic.get("topic") or topic.get("title", rewrite_target)
             source_url = topic.get("source_url", topic.get("url", ""))
-            source_material = original_text
 
             self.write_status("抓原文", 5, "读取原文素材")
             self.start_stage("fetch_source")
@@ -692,7 +708,6 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
                 source_material = original_text or "无原文素材"
             self.end_stage("fetch_source")
 
-            # Stage 2: Rewrite with feedback
             self.write_status("LLM初稿", 20, "根据反馈重写")
             self.start_stage("draft")
             prompt_extra = ""
@@ -709,7 +724,6 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
             self.write_status("初始化", 0, "读取选题配置")
             topic = _topic_from_file if _topic_from_file else self._read_topic(topic_id)
             self.logger.info(f"Starting pipeline for: {topic['title']}")
-            source_material = ""
             source_url = topic.get("url", "")
 
             self.write_status("抓原文", 5, "抓取原文素材")
@@ -734,20 +748,7 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
 
         # Stage 4: Critique & rewrite loop
         self.write_status("批评修订", 50, "评委评分中")
-        self.start_stage("critique")
-        critique_scores: list[int] = []
-        for round_num in range(1, self._quality_gates["max_rewrite_rounds"] + 1):
-            text, score, passed = self._critique(text, topic["title"], round_num)
-            critique_scores.append(score)
-            self.write_status("批评修订", 50 + round_num * 10,
-                          f"第{round_num}轮: 评分{score}")
-            self.logger.info(f"Stage 4 round {round_num}: score={score}, passed={passed}")
-            if passed:
-                break
-            if round_num < self._quality_gates["max_rewrite_rounds"]:
-                self.write_status("批评修订", 50 + round_num * 10,
-                              f"第{round_num}轮未通过，开始第{round_num + 1}轮")
-        self.end_stage("critique")
+        text, critique_scores = self._run_critique_loop(text, topic["title"])
 
         # Stage 5: Format
         self.write_status("排版", 75, "格式化排版")
@@ -760,7 +761,6 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
         self.write_status("标题优化", 85, "生成候选标题")
         self.start_stage("titles")
         final_title, title_candidates = self._generate_titles(text, topic["title"])
-        title_score = title_candidates[0]["score"] if title_candidates else 0
         self.end_stage("titles")
         self.logger.info(f"Stage 6 done. Best title: {final_title}")
 
@@ -772,48 +772,12 @@ p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
         self.logger.info(f"Stage 7 done. Images: {len(images)}")
 
         # Write output
-        self.write_status("完成", 95, "写入输出文件")
-        article_path = REVIEW_DIR / f"{self._run_timestamp}-{self.worker_type}.md"
-        meta_path = REVIEW_DIR / f"{self._run_timestamp}-{self.worker_type}.meta.json"
+        source_url = topic.get("url", topic.get("source_url", ""))
+        article_path, meta_path = self._write_output(
+            text, final_title, topic, source_url,
+            proofread_score, critique_scores, title_candidates, images,
+        )
 
-        article_path.write_text(f"# {final_title}\n\n{text}", encoding="utf-8")
-
-        meta = {
-            "topic": topic["title"],
-            "source_url": source_url,
-            "platform_standard": self.worker_type,
-            "proofread_score": proofread_score,
-            "critique_scores": critique_scores,
-            "revised_rounds": len(critique_scores),
-            "title_score": title_score,
-            "title_candidates": title_candidates,
-            "word_count": len(text),
-            "ai_slop_issues": 100 - proofread_score,
-            "images": images,
-            "writing_style": f"{self.worker_type}_default",
-            "image_generation_method": "html_template" if images else "none",
-            "status": "completed",
-        }
-        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
-
-        # Validate output via schema
-        try:
-            ArticleDraft.model_validate({
-                "title": final_title,
-                "content": text,
-                "word_count": len(text),
-                "topic": topic["title"],
-                "platform": self.worker_type,
-                "proofread_score": proofread_score,
-                "critique_scores": critique_scores,
-                "title_candidates": title_candidates,
-                "source_url": source_url,
-                "images": images,
-            })
-        except Exception as e:
-            self.logger.warning(f"ArticleDraft validation failed: {e}")
-
-        # Final status with metrics
         self.write_completed(
             detail=f"管线完成 · 评分{proofread_score}/{critique_scores[-1] if critique_scores else 0}",
             article=str(article_path),

@@ -42,7 +42,7 @@ from dashboard.backend.routes.config import router as config_router
 from dashboard.backend.routes.health import router as health_router
 from dashboard.backend.routes.traces import router as traces_router
 from dashboard.backend.routes.prompts import router as prompts_router
-from fastapi import WebSocket as WSProtocol
+from fastapi import WebSocket as WSProtocol, WebSocketDisconnect
 
 # Import rate limiter
 from starlette.middleware.base import BaseHTTPMiddleware
