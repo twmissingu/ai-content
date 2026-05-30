@@ -15,7 +15,7 @@ from dashboard.backend.database import (
     update_platform_version,
 )
 from dashboard.backend.helpers import read_json, write_action
-from dashboard.backend.models import ApproveRequest
+from dashboard.backend.models import ApproveRequest, UpdateArticleRequest
 
 logger = logging.getLogger("gaoding.dashboard")
 
@@ -144,3 +144,24 @@ def get_all_approval_records(limit: int = Query(50, ge=1, le=200)):
     except Exception as e:
         logger.error(f"Error fetching approval records: {e}")
         raise HTTPException(500, "获取审批记录失败")
+
+
+@router.get("/article/{article_id}/content")
+def get_article_content(article_id: str):
+    """Return full markdown content of a review article."""
+    article_path = REVIEW_DIR / f"{article_id}.md"
+    if not article_path.exists():
+        raise HTTPException(404, f"文章不存在: {article_id}")
+    content = article_path.read_text(encoding="utf-8")
+    return {"article_id": article_id, "content": content}
+
+
+@router.put("/article/{article_id}")
+def update_article_content(article_id: str, req: UpdateArticleRequest):
+    """Update markdown content of a review article."""
+    article_path = REVIEW_DIR / f"{article_id}.md"
+    if not article_path.exists():
+        raise HTTPException(404, f"文章不存在: {article_id}")
+    article_path.write_text(req.content, encoding="utf-8")
+    logger.info(f"Article updated: {article_id}")
+    return {"status": "ok", "article_id": article_id}

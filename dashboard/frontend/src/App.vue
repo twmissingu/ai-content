@@ -26,11 +26,13 @@ const tabs = [
   { name: 'Topics', label: '选题', icon: '🔥', path: '/topics' },
   { name: 'Data', label: '数据', icon: '📈', path: '/data' },
   { name: 'Kb', label: '知识库', icon: '🗄️', path: '/kb' },
+  { name: 'Sources', label: '信源', icon: '📡', path: '/sources' },
   { name: 'Config', label: '配置', icon: '⚙️', path: '/config' },
 ]
 
 const isRefreshing = ref(false)
 const isDark = ref(false)
+const isThreeColumn = ref(false)
 let refreshInterval: ReturnType<typeof setInterval> | null = null
 
 // WebSocket for real-time pipeline updates
@@ -188,6 +190,14 @@ onUnmounted(() => {
         >
           <span class="refresh-icon">🔄</span>
         </button>
+        <button
+          class="btn btn-ghost btn-sm header-btn"
+          :class="{ active: isThreeColumn }"
+          @click="isThreeColumn = !isThreeColumn"
+          :title="isThreeColumn ? '单栏布局' : '三栏布局'"
+        >
+          {{ isThreeColumn ? '◫' : '☰' }}
+        </button>
       </div>
     </header>
 
@@ -214,7 +224,30 @@ onUnmounted(() => {
     </nav>
 
     <!-- Main Content -->
-    <main class="app-main">
+    <main class="app-main" :class="{ 'three-column': isThreeColumn }">
+      <!-- Left Panel: Quick Stats (three-column mode only) -->
+      <aside v-if="isThreeColumn" class="side-panel side-panel-left">
+        <div class="side-panel-header">
+          <h3 class="side-panel-title">📊 概览</h3>
+        </div>
+        <div class="side-panel-body">
+          <div class="quick-stat">
+            <span class="quick-stat-label">待审批</span>
+            <span class="quick-stat-value">{{ store.approvalQueue.length }}</span>
+          </div>
+          <div class="quick-stat">
+            <span class="quick-stat-label">候选选题</span>
+            <span class="quick-stat-value">{{ store.topics.length }}</span>
+          </div>
+          <div class="quick-stat">
+            <span class="quick-stat-label">管线状态</span>
+            <span class="quick-stat-value status-indicator" :class="store.pipelineStatus.status">
+              {{ store.pipelineStatus.status === 'running' ? '运行中' : store.pipelineStatus.status === 'completed' ? '已完成' : '空闲' }}
+            </span>
+          </div>
+        </div>
+      </aside>
+
       <div class="content-container">
         <router-view v-slot="{ Component }">
           <transition name="fade" mode="out-in">
@@ -224,6 +257,31 @@ onUnmounted(() => {
           </transition>
         </router-view>
       </div>
+
+      <!-- Right Panel: Quick Actions (three-column mode only) -->
+      <aside v-if="isThreeColumn" class="side-panel side-panel-right">
+        <div class="side-panel-header">
+          <h3 class="side-panel-title">⚡ 快捷</h3>
+        </div>
+        <div class="side-panel-body">
+          <router-link to="/approval" class="quick-action">
+            <span class="quick-action-icon">📋</span>
+            <span>审批队列</span>
+          </router-link>
+          <router-link to="/topics" class="quick-action">
+            <span class="quick-action-icon">🔥</span>
+            <span>选题管理</span>
+          </router-link>
+          <router-link to="/sources" class="quick-action">
+            <span class="quick-action-icon">📡</span>
+            <span>信源流</span>
+          </router-link>
+          <router-link to="/kb" class="quick-action">
+            <span class="quick-action-icon">🗄️</span>
+            <span>知识库</span>
+          </router-link>
+        </div>
+      </aside>
     </main>
 
     <!-- Mobile Bottom Navigation -->
@@ -400,6 +458,12 @@ onUnmounted(() => {
   border-color: rgba(255, 255, 255, 0.3);
 }
 
+.header-btn.active {
+  color: white;
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
 .refresh-icon {
   display: inline-block;
   transition: transform var(--transition-slow);
@@ -560,6 +624,96 @@ onUnmounted(() => {
 .content-container {
   max-width: var(--content-max-width);
   margin: 0 auto;
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Three-Column Layout ────────────────────────────────────── */
+.app-main.three-column {
+  display: flex;
+  gap: var(--space-lg);
+  align-items: flex-start;
+}
+
+.side-panel {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  position: sticky;
+  top: calc(var(--space-xl) + 60px);
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+.side-panel-header {
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.side-panel-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.side-panel-body {
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.quick-stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
+.quick-stat-label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.quick-stat-value {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.status-indicator.running {
+  color: var(--primary);
+}
+
+.status-indicator.completed {
+  color: var(--success, #10b981);
+}
+
+.quick-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: var(--text-sm);
+  transition: background var(--transition-fast);
+}
+
+.quick-action:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.quick-action-icon {
+  font-size: var(--text-md);
 }
 
 /* ── Mobile Bottom Navigation ────────────────────────────────── */
@@ -648,6 +802,14 @@ onUnmounted(() => {
   .app-main {
     padding: var(--space-lg) var(--space-md);
     padding-bottom: calc(var(--space-lg) + 70px);
+  }
+
+  .app-main.three-column {
+    flex-direction: column;
+  }
+
+  .side-panel {
+    display: none;
   }
 }
 </style>

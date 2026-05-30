@@ -41,6 +41,22 @@ class TestExtractKeywords:
         assert "python" in kw
         assert any("ai" in k for k in kw)
 
+    def test_extracts_acronyms(self):
+        kw = extract_keywords("OpenAI发布GPT-5大模型")
+        assert any("ai" in k for k in kw)
+        assert any("gpt" in k for k in kw)
+        assert any("openai" in k for k in kw)
+
+    def test_extracts_hyphenated_terms(self):
+        kw = extract_keywords("GPT-4o vs Claude-3.5对比")
+        assert any("gpt-4o" in k for k in kw)
+        assert any("claude-3.5" in k for k in kw)
+
+    def test_extracts_mixed_case_products(self):
+        kw = extract_keywords("ChatGPT和GitHub Copilot对比")
+        assert any("chatgpt" in k for k in kw)
+        assert any("github" in k for k in kw)
+
 
 class TestGetHistoryArticles:
     def test_reads_from_history_dir(self, tmp_path, monkeypatch):

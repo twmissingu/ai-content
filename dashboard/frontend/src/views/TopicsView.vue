@@ -3,8 +3,22 @@ import { ref, computed } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
 import PaginationBar from '../components/PaginationBar.vue'
+import ReaderPanel from '../components/ReaderPanel.vue'
 
 const store = useDashboardStore()
+
+// Reader panel state
+const readerUrl = ref<string | null>(null)
+const readerVisible = ref(false)
+
+function openReader(url: string) {
+  readerUrl.value = url
+  readerVisible.value = true
+}
+
+function closeReader() {
+  readerVisible.value = false
+}
 
 // Pagination
 const currentPage = ref(1)
@@ -173,6 +187,9 @@ function truncateText(text: string, maxLen: number = 150): string {
           <a :href="topic.url" target="_blank" rel="noopener noreferrer">
             <span>🔗</span> 查看原文
           </a>
+          <button class="btn btn-ghost btn-xs" @click="openReader(topic.url)" title="在面板中阅读">
+            📖
+          </button>
         </div>
 
         <!-- Confirm Button -->
@@ -195,6 +212,13 @@ function truncateText(text: string, maxLen: number = 150): string {
       @update:currentPage="currentPage = $event"
     />
   </div>
+
+  <!-- Reader Panel -->
+  <ReaderPanel
+    :url="readerUrl"
+    :visible="readerVisible"
+    @close="closeReader"
+  />
 </template>
 
 <style scoped>

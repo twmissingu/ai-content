@@ -176,6 +176,58 @@ class TestKnowledgeAgent:
         agent.write_error = MagicMock()
         agent.run()
 
+    def test_run_with_ai_analysis(self, knowledge_dirs, sample_article, monkeypatch):
+        from skills.knowledge import KnowledgeAgent
+
+        analysis_result = {
+            "keywords": ["ai", "发展", "趋势"],
+            "tags": ["AI", "科技"],
+            "writing_patterns": ["数据驱动"],
+            "summary": "AI发展趋势分析",
+            "quality_score": 80,
+        }
+        monkeypatch.setattr(
+            "skills.knowledge.chat_structured",
+            MagicMock(return_value=analysis_result),
+        )
+        monkeypatch.setattr(sys, 'argv', ['knowledge'])
+
+        agent = KnowledgeAgent()
+        agent.logger = MagicMock()
+        agent.write_status = MagicMock()
+        agent.write_completed = MagicMock()
+        agent.run()
+
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        history_dir = knowledge_dirs['kb'] / 'history' / date_str
+        meta_files = list(history_dir.glob("*.meta.json"))
+        assert len(meta_files) == 1
+        meta = json.loads(meta_files[0].read_text())
+        assert meta["analysis"]["keywords"] == ["ai", "发展", "趋势"]
+        assert meta["analysis"]["quality_score"] == 80
+
+    def test_run_analysis_failure_does_not_block(self, knowledge_dirs, sample_article, monkeypatch):
+        from skills.knowledge import KnowledgeAgent
+
+        monkeypatch.setattr(
+            "skills.knowledge.chat_structured",
+            MagicMock(side_effect=Exception("LLM unavailable")),
+        )
+        monkeypatch.setattr(sys, 'argv', ['knowledge'])
+
+        agent = KnowledgeAgent()
+        agent.logger = MagicMock()
+        agent.write_status = MagicMock()
+        agent.write_completed = MagicMock()
+        agent.run()
+
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        history_dir = knowledge_dirs['kb'] / 'history' / date_str
+        archived_files = list(history_dir.glob("*.md"))
+        assert len(archived_files) == 1
+        meta_files = list(history_dir.glob("*.meta.json"))
+        assert len(meta_files) == 0
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

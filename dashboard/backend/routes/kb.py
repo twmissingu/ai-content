@@ -1,6 +1,7 @@
-"""Knowledge base routes — search, sections, reindex."""
+"""Knowledge base routes — search, sections, reindex, directory tree."""
 
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -17,6 +18,8 @@ from dashboard.backend.search import (
 logger = logging.getLogger("gaoding.dashboard")
 
 router = APIRouter(prefix="/api/kb", tags=["kb"])
+
+MAX_TREE_DEPTH = 3
 
 
 @router.get("/search")
@@ -111,3 +114,57 @@ def reindex_kb():
     except Exception as e:
         logger.error(f"Reindex failed: {e}")
         raise HTTPException(500, "重建索引失败")
+
+
+def _build_tree(path: Path, depth: int = 0) -> list[dict]:
+    """Recursively build directory tree, limited to MAX_TREE_DEPTH."""
+    if depth >= MAX_TREE_DEPTH:
+        return []
+    entries = []
+    try:
+        children = sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+    except PermissionError:
+        return []
+    for child in children:
+        if child.name.startswith("."):
+            continue
+        if child.is_dir():
+            entries.append({
+                "name": child.name,
+                "path": str(child.relative_to(KB_DIR)),
+                "type": "directory",
+                "children": _build_tree(child, depth + 1),
+            })
+        elif child.suffix in (".md", ".json", ".txt"):
+            entries.append({
+                "name": child.name,
+                "path": str(child.relative_to(KB_DIR)),
+                "type": "file",
+                "size": child.stat().st_size,
+            })
+    return entries
+
+
+@router.get("/tree")
+def get_kb_tree(subpath: str = Query("", alias="path")):
+    """Return directory tree of KB, optionally starting from subpath."""
+    target = (KB_DIR / subpath).resolve() if subpath else KB_DIR.resolve()
+    if not str(target).startswith(str(KB_DIR.resolve())):
+        raise HTTPException(403, "禁止访问知识库以外的路径")
+    if not target.exists() or not target.is_dir():
+        raise HTTPException(404, f"目录不存在: {subpath}")
+    return {"tree": _build_tree(target), "root": subpath or "/"}
+
+
+@router.get("/file")
+def get_kb_file(path: str = Query(..., min_length=1)):
+    """Return content of a single file in KB. Path traversal protected."""
+    target = (KB_DIR / path).resolve()
+    if not str(target).startswith(str(KB_DIR.resolve())):
+        raise HTTPException(403, "禁止访问知识库以外的路径")
+    if not target.exists() or not target.is_file():
+        raise HTTPException(404, f"文件不存在: {path}")
+    if target.suffix not in (".md", ".json", ".txt"):
+        raise HTTPException(403, "不支持的文件类型")
+    content = target.read_text(encoding="utf-8", errors="replace")
+    return {"path": path, "content": content, "size": target.stat().st_size}

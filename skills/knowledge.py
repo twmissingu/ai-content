@@ -1,7 +1,7 @@
 """Knowledge Agent — archive approved articles into kb/.
 
-Phase 1: simple file copy (no AI analysis).
-Archives article + meta to kb/history/{date}/ and updates kb/topics/.
+Archives article + meta to kb/history/{date}/, runs LLM analysis,
+and updates kb/topics/.
 
 Uses AgentBase for unified status writing, logging, and metrics.
 """
@@ -12,9 +12,11 @@ import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from config.settings import KB_DIR, REVIEW_DIR
 from skills.common import AgentBase, agent_main
+from skills.llm import chat_structured
 
 
 class KnowledgeAgent(AgentBase):
@@ -49,6 +51,42 @@ class KnowledgeAgent(AgentBase):
         with open(index_path, "a") as f:
             f.write(entry)
 
+    def _analyze_article(self, content: str, meta: dict) -> dict[str, Any]:
+        """Use LLM to extract keywords, tags, and writing patterns."""
+        topic = meta.get("topic", "")
+        prompt = f"""分析以下文章，返回 JSON：
+
+文章标题：{topic}
+文章内容（前3000字）：{content[:3000]}
+
+请提取：
+1. keywords: 5-10 个关键词（小写）
+2. tags: 2-4 个分类标签（如"AI"、"产品"、"创业"）
+3. writing_patterns: 2-3 个写作特征（如"数据驱动"、"故事开头"）
+4. summary: 1-2 句摘要
+5. quality_score: 整体质量评分 0-100
+
+必须返回合法 JSON，不要返回 markdown 代码块。"""
+
+        result = chat_structured(
+            system_prompt="你是一个文章分析专家。返回合法 JSON。",
+            user_prompt=prompt,
+            temperature=0.3,
+        )
+        return result
+
+    def _save_meta(self, dest: Path, meta: dict, analysis: dict):
+        """Save .meta.json alongside the archived article."""
+        merged = {
+            "archived_at": datetime.now().isoformat(),
+            "original_meta": meta,
+            "analysis": analysis,
+        }
+        meta_path = dest.with_suffix(".meta.json")
+        tmp_path = meta_path.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(merged, ensure_ascii=False, indent=2))
+        tmp_path.rename(meta_path)
+
     def run(self, target_id: str = None):
         """Main knowledge archival logic."""
         if target_id is None:
@@ -81,6 +119,16 @@ class KnowledgeAgent(AgentBase):
         # Copy to history
         dest = self._archive_article(article_path, meta)
         self.logger.info(f"Archived to: {dest}")
+
+        # LLM analysis (non-blocking: failure doesn't stop archival)
+        try:
+            self.write_status("AI 分析中", 70, f"分析: {topic}")
+            content = article_path.read_text(encoding="utf-8", errors="ignore")
+            analysis = self._analyze_article(content, meta)
+            self._save_meta(dest, meta, analysis)
+            self.logger.info(f"Analysis saved: {dest.with_suffix('.meta.json')}")
+        except Exception as e:
+            self.logger.warning(f"AI analysis failed (article still archived): {e}")
 
         # Update topics index
         self._update_topics_index(topic, meta.get("platform_standard", "wechat"))

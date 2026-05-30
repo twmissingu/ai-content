@@ -15,13 +15,29 @@ from config.settings import KB_DIR
 
 
 def extract_keywords(title: str) -> set[str]:
-    """Extract significant keywords from a topic title."""
+    """Extract significant keywords and entities from a topic title."""
     # CJK + English word extraction
     words = set(re.findall(r'[\w一-鿿]{2,}', title.lower()))
     # Remove common stop words
     stop_words = {'的', '了', '在', '是', '和', '与', '或', '不', '有', '这', '那',
                   'the', 'and', 'for', 'that', 'this', 'with', 'from', 'are', 'was'}
-    return words - stop_words
+    keywords = words - stop_words
+
+    # Entity extraction: acronyms, hyphenated terms, capitalized words
+    entities = set()
+    # Acronyms: AI, LLM, GPT, etc.
+    entities.update(re.findall(r'\b[A-Z]{2,}\b', title))
+    # Hyphenated terms: GPT-4, GPT-4o, Claude-3.5, etc.
+    entities.update(re.findall(r'[A-Za-z]+-[0-9]+[a-z]?(?:\.[0-9]+[a-z]?)?', title))
+    # Multi-hyphen: Claude-3.5-sonnet, etc.
+    entities.update(re.findall(r'[A-Za-z]+-[0-9]+(?:\.[0-9]+)?-[a-z]+', title))
+    # Mixed-case product names: OpenAI, ChatGPT, GitHub, etc.
+    entities.update(re.findall(r'\b[A-Z][a-z]+[A-Z]\w*\b', title))
+    # dot-separated names: Claude.ai, GPT-4o, etc.
+    entities.update(re.findall(r'\b[A-Za-z]+\.[a-z]+\b', title))
+
+    keywords.update(e.lower() for e in entities if len(e) >= 2)
+    return keywords
 
 
 def get_history_articles(days: int = 30) -> list[dict]:
@@ -114,7 +130,7 @@ def calculate_saturation(title: str, days: int = 30) -> dict:
         overlap = len(keywords & article_kw)
         overlap_ratio = overlap / max(len(keywords | article_kw), 1)
 
-        if overlap_ratio > 0.3:  # 30% keyword overlap = similar
+        if overlap_ratio > 0.25:  # 25% keyword overlap = similar
             similar_count += 1
             similar_titles.append(article["title"])
 
@@ -129,7 +145,7 @@ def calculate_saturation(title: str, days: int = 30) -> dict:
             continue
         overlap = len(keywords & topic_kw)
         overlap_ratio = overlap / max(len(keywords | topic_kw), 1)
-        if overlap_ratio > 0.3:
+        if overlap_ratio > 0.25:
             queue_overlap += 1
 
     # Calculate saturation score

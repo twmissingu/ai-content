@@ -27,6 +27,7 @@ from config.settings import (
     DOMAIN,
     KB_DIR,
     PENDING_DIR,
+    SOURCES_DIR,
     STATUS_DIR,
     TMP_DIR,
 )
@@ -269,6 +270,18 @@ def collect_all() -> list[dict]:
     return candidates
 
 
+def _save_raw_sources(candidates: list[dict]) -> None:
+    """Save raw candidates to queue/sources/ for the dashboard sources page."""
+    if not candidates:
+        return
+    date_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_path = SOURCES_DIR / f"{date_str}.json"
+    tmp_path = out_path.with_suffix(".tmp")
+    tmp_path.write_text(json.dumps(candidates, ensure_ascii=False, indent=2))
+    tmp_path.rename(out_path)
+    logger.info(f"Saved {len(candidates)} raw sources to {out_path}")
+
+
 # ── Dedup & Filter ─────────────────────────────────────────────────
 def _is_same_topic(title_a: str, title_b: str) -> bool:
     """Simple title-level dedup: check significant word overlap.
@@ -440,9 +453,9 @@ def calculate_self_repeat(title: str) -> int:
         overlap = len(keywords & art_keywords) / len(keywords | art_keywords)
         best_overlap = max(best_overlap, overlap)
 
-    if best_overlap >= 0.3:
+    if best_overlap >= 0.25:
         return 10   # same entity, same direction
-    if best_overlap >= 0.15:
+    if best_overlap >= 0.12:
         return 50   # same entity, different direction
     return 100       # novel
 
@@ -616,6 +629,7 @@ def main():
             t["output"] = f"{len(candidates)} raw candidates"
     except Exception:
         candidates = collect_all()
+    _save_raw_sources(candidates)
     logger.info(f"Collected {len(candidates)} raw candidates")
 
     # Step 2: Dedup & filter

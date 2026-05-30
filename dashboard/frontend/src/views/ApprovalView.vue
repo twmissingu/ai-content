@@ -14,6 +14,15 @@ const rejectReason = ref('')
 const showRejectInput = ref<string | null>(null)
 const showApproveConfirm = ref<string | null>(null)
 
+// Inline editing
+const isEditing = ref(false)
+const editContent = ref('')
+const editSaving = ref(false)
+const editPreview = computed(() => {
+  if (!editContent.value) return ''
+  return DOMPurify.sanitize(marked(editContent.value) as string)
+})
+
 // Version-level operations
 interface PlatformVersion {
   id: number
@@ -183,6 +192,46 @@ async function confirmApprove(id: string) {
 
 function cancelApprove() {
   showApproveConfirm.value = null
+}
+
+// Inline editing
+async function startEditing(articleId: string) {
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+  try {
+    const res = await fetch(`${API_BASE}/api/approval/article/${articleId}/content`)
+    if (!res.ok) throw new Error('Failed to fetch content')
+    const data = await res.json()
+    editContent.value = data.content
+    isEditing.value = true
+  } catch (e) {
+    toast.error('加载文章内容失败')
+  }
+}
+
+function cancelEditing() {
+  isEditing.value = false
+  editContent.value = ''
+}
+
+async function saveEditing(articleId: string) {
+  editSaving.value = true
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+  try {
+    const res = await fetch(`${API_BASE}/api/approval/article/${articleId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: editContent.value }),
+    })
+    if (!res.ok) throw new Error('Failed to save')
+    isEditing.value = false
+    editContent.value = ''
+    toast.success('文章已保存')
+    await store.fetchApprovalQueue()
+  } catch (e) {
+    toast.error('保存失败')
+  } finally {
+    editSaving.value = false
+  }
 }
 
 const pendingCount = computed(() => store.approvalQueue.length)
@@ -413,13 +462,20 @@ onUnmounted(() => {
           >
             ✅ 通过
           </button>
-          <button 
-            v-if="showRejectInput !== article.id" 
+          <button
+            v-if="showRejectInput !== article.id"
             class="btn btn-danger btn-sm"
             :disabled="processingIds.has(article.id)"
             @click.stop="showRejectInput = article.id"
           >
             ❌ 驳回
+          </button>
+          <button
+            v-if="showRejectInput !== article.id && !isEditing"
+            class="btn btn-ghost btn-sm"
+            @click.stop="startEditing(article.id)"
+          >
+            ✏️ 编辑
           </button>
         </div>
       </div>
@@ -468,16 +524,44 @@ onUnmounted(() => {
       <!-- Content Preview (expandable) -->
       <transition name="slide">
         <div v-if="selectedId === article.id" class="article-preview">
-          <div class="preview-header">
-            <span class="preview-label">文章预览</span>
-            <span class="preview-hint">点击收起</span>
-          </div>
-          <div class="preview-content">
-            <div v-if="article.meta.topic" class="preview-title">
-              # {{ article.meta.topic }}
+          <!-- Editor Mode -->
+          <div v-if="isEditing" class="editor-section">
+            <div class="editor-header">
+              <span class="preview-label">编辑文章</span>
+              <div class="editor-actions">
+                <button class="btn btn-ghost btn-sm" @click="cancelEditing">取消</button>
+                <button
+                  class="btn btn-primary btn-sm"
+                  :disabled="editSaving"
+                  @click="saveEditing(article.id)"
+                >
+                  {{ editSaving ? '保存中...' : '保存' }}
+                </button>
+              </div>
             </div>
-            <div class="preview-text markdown-body" v-html="renderedContent"></div>
+            <div class="editor-body">
+              <textarea
+                v-model="editContent"
+                class="editor-textarea"
+                spellcheck="false"
+              ></textarea>
+              <div class="editor-preview markdown-body" v-html="editPreview"></div>
+            </div>
           </div>
+
+          <!-- Read-only Preview -->
+          <template v-else>
+            <div class="preview-header">
+              <span class="preview-label">文章预览</span>
+              <span class="preview-hint">点击收起</span>
+            </div>
+            <div class="preview-content">
+              <div v-if="article.meta.topic" class="preview-title">
+                # {{ article.meta.topic }}
+              </div>
+              <div class="preview-text markdown-body" v-html="renderedContent"></div>
+            </div>
+          </template>
 
           <!-- Version-level operations for database-tracked articles -->
           <div v-if="article.source === 'database' && article.db_version_id" class="versions-section">
@@ -1090,6 +1174,74 @@ kbd {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
+/* ── Inline Editor ──────────────────────────────────────────── */
+.editor-section {
+  margin-top: var(--space-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.editor-header-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.editor-actions {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.editor-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 400px;
+}
+
+.editor-textarea {
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  padding: var(--space-md);
+  border: none;
+  border-right: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+}
+
+.editor-textarea:focus {
+  background: var(--bg-primary);
+}
+
+.editor-preview {
+  padding: var(--space-md);
+  overflow-y: auto;
+  background: var(--bg-card);
+}
+
+.editor-preview-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--space-sm);
+}
+
 /* ── Responsive ──────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .article-header {
@@ -1107,6 +1259,16 @@ kbd {
   
   .reject-input-group {
     flex-direction: column;
+  }
+
+  .editor-body {
+    grid-template-columns: 1fr;
+  }
+
+  .editor-textarea {
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    min-height: 200px;
   }
 }
 </style>

@@ -80,7 +80,7 @@ class PublisherAgent(AgentBase):
             result = subprocess.run(
                 ["npx", "skills", "run", "baoyu-post-to-wechat",
                  "--file", tmp_path],
-                capture_output=True, text=True, timeout=60,
+                capture_output=True, text=True, timeout=90,
             )
             return result.returncode == 0
         except Exception as e:
@@ -123,7 +123,7 @@ class PublisherAgent(AgentBase):
             
             result = subprocess.run(
                 ["hermes", "mcp", "call", tool_name, "--params-file", tmp_path],
-                capture_output=True, text=True, timeout=60,
+                capture_output=True, text=True, timeout=90,
             )
             return result.returncode == 0
         except Exception as e:
@@ -171,6 +171,12 @@ class PublisherAgent(AgentBase):
                 ok = False
 
             results[platform] = ok
+
+            # Report per-platform result
+            if ok:
+                self.write_status("分发成功", progress + 60 // len(platforms), f"{display} 发布成功")
+            else:
+                self.write_status("分发失败", progress + 60 // len(platforms), f"{display} 发布失败")
 
             # Validate result via schema
             try:

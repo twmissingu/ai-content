@@ -44,3 +44,7 @@ class PromptSaveRequest(BaseModel):
     name: str
     template: str
     variables: Optional[list[str]] = None
+
+
+class UpdateArticleRequest(BaseModel):
+    content: str
