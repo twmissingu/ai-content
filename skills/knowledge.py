@@ -70,6 +70,7 @@ class KnowledgeAgent(AgentBase):
 
         result = chat_structured(
             system_prompt="你是一个文章分析专家。返回合法 JSON。",
+            injection_safety=False,
             user_prompt=prompt,
             temperature=0.3,
         )

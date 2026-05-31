@@ -6,7 +6,8 @@ import os
 from fastapi import APIRouter
 
 from config.settings import PENDING_DIR
-from dashboard.backend.helpers import read_json, write_action
+from dashboard.backend.helpers import read_json
+from skills.action import write_action
 from dashboard.backend.models import ConfirmRequest
 
 logger = logging.getLogger("gaoding.dashboard")

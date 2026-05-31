@@ -20,6 +20,10 @@ from dashboard.backend.background import (
     budget_stop_event,
     scan_loop,
     scanner_stop_event,
+    token_import_loop,
+    token_import_stop_event,
+    trail_import_loop,
+    trail_import_stop_event,
 )
 from dashboard.backend.database import init_db, import_prompts_from_files
 from dashboard.backend.search import auto_index_if_needed
@@ -155,6 +159,14 @@ async def lifespan(app: FastAPI):
     budget_thread.start()
     logger.info("Budget monitor started")
 
+    token_thread = threading.Thread(target=token_import_loop, daemon=True, name="token-importer")
+    token_thread.start()
+    logger.info("Token importer started (15s interval)")
+
+    trail_thread = threading.Thread(target=trail_import_loop, daemon=True, name="trail-importer")
+    trail_thread.start()
+    logger.info("Trail importer started (15s interval)")
+
     ws_manager.start_watcher()
 
     yield
@@ -162,6 +174,8 @@ async def lifespan(app: FastAPI):
     ws_manager.stop_watcher()
     scanner_stop_event.set()
     budget_stop_event.set()
+    token_import_stop_event.set()
+    trail_import_stop_event.set()
     logger.info("Background tasks stopped")
 
 

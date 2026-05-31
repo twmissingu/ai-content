@@ -44,13 +44,16 @@ IMAGES_DIR = QUEUE_DIR / "images"
 SOURCES_DIR = QUEUE_DIR / "sources"
 TMP_DIR = QUEUE_DIR / "tmp"
 KB_DIR = PROJECT_ROOT / "kb"
+TOKENS_DIR = QUEUE_DIR / "tokens"
+TRAIL_DIR = QUEUE_DIR / "trails"
 DATA_DIR = PROJECT_ROOT / "data"
 LOGS_DIR = DATA_DIR / "logs"
 CONFIG_DIR = PROJECT_ROOT / "config"
 
 # Ensure runtime directories exist
 for _d in [ACTIONS_DIR, PROCESSED_DIR, FAILED_ACTIONS_DIR, STATUS_DIR, REVIEW_DIR,
-           PENDING_DIR, FAILED_DIR, IMAGES_DIR, SOURCES_DIR, TMP_DIR, LOGS_DIR]:
+           PENDING_DIR, FAILED_DIR, IMAGES_DIR, SOURCES_DIR, TMP_DIR, LOGS_DIR,
+           TOKENS_DIR, TRAIL_DIR]:
     _d.mkdir(parents=True, exist_ok=True)
 
 # ── LLM Provider ───────────────────────────────────────────────────
@@ -78,7 +81,6 @@ DOMAIN: str = "科技/AI"
 TONE: str = "口语化"
 STANCE: str = "强烈观点"
 LENGTH: int = 2500          # target characters
-QUALITY_THRESHOLD: int = 70  # 0-100 quality gate
 MAX_REWRITE_ROUNDS: int = 3
 STAGE_TIMEOUT_MINUTES: int = 15
 

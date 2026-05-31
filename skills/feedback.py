@@ -214,6 +214,7 @@ class FeedbackAgent(AgentBase):
             start_time = time.monotonic()
             result = chat_structured(
                 system_prompt="你是一个严谨的内容策略分析师。基于数据驱动决策，给出具体可执行的建议，而非泛泛而谈。",
+                injection_safety=False,
                 user_prompt=prompt,
                 temperature=0.5,
             )

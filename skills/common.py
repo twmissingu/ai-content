@@ -253,11 +253,15 @@ class AgentBase:
     name: str = "unknown"
     version: str = "1.0.0"
     
-    def __init__(self, enable_metrics: bool = True, session_id: Optional[int] = None):
+    def __init__(self, enable_metrics: bool = True, session_id: Optional[int] = None, session_tag: str = ""):
         self.logger = get_agent_logger(self.name)
         self._start_time = datetime.now(timezone.utc)
         self._start_timestamp = self._start_time.strftime("%Y%m%d_%H%M%S")
-        self._status_path = STATUS_DIR / f"{self.name}.json"
+        self._session_tag = session_tag
+        if session_tag:
+            self._status_path = STATUS_DIR / f"{self.name}-{session_tag}.json"
+        else:
+            self._status_path = STATUS_DIR / f"{self.name}.json"
         self._lock = threading.Lock()
         self._session_id = session_id
 
@@ -280,33 +284,51 @@ class AgentBase:
         return self._metrics
     
     def start_stage(self, stage_name: str) -> None:
-        """Start timing a pipeline stage (metrics + trace)."""
+        """Start timing a pipeline stage (metrics + trace via file)."""
         if self._metrics:
             self._metrics.start_stage(stage_name)
-        # Start trace
-        try:
-            from dashboard.backend.database import create_trace
-            self._trace_ctx = {
-                "trace_id": create_trace(self._session_id, self.name, stage_name, stage_name),
-                "start_time": time.monotonic(),
+        # Start trace via file (agent writes → dashboard background imports)
+        from config.settings import TRAIL_DIR
+        trail_id = f"{self.name}-{stage_name}-{int(time.time())}"
+        self._trace_ctx = {
+            "trail_id": trail_id,
+            "start_time": time.monotonic(),
+        }
+        # Write start trail file
+        from skills.common import atomic_write_json
+        atomic_write_json(
+            TRAIL_DIR / f"{trail_id}.start.json",
+            {
+                "trail_id": trail_id,
+                "agent": self.name,
+                "stage": stage_name,
+                "stage_name": stage_name,
+                "session_id": self._session_id,
+                "status": "running",
+                "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             }
-        except Exception:
-            self._trace_ctx = None
+        )
 
     def end_stage(self, stage_name: str) -> float:
         """End timing a pipeline stage. Returns duration in seconds."""
         duration = 0.0
         if self._metrics:
             duration = self._metrics.end_stage(stage_name)
-        # Complete trace
+        # Complete trace via file
         if self._trace_ctx:
-            try:
-                from dashboard.backend.database import complete_trace, update_trace_duration
-                elapsed_ms = int((time.monotonic() - self._trace_ctx["start_time"]) * 1000)
-                complete_trace(self._trace_ctx["trace_id"], status="completed")
-                update_trace_duration(self._trace_ctx["trace_id"], elapsed_ms)
-            except Exception as e:
-                self.logger.debug(f"Trace completion failed (non-fatal): {e}")
+            from config.settings import TRAIL_DIR
+            from skills.common import atomic_write_json
+            elapsed_ms = int((time.monotonic() - self._trace_ctx["start_time"]) * 1000)
+            trail_id = self._trace_ctx["trail_id"]
+            atomic_write_json(
+                TRAIL_DIR / f"{trail_id}.end.json",
+                {
+                    "trail_id": trail_id,
+                    "status": "completed",
+                    "duration_ms": elapsed_ms,
+                    "completed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                }
+            )
             self._trace_ctx = None
         return duration
     
@@ -317,7 +339,7 @@ class AgentBase:
         duration: float = 0.0,
         success: bool = True
     ) -> None:
-        """Record an LLM API call."""
+        """Record an LLM API call (metrics only; token tracking in llm.py)."""
         if self._metrics:
             self._metrics.record_llm_call(input_tokens, output_tokens, duration, success)
     

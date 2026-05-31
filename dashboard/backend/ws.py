@@ -78,8 +78,16 @@ class ConnectionManager:
         }
 
     def _status_hash(self, status: dict) -> str:
-        """Compute a hash of the status to detect changes."""
-        return hash(json.dumps(status, sort_keys=True, default=str))
+        """Compute deterministic change key from status file mtimes + sizes."""
+        # This is deterministic across processes, unlike Python's hash()
+        parts = []
+        for f in sorted(STATUS_DIR.glob("*.json"), key=lambda x: x.name):
+            try:
+                stat = f.stat()
+                parts.append(f"{f.name}:{stat.st_mtime_ns}:{stat.st_size}")
+            except OSError:
+                parts.append(f"{f.name}:0:0")
+        return "|".join(parts)
 
     async def _watch_status_files(self):
         """Poll status files every 3s and broadcast on change."""

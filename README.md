@@ -129,7 +129,7 @@ python3 skills/publisher.py <target_id>
 ### Daily Operation
 
 1. Open Dashboard at `http://localhost:5173`
-2. Pick a topic from the Topics tab (or wait 30 min for auto-select)
+2. Pick a topic from the Topics tab
 3. Review 3 article versions in the Approval tab
 4. Approve or reject with feedback
 5. Approved content auto-distributes to platform draft boxes

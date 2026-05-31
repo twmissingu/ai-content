@@ -1,13 +1,11 @@
 """Shared helper functions for dashboard routes."""
 
-import json
 import logging
-import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config.settings import ACTIONS_DIR, CONFIG_DIR
+from config.settings import CONFIG_DIR
 
 logger = logging.getLogger("gaoding.dashboard")
 
@@ -18,23 +16,6 @@ def read_json(path: Path) -> dict:
         return json.loads(path.read_text())
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
-
-
-def write_action(action: str, target_id: str, **kwargs) -> Path:
-    """Write an action file to trigger agent processing."""
-    stamp = time.strftime("%Y%m%d_%H%M%S")
-    filename = f"{action}_{target_id}_{stamp}.json"
-    tmp = ACTIONS_DIR / f".{filename}.tmp"
-    payload = {
-        "action": action,
-        "target_id": target_id,
-        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        **kwargs,
-    }
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
-    os.rename(tmp, ACTIONS_DIR / filename)
-    return ACTIONS_DIR / filename
-
 
 def detect_timeout(status: dict, max_minutes: int = 30) -> bool:
     """Detect if an agent has timed out based on its started_at timestamp."""

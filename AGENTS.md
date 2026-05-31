@@ -2,7 +2,7 @@
 
 仓库：`ai-content` — AI 内容生产系统「稿定」的源代码与规格文档库。
 状态：**v0.7.0**（架构重构 + 提示词优化 + 前端 UX 升级 + 测试补全 + 安全加固）。
-版本：[v0.7.0](CHANGELOG.md) — 2026-05-28
+版本：[v0.7.0](CHANGELOG.md) — 2026-05-31
 
 ---
 
@@ -73,7 +73,6 @@ docs/
   manual/
     AiToEarn配置与自动化操作指引.md    AiToEarn 接入配置（MCP + API）
     用户使用说明书.md                  用户手册（面向运营人员）
-    账号注册指引.md                    社交平台账号注册指南
 
 skills/                            Agent 实现代码（Python）
   ├── __init__.py
@@ -96,6 +95,7 @@ dashboard/                         Web Dashboard
   ├── backend/
   │   ├── main.py                  FastAPI 入口（中间件 + 路由挂载，版本 0.7.0）
   │   ├── routes/                  路由模块
+  │   ├── routes/                  路由模块（11 个）
   │   │   ├── pipeline.py          管线状态、触发
   │   │   ├── approval.py          审批队列和操作
   │   │   ├── topics.py            选题候选
@@ -104,7 +104,9 @@ dashboard/                         Web Dashboard
   │   │   ├── config.py            系统配置（含质量飞轮）
   │   │   ├── health.py            健康检查
   │   │   ├── traces.py            管线执行追踪（/api/pipeline/traces）
-  │   │   └── prompts.py           提示词版本管理（/api/prompts）
+  │   │   ├── prompts.py           提示词版本管理（/api/prompts）
+  │   │   ├── reader.py            原文抓取代理（/api/reader/fetch）
+  │   │   └── sources.py           信源流管理（/api/sources）
   │   ├── database/                SQLite 数据层（拆分为 7 个模块）
   │   │   ├── core.py              连接管理、缓存、初始化（get_db, init_db）
   │   │   ├── sessions.py          管线会话 CRUD

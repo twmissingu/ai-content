@@ -212,7 +212,11 @@ def get_quality_gates() -> dict:
 def get_source_config() -> dict:
     """Get source configuration."""
     defaults = get_default_sources()
-    return load_config_from_file("sources.json", defaults)
+    config = load_config_from_file("sources.json", {})
+    # Handle both flat format and nested format with "sources" key
+    if "sources" in config:
+        return config["sources"]
+    return config if config else defaults
 
 
 def get_model_config() -> dict:
@@ -284,13 +288,22 @@ def update_quality_gates(updates: dict) -> dict:
 
 def update_source(source_name: str, updates: dict) -> dict:
     """Update source configuration."""
-    sources = get_source_config()
+    # Load full config structure
+    full_config = load_config_from_file("sources.json", {})
+    sources = full_config.get("sources", {}) if "sources" in full_config else full_config
     
     if source_name not in sources:
         sources[source_name] = {'enabled': True, 'weight': 0.5}
     
     sources[source_name].update(updates)
-    save_config_to_file("sources.json", sources)
+    
+    # Preserve full structure if it was nested
+    if "sources" in full_config:
+        full_config["sources"] = sources
+        save_config_to_file("sources.json", full_config)
+    else:
+        save_config_to_file("sources.json", sources)
+    
     return sources[source_name]
 
 

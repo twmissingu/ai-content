@@ -95,6 +95,7 @@ def _generate_titles(text: str, topic_title: str) -> tuple[str, list[dict]]:
     """Generate attention-grabbing Xiaohongshu titles."""
     result = chat_structured(
         system_prompt=f"你是一个小红书标题专家，精通平台算法和用户心理，专注{DOMAIN}领域。你生成的标题能精准命中用户好奇心，同时不做标题党。",
+        injection_safety=False,
         user_prompt=f"""生成3个小红书爆款标题，每个用不同的公式，打分选最优。
 
 ## 标题公式（每个标题用一种）

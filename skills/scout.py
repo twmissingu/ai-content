@@ -602,18 +602,8 @@ def _score_candidate_wrapper(args: tuple[dict, bool]) -> Optional[dict]:
 
 
 def main():
-    # Try to create a pipeline session for tracing
+    # No session created here — dashboard background imports trail files
     session_id = None
-    try:
-        from dashboard.backend.database import create_pipeline_session
-        session_id = create_pipeline_session(
-            date=RUN_DATE,
-            period="am" if SESSION == "morning" else "pm",
-            topic=f"Scout {SESSION}",
-        )
-    except Exception:
-        pass
-
     _write_status("collecting", 5, f"Starting scout {SESSION} session")
     logger.info(f"{SESSION} session started at {RUN_TIMESTAMP}")
 
@@ -623,10 +613,22 @@ def main():
     # Step 1: Collect
     _write_status("collecting", 15, "Collecting from all sources")
     try:
-        from dashboard.backend.database import trace_stage
-        with trace_stage(session_id, "scout", "collect", "采集选题") as t:
-            candidates = collect_all()
-            t["output"] = f"{len(candidates)} raw candidates"
+        from config.settings import TRAIL_DIR
+        from skills.common import atomic_write_json
+        import time as _time
+        _trail_start = _time.monotonic()
+        _trail_id = f"scout-collect-{int(_time.time())}"
+        atomic_write_json(TRAIL_DIR / f"{_trail_id}.start.json", {
+            "trail_id": _trail_id, "agent": "scout", "stage": "collect",
+            "stage_name": "采集选题", "status": "running",
+            "started_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+        })
+        candidates = collect_all()
+        atomic_write_json(TRAIL_DIR / f"{_trail_id}.end.json", {
+            "trail_id": _trail_id, "status": "completed",
+            "duration_ms": int((_time.monotonic() - _trail_start) * 1000),
+            "completed_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+        })
     except Exception:
         candidates = collect_all()
     _save_raw_sources(candidates)
@@ -635,9 +637,22 @@ def main():
     # Step 2: Dedup & filter
     _write_status("dedup", 35, f"Deduplicating {len(candidates)} candidates")
     try:
-        with trace_stage(session_id, "scout", "dedup", "去重过滤") as t:
-            candidates = dedup_and_filter(candidates)
-            t["output"] = f"{len(candidates)} unique"
+        from config.settings import TRAIL_DIR
+        from skills.common import atomic_write_json
+        import time as _time
+        _trail_start = _time.monotonic()
+        _trail_id = f"scout-dedup-{int(_time.time())}"
+        atomic_write_json(TRAIL_DIR / f"{_trail_id}.start.json", {
+            "trail_id": _trail_id, "agent": "scout", "stage": "dedup",
+            "stage_name": "去重过滤", "status": "running",
+            "started_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+        })
+        candidates = dedup_and_filter(candidates)
+        atomic_write_json(TRAIL_DIR / f"{_trail_id}.end.json", {
+            "trail_id": _trail_id, "status": "completed",
+            "duration_ms": int((_time.monotonic() - _trail_start) * 1000),
+            "completed_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+        })
     except Exception:
         candidates = dedup_and_filter(candidates)
     logger.info(f"After dedup: {len(candidates)} unique")
@@ -702,10 +717,23 @@ def main():
     # Step 7: Write to pending
     _write_status("writing", 85, f"Writing {len(validated_final)} candidates to queue/pending/")
     try:
-        with trace_stage(session_id, "scout", "write", "写入队列") as t:
-            for c in validated_final:
-                write_topic_pending(c)
-            t["output"] = f"{len(validated_final)} candidates"
+        from config.settings import TRAIL_DIR
+        from skills.common import atomic_write_json
+        import time as _time
+        _trail_start = _time.monotonic()
+        _trail_id = f"scout-write-{int(_time.time())}"
+        atomic_write_json(TRAIL_DIR / f"{_trail_id}.start.json", {
+            "trail_id": _trail_id, "agent": "scout", "stage": "write",
+            "stage_name": "写入队列", "status": "running",
+            "started_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+        })
+        for c in validated_final:
+            write_topic_pending(c)
+        atomic_write_json(TRAIL_DIR / f"{_trail_id}.end.json", {
+            "trail_id": _trail_id, "status": "completed",
+            "duration_ms": int((_time.monotonic() - _trail_start) * 1000),
+            "completed_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+        })
     except Exception:
         for c in validated_final:
             write_topic_pending(c)

@@ -14,7 +14,8 @@ from dashboard.backend.database import (
     get_platform_versions,
     update_platform_version,
 )
-from dashboard.backend.helpers import read_json, write_action
+from dashboard.backend.helpers import read_json
+from skills.action import write_action
 from dashboard.backend.models import ApproveRequest, UpdateArticleRequest
 
 logger = logging.getLogger("gaoding.dashboard")

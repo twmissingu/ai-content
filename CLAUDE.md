@@ -66,6 +66,8 @@ docker compose logs -f dashboard           # View logs
   - `health.py` — Health check, token logging
   - `traces.py` — Pipeline execution traces (`/api/pipeline/traces`)
   - `prompts.py` — Prompt version management (`/api/prompts`)
+  - `reader.py` — Original article proxy fetch (`/api/reader/fetch`)
+  - `sources.py` — Source stream management (`/api/sources`)
 - `dashboard/backend/database/` — SQLite operations (split into 7 domain modules):
   - `core.py` — Connection management, cache, schema init (`get_db`, `init_db`)
   - `sessions.py` — Pipeline session CRUD
