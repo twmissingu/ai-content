@@ -23,6 +23,7 @@ from typing import Any, Optional
 
 from config.settings import (
     ACTIONS_DIR,
+    QUEUE_DIR,
     CONFIG_DIR,
     DOMAIN,
     KB_DIR,
@@ -266,6 +267,40 @@ def collect_all() -> list[dict]:
                     "hot_value": 50,
                 })
 
+
+    # RSS candidates from rss_collector (pre-collected, cached)
+    rss_dir = QUEUE_DIR / "rss_candidates"
+    if rss_dir.exists():
+        seen_urls = {c.get("url", "") for c in candidates if c.get("url")}
+        rss_files = sorted(rss_dir.glob("*.json"), reverse=True)[:5]  # latest 5 batches
+        pre_count = len(candidates)
+        for rf in rss_files:
+            try:
+                rss_items = json.loads(rf.read_text())
+                for item in rss_items:
+                    url = item.get("url", "") or ""
+                    title = item.get("title", "") or ""
+                    if not title:
+                        continue
+                    if url and url in seen_urls:
+                        continue
+                    seen_urls.add(url)
+                    candidates.append({
+                        "title": title,
+                        "description": item.get("description", "") or "",
+                        "url": url,
+                        "source": "rss",
+                        "rss_label": item.get("rss_label", ""),
+                        "rss_source": item.get("rss_source", ""),
+                        "keywords": item.get("keywords", []),
+                        "hot_value": item.get("hot_value", 60),
+                        "published_at": item.get("published_at", ""),
+                    })
+            except (json.JSONDecodeError, OSError):
+                continue
+        rss_added = len(candidates) - pre_count
+        if rss_added:
+            logger.info(f"Added {rss_added} RSS candidates")
     _write_status("collecting", 30, f"Collected {len(candidates)} raw candidates")
     return candidates
 
@@ -343,26 +378,67 @@ def _recent_topics(days: int = SAME_TOPIC_BLOCK_DAYS) -> set[str]:
 
 
 def dedup_and_filter(candidates: list[dict]) -> list[dict]:
-    """Remove duplicates and topics written recently."""
+    """Remove duplicates and topics written recently.
+
+    Uses three dedup layers:
+      1. Title overlap (_is_same_topic) — word/char level matching
+      2. Entity overlap (>=2 shared keywords) — cross-source event dedup
+      3. Recent history check — skip topics covered in last 3 days
+    """
     recent = _recent_topics()
     unique: list[dict] = []
-    seen_titles: list[str] = []
+    seen_title_sets: list[set[str]] = []  # track multiple titles per candidate
+    seen_keyword_sets: list[set] = []
 
     for c in candidates:
         title = c["title"].strip()
         if not title or len(title) < 4:
             continue
 
-        # Check recent topics
+        # Check recent topics (title-based)
         if any(_is_same_topic(title, rt) for rt in recent):
             continue
 
-        # Check previously seen in this batch
-        if any(_is_same_topic(title, st) for st in seen_titles):
+        # Check previously seen in this batch (title-based)
+        if any(_is_same_topic(title, st) for st_set in seen_title_sets for st in st_set):
             continue
 
-        seen_titles.append(title)
-        unique.append(c)
+        # Check entity overlap for RSS vs hot-list dedup
+        c_keywords = c.get("keywords", [])
+        if c_keywords:
+            c_keyword_set = {k.lower() for k in c_keywords}
+            for i, seen_set in enumerate(seen_keyword_sets):
+                shared = c_keyword_set & seen_set
+                if len(shared) >= 2:
+                    # Same event — keep the one with higher hot_value or RSS priority
+                    existing = unique[i]
+                    existing_hot = existing.get("hot_value", 0)
+                    candidate_hot = c.get("hot_value", 0)
+                    existing_is_rss = existing.get("source", "") == "rss"
+                    candidate_is_rss = c.get("source", "") == "rss"
+
+                    if candidate_is_rss and not existing_is_rss:
+                        # RSS version is earlier — replace the hot-list version
+                        unique[i] = c
+                        seen_title_sets[i].add(title)  # keep both titles for dedup
+                        seen_keyword_sets[i] = c_keyword_set
+                    elif not candidate_is_rss and existing_is_rss:
+                        # Keep the existing RSS version
+                        pass
+                    elif candidate_hot > existing_hot:
+                        # Keep the higher hot_value version
+                        unique[i] = c
+                        seen_title_sets[i].add(title)  # keep both titles for dedup
+                        seen_keyword_sets[i] = c_keyword_set
+                    break
+            else:
+                # No entity overlap with any seen item
+                seen_title_sets.append({title})
+                seen_keyword_sets.append(c_keyword_set)
+                unique.append(c)
+        else:
+            seen_title_sets.append({title})
+            unique.append(c)
 
     return unique
 

@@ -46,6 +46,7 @@ TMP_DIR = QUEUE_DIR / "tmp"
 KB_DIR = PROJECT_ROOT / "kb"
 TOKENS_DIR = QUEUE_DIR / "tokens"
 TRAIL_DIR = QUEUE_DIR / "trails"
+RSS_CACHE_DIR: Path = QUEUE_DIR / "rss_cache"
 DATA_DIR = PROJECT_ROOT / "data"
 LOGS_DIR = DATA_DIR / "logs"
 CONFIG_DIR = PROJECT_ROOT / "config"
@@ -53,7 +54,7 @@ CONFIG_DIR = PROJECT_ROOT / "config"
 # Ensure runtime directories exist
 for _d in [ACTIONS_DIR, PROCESSED_DIR, FAILED_ACTIONS_DIR, STATUS_DIR, REVIEW_DIR,
            PENDING_DIR, FAILED_DIR, IMAGES_DIR, SOURCES_DIR, TMP_DIR, LOGS_DIR,
-           TOKENS_DIR, TRAIL_DIR]:
+           TOKENS_DIR, TRAIL_DIR, RSS_CACHE_DIR, QUEUE_DIR / "rss_candidates"]:
     _d.mkdir(parents=True, exist_ok=True)
 
 # ── LLM Provider ───────────────────────────────────────────────────
@@ -68,6 +69,11 @@ LLM_CONTEXT_LENGTH: int = int(os.getenv("LLM_CONTEXT_LENGTH", "262144"))
 
 # ── Schedules ──────────────────────────────────────────────────────
 SCHEDULE_PATH: Path = CONFIG_DIR / "schedule.json"
+
+# ── RSS Collector ───────────────────────────────────────────────────
+RSSHUB_BASE_URL: str = os.getenv("RSSHUB_BASE_URL", "http://localhost:1200")
+WEWE_RSS_BASE_URL: str = os.getenv("WEWE_RSS_BASE_URL", "http://localhost:4000")
+RSS_COLLECTOR_INTERVAL: int = int(os.getenv("RSS_COLLECTOR_INTERVAL", "30"))  # minutes
 DEFAULT_SCHEDULE = {
     "morning_scout": "09:00",
     "morning_writer": "09:30",

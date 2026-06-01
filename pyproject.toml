@@ -14,6 +14,7 @@ dependencies = [
     "httpx>=0.25.0",
     "jieba>=0.42.1",
     "python-dotenv>=1.0.0",
+    "feedparser>=6.0.0",
 ]
 
 [project.optional-dependencies]
