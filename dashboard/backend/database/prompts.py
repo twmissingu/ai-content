@@ -5,10 +5,27 @@ old versions are preserved for rollback and A/B testing.
 """
 
 import json
+import threading
 import time
 from typing import Optional
 
 from .core import get_db
+
+# Prompt cache with 60s TTL — key = (name, version), value = (timestamp, result)
+_prompt_cache: dict[tuple, tuple[float, dict | None]] = {}
+_prompt_cache_lock = threading.Lock()
+_PROMPT_CACHE_TTL = 60.0  # seconds
+
+
+def _invalidate_prompt_cache(name: Optional[str] = None) -> None:
+    """Invalidate prompt cache entries. If name given, clear only that name's keys."""
+    with _prompt_cache_lock:
+        if name is None:
+            _prompt_cache.clear()
+        else:
+            keys_to_remove = [k for k in _prompt_cache if k[0] == name]
+            for k in keys_to_remove:
+                del _prompt_cache[k]
 
 
 def get_prompt(template_name: str, version: Optional[int] = None) -> Optional[dict]:
@@ -17,6 +34,13 @@ def get_prompt(template_name: str, version: Optional[int] = None) -> Optional[di
     Returns dict with keys: name, version, template, variables, is_active, created_at
     or None if not found.
     """
+    cache_key = (template_name, version)
+    with _prompt_cache_lock:
+        if cache_key in _prompt_cache:
+            ts, result = _prompt_cache[cache_key]
+            if time.time() - ts < _PROMPT_CACHE_TTL:
+                return result
+
     with get_db() as conn:
         if version is not None:
             row = conn.execute(
@@ -33,16 +57,20 @@ def get_prompt(template_name: str, version: Optional[int] = None) -> Optional[di
             ).fetchone()
 
         if not row:
-            return None
+            result = None
+        else:
+            result = {
+                "name": row["name"],
+                "version": row["version"],
+                "template": row["template"],
+                "variables": json.loads(row["variables"]) if row["variables"] else [],
+                "is_active": bool(row["is_active"]),
+                "created_at": row["created_at"],
+            }
 
-        return {
-            "name": row["name"],
-            "version": row["version"],
-            "template": row["template"],
-            "variables": json.loads(row["variables"]) if row["variables"] else [],
-            "is_active": bool(row["is_active"]),
-            "created_at": row["created_at"],
-        }
+    with _prompt_cache_lock:
+        _prompt_cache[cache_key] = (time.time(), result)
+    return result
 
 
 def list_prompts() -> list[dict]:
@@ -121,6 +149,7 @@ def save_prompt(template_name: str, template: str, variables: list[str] | None =
                 time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             ),
         )
+        _invalidate_prompt_cache(template_name)
         return new_version
 
 
@@ -143,6 +172,7 @@ def activate_prompt(template_name: str, version: int) -> bool:
             "UPDATE prompt_versions SET is_active = 1 WHERE name = ? AND version = ?",
             (template_name, version),
         )
+        _invalidate_prompt_cache(template_name)
         return True
 
 
@@ -163,6 +193,7 @@ def delete_prompt_version(template_name: str, version: int) -> bool:
             "DELETE FROM prompt_versions WHERE name = ? AND version = ?",
             (template_name, version),
         )
+        _invalidate_prompt_cache(template_name)
         return True
 
 

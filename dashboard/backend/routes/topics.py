@@ -3,7 +3,7 @@
 import logging
 import os
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from config.settings import PENDING_DIR
 from dashboard.backend.helpers import read_json
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/topics", tags=["topics"])
 
 
 @router.get("")
-def get_topics():
+def get_topics(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
     """List pending topic candidates from queue/pending/."""
     topics = []
     for f in sorted(PENDING_DIR.glob("topic_*.json"), key=os.path.getmtime, reverse=True):
@@ -24,7 +24,9 @@ def get_topics():
         data["id"] = f.stem
         data["filename"] = f.name
         topics.append(data)
-    return {"topics": topics, "count": len(topics)}
+    total = len(topics)
+    topics = topics[offset:offset + limit]
+    return {"topics": topics, "count": len(topics), "total": total}
 
 
 @router.post("/confirm")

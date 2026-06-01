@@ -114,6 +114,13 @@ PLATFORM_DISPLAY: dict[str, str] = {
 }
 
 # ── Feishu notification ───────────────────────────────────────────
+# ── Runtime environment ─────────────────────────────────────────────
+ENVIRONMENT: str = os.getenv("ENV", os.getenv("NODE_ENV", "development"))
+API_KEY: str = os.getenv("API_KEY", "")
+TRUSTED_PROXIES: str = os.getenv("TRUSTED_PROXIES", "")
+PARALLEL_WORKERS: str = os.getenv("PARALLEL_WORKERS", "1")
+
+# ── Feishu notification ───────────────────────────────────────────
 FEISHU_WEBHOOK_URL: Optional[str] = os.getenv("FEISHU_WEBHOOK_URL")
 NOTIFICATION_QUIET_START: int = int(os.getenv("NOTIFICATION_QUIET_START", "22"))  # 22:00
 NOTIFICATION_QUIET_END: int = int(os.getenv("NOTIFICATION_QUIET_END", "8"))      # 08:00

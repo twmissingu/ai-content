@@ -94,9 +94,11 @@ def scan_loop():
 
 def token_import_loop():
     """Background thread: poll queue/tokens/ every 15s, import into SQLite."""
+    failed_dir = TOKENS_DIR / "failed"
     while not token_import_stop_event.is_set():
         try:
             TOKENS_DIR.mkdir(parents=True, exist_ok=True)
+            failed_dir.mkdir(parents=True, exist_ok=True)
             files = sorted(TOKENS_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime)
             for f in files:
                 try:
@@ -110,7 +112,8 @@ def token_import_loop():
                     )
                     f.unlink()
                 except Exception as e:
-                    logger.debug(f"Token import failed for {f.name}: {e}")
+                    logger.warning(f"Token import failed for {f.name}, moving to failed/: {e}")
+                    f.rename(failed_dir / f.name)
         except Exception as e:
             logger.error(f"Token import loop error: {e}")
         token_import_stop_event.wait(15)
@@ -169,6 +172,16 @@ def trail_import_loop():
                     # else: keep waiting for the .end.json
                 except Exception as e:
                     logger.debug(f"Trail import failed for {trail_id}: {e}")
+
+            # Cleanup stale .start.json files older than 2 hours with no matching .end.json
+            now = time.time()
+            for f in TRAIL_DIR.glob("*.start.json"):
+                if now - f.stat().st_mtime > 7200:
+                    trail_id = f.stem.replace(".start", "")
+                    end_file = TRAIL_DIR / f"{trail_id}.end.json"
+                    if not end_file.exists():
+                        logger.warning(f"Removing stale trail start file: {f.name}")
+                        f.unlink()
 
         except Exception as e:
             logger.error(f"Trail import loop error: {e}")

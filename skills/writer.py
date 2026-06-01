@@ -35,6 +35,11 @@ from config.settings import (
 from skills.agent_schemas import ArticleDraft, QualityGateResult
 from skills.common import AgentBase, agent_main, load_prompt
 from skills.llm import chat, chat_structured, LLMError
+from skills.writer_illustration import (
+    batch_screenshot as _batch_screenshot_fn,
+    generate_html_templates as _generate_html_templates_fn,
+    illustrate as _illustrate_fn,
+)
 
 
 _DEFAULT_GATES = {
@@ -451,90 +456,17 @@ class WriterAgent(AgentBase):
 
     def _generate_html_templates(self, text: str, topic_title: str, img_dir: Path) -> list[Path]:
         """Generate HTML template files for illustrations."""
-        html_files = []
-        paragraphs = [p for p in text.split("\n\n") if len(p) > 50]
-        sections_to_illustrate = paragraphs[:3]
-
-        for i, section in enumerate(sections_to_illustrate):
-            section_title = section[:60].replace("\n", " ")
-            html = f"""<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="utf-8"><style>
-body {{ font-family: -apple-system, sans-serif; background: #f8f9fa;
-       display: flex; justify-content: center; align-items: center;
-       min-height: 400px; margin: 0; padding: 20px; }}
-.card {{ background: white; border-radius: 16px; padding: 32px;
-        max-width: 580px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }}
-.label {{ color: #666; font-size: 12px; letter-spacing: 0.5px;
-         text-transform: uppercase; margin-bottom: 8px; }}
-h2 {{ font-size: 20px; line-height: 1.5; color: #111; margin: 0 0 12px 0; }}
-p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
-.divider {{ height: 1px; background: #eee; margin: 16px 0; }}
-.tag {{ display: inline-block; background: #e8f4fd; color: #1a73e8;
-        padding: 4px 12px; border-radius: 20px; font-size: 12px; }}
-</style></head><body>
-<div class="card">
-  <div class="label">稿定 · AI 观点</div>
-  <h2>{topic_title}</h2>
-  <div class="divider"></div>
-  <p>{section_title[:200]}</p>
-  <div class="divider"></div>
-  <span class="tag">{DOMAIN}</span>
-</div></body></html>"""
-            html_path = img_dir / f"illustration_{i + 1}.html"
-            html_path.write_text(html, encoding="utf-8")
-            html_files.append(html_path)
-
-        return html_files
+        return _generate_html_templates_fn(text, topic_title, img_dir, DOMAIN)
 
     def _batch_screenshot(self, html_files: list[Path]) -> list[str]:
         """Batch screenshot HTML files, reusing browser instance."""
-        try:
-            from playwright.sync_api import sync_playwright
-        except ImportError:
-            self.logger.info("Playwright not installed, returning HTML files")
-            return [str(f) for f in html_files]
-        
-        png_paths = []
-        try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                for html_path in html_files:
-                    try:
-                        page = browser.new_page(
-                            viewport={"width": 580, "height": 440},
-                            device_scale_factor=2,
-                        )
-                        page.goto(f"file://{html_path.resolve()}")
-                        page.wait_for_load_state("networkidle")
-                        png_path = html_path.with_suffix(".png")
-                        page.screenshot(path=str(png_path))
-                        page.close()
-                        png_paths.append(str(png_path))
-                        self.logger.info(f"Screenshot: {png_path}")
-                    except Exception as e:
-                        self.logger.warning(f"Screenshot failed for {html_path.name}: {e}")
-                        png_paths.append(str(html_path))
-                browser.close()
-        except Exception as e:
-            self.logger.error(f"Browser launch failed: {e}")
-            return [str(f) for f in html_files]
-        
-        return png_paths
+        return _batch_screenshot_fn(html_files, self.logger)
 
     def _illustrate(self, text: str, topic_title: str) -> list[str]:
         """Stage 7: Generate illustrations with batched screenshots."""
-        img_dir = IMAGES_DIR / self._run_timestamp
-        img_dir.mkdir(parents=True, exist_ok=True)
-
-        # Generate HTML templates
-        html_files = self._generate_html_templates(text, topic_title, img_dir)
-        
-        if not html_files:
-            return []
-
-        # Batch screenshot (reuses browser instance)
-        return self._batch_screenshot(html_files)
+        return _illustrate_fn(
+            text, topic_title, IMAGES_DIR, self._run_timestamp, DOMAIN, self.logger,
+        )
 
     def _parse_cli_args(self, topic_id, rewrite_mode, rerun_from):
         """Parse CLI arguments. Returns (topic_id, rewrite_mode, rewrite_target, rerun_from_arg, topic_file_arg, work_dir_arg)."""

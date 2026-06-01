@@ -68,7 +68,7 @@ class TestApprovalAct:
             "action": "invalid",
             "target_id": "test",
         })
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)  # 422 = Pydantic Literal validation
 
     def test_approve_creates_action_file(self, client, tmp_path, monkeypatch):
         actions = tmp_path / "queue" / "actions"

@@ -22,46 +22,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from config.settings import ACTIONS_DIR, FAILED_ACTIONS_DIR, PROCESSED_DIR, PENDING_DIR
-
-# Import atomic write from common module
-try:
-    from skills.common import atomic_write_json, validate_action, validate_platform
-except ImportError:
-    # Fallback for standalone usage
-    import tempfile
-    
-    def atomic_write_json(path: Path, data: dict, indent: int = 2) -> None:
-        """Fallback atomic write implementation."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_fd, tmp_path = tempfile.mkstemp(
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp"
-        )
-        try:
-            with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=indent)
-                f.flush()
-                os.fsync(f.fileno())
-            os.rename(tmp_path, path)
-        except Exception:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
-    
-    def validate_action(action: str) -> str:
-        allowed = {"confirm", "approve", "reject", "rewrite", "test_scout"}
-        if action not in allowed:
-            raise ValueError(f"Invalid action: {action}")
-        return action
-    
-    def validate_platform(platform: str) -> str:
-        allowed = {"wechat", "xiaohongshu", "douyin", "kuaishou", "toutiao", "baijiahao", "shipinhao"}
-        if platform not in allowed:
-            raise ValueError(f"Invalid platform: {platform}")
-        return platform
+from skills.common import atomic_write_json, validate_action, validate_platform
 
 
 # Logger

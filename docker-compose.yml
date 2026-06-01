@@ -24,7 +24,7 @@ services:
       - XIAOMI_API_KEY=${XIAOMI_API_KEY}
       - LLM_MODEL=${LLM_MODEL:-mimo-v2.5}
       - FEISHU_WEBHOOK_URL=${FEISHU_WEBHOOK_URL}
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:8710,http://127.0.0.1:8710}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8710/api/health"]

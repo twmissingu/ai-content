@@ -118,8 +118,22 @@ def get_agent_logger(
 # Prompt Template Loader
 # ═══════════════════════════════════════════════════════════════════════
 
+_prompt_loader: Optional[Callable[[str], Optional[str]]] = None
+
+
+def register_prompt_loader(loader: Callable[[str], Optional[str]]) -> None:
+    """Register a callback for loading prompt templates from the database.
+
+    Args:
+        loader: A callable that takes a template name and returns the template
+                string, or None if not found.
+    """
+    global _prompt_loader
+    _prompt_loader = loader
+
+
 def load_prompt(template_name: str, **kwargs) -> str:
-    """Load a prompt template, checking database first then falling back to file.
+    """Load a prompt template, checking registered loader first then falling back to file.
 
     Args:
         template_name: Template filename (without .txt extension)
@@ -128,14 +142,14 @@ def load_prompt(template_name: str, **kwargs) -> str:
     Returns:
         Formatted prompt string
     """
-    # Try database first (prompt version management)
-    try:
-        from dashboard.backend.database import get_prompt
-        db_prompt = get_prompt(template_name)
-        if db_prompt and db_prompt.get("template"):
-            return db_prompt["template"].format(**kwargs)
-    except Exception:
-        pass  # DB unavailable, fall back to file
+    # Try registered prompt loader first (e.g. database-backed)
+    if _prompt_loader is not None:
+        try:
+            template = _prompt_loader(template_name)
+            if template:
+                return template.format(**kwargs)
+        except Exception:
+            pass  # Loader unavailable, fall back to file
 
     # Fall back to file
     from config.settings import CONFIG_DIR

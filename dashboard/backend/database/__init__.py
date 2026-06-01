@@ -10,6 +10,7 @@ from .core import (
     cached_query,
     get_db,
     init_db,
+    shutdown_db_connections,
     _invalidate_cache,
 )
 
@@ -72,7 +73,7 @@ from .prompts import (
 
 __all__ = [
     # Core
-    'DATABASE_PATH', 'cached_query', 'get_db', 'init_db', '_invalidate_cache',
+    'DATABASE_PATH', 'cached_query', 'get_db', 'init_db', 'shutdown_db_connections', '_invalidate_cache',
     # Sessions
     'create_pipeline_session', 'get_pipeline_sessions', 'get_today_sessions', 'update_pipeline_session',
     # Versions + Approval

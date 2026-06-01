@@ -15,6 +15,8 @@ import pytest
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture
 def temp_dirs(tmp_path):
@@ -236,6 +238,7 @@ class TestCommonIntegration:
         loaded = json.loads(path.read_text())
         assert loaded == data
     
+    @pytest.mark.slow
     def test_file_lock_prevents_concurrent_access(self, tmp_path):
         """Test that file_lock works correctly."""
         import threading

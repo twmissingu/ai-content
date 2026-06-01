@@ -1,10 +1,13 @@
 """Database connection management, caching, and schema initialization."""
 
+import atexit
 import functools
 import logging
 import sqlite3
 import threading
 import time
+import weakref
+from collections import OrderedDict
 from contextlib import contextmanager
 from typing import Any, Callable, TypeVar
 
@@ -20,8 +23,25 @@ logger = logging.getLogger("gaoding.database")
 # Thread-local storage for connections
 _thread_local = threading.local()
 
-# Simple query cache (invalidated on writes)
-_query_cache: dict[str, tuple[float, Any]] = {}
+# Track all open connections for cleanup
+_all_connections: set[sqlite3.Connection] = set()
+_connections_lock = threading.Lock()
+
+
+def shutdown_db_connections() -> None:
+    """Close all tracked thread-local database connections."""
+    with _connections_lock:
+        for conn in list(_all_connections):
+            try:
+                conn.close()
+            except Exception:
+                pass
+        _all_connections.clear()
+    logger.info("All database connections closed")
+
+# Simple query cache (invalidated on writes, LRU-capped at 200 entries)
+_QUERY_CACHE_MAX = 200
+_query_cache: OrderedDict[str, tuple[float, Any]] = OrderedDict()
 _cache_lock = threading.Lock()
 CACHE_TTL = 5.0  # seconds
 
@@ -46,12 +66,17 @@ def cached_query(ttl: float = CACHE_TTL) -> Callable[[F], F]:
                     timestamp, result = _query_cache[cache_key]
                     if time.time() - timestamp < ttl:
                         logger.debug(f"Cache hit: {func.__name__}")
+                        # Move to end for LRU ordering
+                        _query_cache.move_to_end(cache_key)
                         return result
 
             result = func(*args, **kwargs)
 
             with _cache_lock:
                 _query_cache[cache_key] = (time.time(), result)
+                _query_cache.move_to_end(cache_key)
+                while len(_query_cache) > _QUERY_CACHE_MAX:
+                    _query_cache.popitem(last=False)
 
             return result
         return wrapper
@@ -78,6 +103,8 @@ def get_db():
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.row_factory = sqlite3.Row
         _thread_local.conn = conn
+        with _connections_lock:
+            _all_connections.add(conn)
 
     conn = _thread_local.conn
     try:

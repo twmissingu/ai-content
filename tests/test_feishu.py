@@ -40,6 +40,9 @@ class TestSendFeishuAlert:
             result = send_feishu_alert("Test Title", "Test Content", "info")
 
         assert result is True
+        mock_urlopen.assert_called_once()
+        call_args = mock_urlopen.call_args
+        assert "example.com/webhook" in call_args[0][0].full_url
 
     def test_sends_warning_level(self, monkeypatch):
         monkeypatch.setenv("FEISHU_WEBHOOK_URL", "https://example.com/webhook")
@@ -53,6 +56,7 @@ class TestSendFeishuAlert:
             result = send_feishu_alert("Warning", "Content", "warning")
 
         assert result is True
+        mock_urlopen.assert_called_once()
 
     def test_sends_error_level(self, monkeypatch):
         monkeypatch.setenv("FEISHU_WEBHOOK_URL", "https://example.com/webhook")
@@ -66,6 +70,7 @@ class TestSendFeishuAlert:
             result = send_feishu_alert("Error", "Content", "error")
 
         assert result is True
+        mock_urlopen.assert_called_once()
 
     def test_handles_api_error(self, monkeypatch):
         monkeypatch.setenv("FEISHU_WEBHOOK_URL", "https://example.com/webhook")

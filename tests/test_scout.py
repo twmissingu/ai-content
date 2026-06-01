@@ -17,27 +17,27 @@ class TestIsSameTopic:
     
     def test_identical_topics(self):
         """Test identical topics are detected as same."""
-        from skills.scout import _is_same_topic
+        from skills.scout_dedup import _is_same_topic
         
         assert _is_same_topic("AI 改变世界", "AI 改变世界") == True
     
     def test_similar_topics(self):
         """Test similar topics are detected as same."""
-        from skills.scout import _is_same_topic
+        from skills.scout_dedup import _is_same_topic
         
         assert _is_same_topic("AI 改变世界", "AI 正在改变世界") == True
         assert _is_same_topic("ChatGPT 发布新版本", "ChatGPT 发布了新版本") == True
     
     def test_different_topics(self):
         """Test different topics are detected as different."""
-        from skills.scout import _is_same_topic
+        from skills.scout_dedup import _is_same_topic
         
         assert _is_same_topic("AI 改变世界", "Python 教程") == False
         assert _is_same_topic("ChatGPT 发布", "苹果手机上市") == False
     
     def test_empty_topics(self):
         """Test empty topics handling."""
-        from skills.scout import _is_same_topic
+        from skills.scout_dedup import _is_same_topic
         
         assert _is_same_topic("", "test") == False
         assert _is_same_topic("test", "") == False
@@ -45,14 +45,14 @@ class TestIsSameTopic:
     
     def test_short_topics(self):
         """Test very short topics."""
-        from skills.scout import _is_same_topic
+        from skills.scout_dedup import _is_same_topic
         
         # Very short topics with no overlap
         assert _is_same_topic("AI", "ML") == False
     
     def test_chinese_topics(self):
         """Test Chinese topic similarity."""
-        from skills.scout import _is_same_topic
+        from skills.scout_dedup import _is_same_topic
         
         assert _is_same_topic("人工智能发展趋势", "人工智能的发展趋势分析") == True
         assert _is_same_topic("机器学习入门", "深度学习入门") == False
@@ -63,7 +63,7 @@ class TestDedupAndFilter:
     
     def test_removes_duplicates(self):
         """Test that duplicates are removed."""
-        from skills.scout import dedup_and_filter
+        from skills.scout_dedup import dedup_and_filter
         
         candidates = [
             {"title": "AI 改变世界"},
@@ -81,7 +81,7 @@ class TestDedupAndFilter:
     
     def test_filters_short_titles(self):
         """Test that very short titles are filtered."""
-        from skills.scout import dedup_and_filter
+        from skills.scout_dedup import dedup_and_filter
         
         candidates = [
             {"title": "AI"},  # Too short
@@ -95,7 +95,7 @@ class TestDedupAndFilter:
     
     def test_filters_empty_titles(self):
         """Test that empty titles are filtered."""
-        from skills.scout import dedup_and_filter
+        from skills.scout_dedup import dedup_and_filter
         
         candidates = [
             {"title": ""},
@@ -110,7 +110,7 @@ class TestDedupAndFilter:
     
     def test_preserves_order(self):
         """Test that order is preserved."""
-        from skills.scout import dedup_and_filter
+        from skills.scout_dedup import dedup_and_filter
 
         candidates = [
             {"title": "AI 技术发展"},
@@ -226,14 +226,14 @@ class TestAllowedSources:
 
     def test_all_expected_sources_present(self):
         """Test that all expected sources are in allowed list."""
-        from skills.scout import ALLOWED_CHINA_HOT_SOURCES
+        from skills.scout_collectors import ALLOWED_CHINA_HOT_SOURCES
 
         expected = {"weibo", "zhihu", "bilibili", "baidu", "douyin", "toutiao", "kr36"}
         assert expected.issubset(ALLOWED_CHINA_HOT_SOURCES)
 
     def test_source_is_frozenset(self):
         """Test that allowed sources is immutable."""
-        from skills.scout import ALLOWED_CHINA_HOT_SOURCES
+        from skills.scout_collectors import ALLOWED_CHINA_HOT_SOURCES
 
         assert isinstance(ALLOWED_CHINA_HOT_SOURCES, frozenset)
 
@@ -243,7 +243,7 @@ class TestCallChinaHot:
 
     def test_returns_empty_for_invalid_source(self):
         """Should return empty list for non-whitelisted source."""
-        from skills.scout import _call_china_hot
+        from skills.scout_collectors import _call_china_hot
 
         result = _call_china_hot("invalid_source")
         assert result == []
@@ -251,7 +251,7 @@ class TestCallChinaHot:
     def test_returns_empty_on_subprocess_timeout(self):
         """Should return empty list on timeout."""
         from unittest.mock import patch, MagicMock
-        from skills.scout import _call_china_hot
+        from skills.scout_collectors import _call_china_hot
 
         with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("cmd", 30)):
             result = _call_china_hot("weibo")
@@ -260,7 +260,7 @@ class TestCallChinaHot:
     def test_returns_empty_on_json_error(self):
         """Should return empty list on JSON decode error."""
         from unittest.mock import patch
-        from skills.scout import _call_china_hot
+        from skills.scout_collectors import _call_china_hot
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -273,7 +273,7 @@ class TestCallChinaHot:
     def test_returns_items_on_success(self):
         """Should return parsed items on success."""
         from unittest.mock import patch, MagicMock
-        from skills.scout import _call_china_hot
+        from skills.scout_collectors import _call_china_hot
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -288,7 +288,7 @@ class TestCallChinaHot:
     def test_handles_data_wrapper(self):
         """Should handle response with 'data' key."""
         from unittest.mock import patch, MagicMock
-        from skills.scout import _call_china_hot
+        from skills.scout_collectors import _call_china_hot
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -302,7 +302,7 @@ class TestCallChinaHot:
     def test_returns_empty_on_nonzero_exit(self):
         """Should return empty list on non-zero exit code."""
         from unittest.mock import patch, MagicMock
-        from skills.scout import _call_china_hot
+        from skills.scout_collectors import _call_china_hot
 
         mock_result = MagicMock()
         mock_result.returncode = 1
@@ -319,9 +319,9 @@ class TestCollectMaterials:
     def test_returns_empty_when_dir_not_exists(self, tmp_path):
         """Should return empty list when materials dir doesn't exist."""
         from unittest.mock import patch
-        from skills.scout import _collect_materials
+        from skills.scout_collectors import _collect_materials
 
-        with patch("skills.scout.KB_DIR", tmp_path):
+        with patch("skills.scout_collectors.KB_DIR", tmp_path):
             result = _collect_materials()
 
         assert result == []
@@ -329,7 +329,7 @@ class TestCollectMaterials:
     def test_reads_markdown_files(self, tmp_path):
         """Should read markdown files from materials directory."""
         from unittest.mock import patch
-        from skills.scout import _collect_materials
+        from skills.scout_collectors import _collect_materials
 
         materials_dir = tmp_path / "materials"
         materials_dir.mkdir()
@@ -337,7 +337,7 @@ class TestCollectMaterials:
         (materials_dir / "topic1.md").write_text("# Topic One\n\nDescription")
         (materials_dir / "topic2.md").write_text("# Topic Two\n\nMore info")
 
-        with patch("skills.scout.KB_DIR", tmp_path):
+        with patch("skills.scout_collectors.KB_DIR", tmp_path):
             result = _collect_materials()
 
         assert len(result) == 2
@@ -347,7 +347,7 @@ class TestCollectMaterials:
     def test_limits_to_five_files(self, tmp_path):
         """Should limit to 5 files."""
         from unittest.mock import patch
-        from skills.scout import _collect_materials
+        from skills.scout_collectors import _collect_materials
 
         materials_dir = tmp_path / "materials"
         materials_dir.mkdir()
@@ -355,7 +355,7 @@ class TestCollectMaterials:
         for i in range(10):
             (materials_dir / f"topic{i}.md").write_text(f"# Topic {i}")
 
-        with patch("skills.scout.KB_DIR", tmp_path):
+        with patch("skills.scout_collectors.KB_DIR", tmp_path):
             result = _collect_materials()
 
         assert len(result) == 5
@@ -367,10 +367,10 @@ class TestRecentTopics:
     def test_returns_empty_when_no_history(self, tmp_path):
         """Should return empty set when no history exists."""
         from unittest.mock import patch
-        from skills.scout import _recent_topics
+        from skills.scout_dedup import _recent_topics
 
-        with patch("skills.scout.HISTORY_DIR", tmp_path / "history"):
-            with patch("skills.scout.PENDING_DIR", tmp_path / "pending"):
+        with patch("skills.scout_dedup.HISTORY_DIR", tmp_path / "history"):
+            with patch("skills.scout_dedup.PENDING_DIR", tmp_path / "pending"):
                 result = _recent_topics()
 
         assert result == set()
@@ -378,14 +378,14 @@ class TestRecentTopics:
     def test_reads_from_history(self, tmp_path):
         """Should read topics from history directory."""
         from unittest.mock import patch
-        from skills.scout import _recent_topics
+        from skills.scout_dedup import _recent_topics
 
         history_dir = tmp_path / "history" / "2025-01-01"
         history_dir.mkdir(parents=True)
         (history_dir / "article.md").write_text("# History Topic\n\nContent")
 
-        with patch("skills.scout.HISTORY_DIR", tmp_path / "history"):
-            with patch("skills.scout.PENDING_DIR", tmp_path / "pending"):
+        with patch("skills.scout_dedup.HISTORY_DIR", tmp_path / "history"):
+            with patch("skills.scout_dedup.PENDING_DIR", tmp_path / "pending"):
                 result = _recent_topics()
 
         assert "History Topic" in result
@@ -393,14 +393,14 @@ class TestRecentTopics:
     def test_reads_from_pending(self, tmp_path):
         """Should read topics from pending directory."""
         from unittest.mock import patch
-        from skills.scout import _recent_topics
+        from skills.scout_dedup import _recent_topics
 
         pending_dir = tmp_path / "pending"
         pending_dir.mkdir()
         (pending_dir / "topic1.json").write_text(json.dumps({"title": "Pending Topic"}))
 
-        with patch("skills.scout.HISTORY_DIR", tmp_path / "history"):
-            with patch("skills.scout.PENDING_DIR", pending_dir):
+        with patch("skills.scout_dedup.HISTORY_DIR", tmp_path / "history"):
+            with patch("skills.scout_dedup.PENDING_DIR", pending_dir):
                 result = _recent_topics()
 
         assert "Pending Topic" in result
@@ -412,9 +412,9 @@ class TestIsColdStart:
     def test_returns_true_when_few_articles(self, tmp_path):
         """Should return True when less than 5 articles."""
         from unittest.mock import patch
-        from skills.scout import _is_cold_start
+        from skills.scout_scorer import _is_cold_start
 
-        with patch("skills.scout.HISTORY_DIR", tmp_path / "history"):
+        with patch("skills.scout_scorer.HISTORY_DIR", tmp_path / "history"):
             result = _is_cold_start()
 
         assert result is True
@@ -422,7 +422,7 @@ class TestIsColdStart:
     def test_returns_false_when_many_articles(self, tmp_path):
         """Should return False when 5+ articles exist."""
         from unittest.mock import patch
-        from skills.scout import _is_cold_start
+        from skills.scout_scorer import _is_cold_start
 
         history_dir = tmp_path / "history"
         history_dir.mkdir()
@@ -430,7 +430,7 @@ class TestIsColdStart:
         for i in range(6):
             (history_dir / f"article{i}.md").write_text(f"# Article {i}")
 
-        with patch("skills.scout.HISTORY_DIR", history_dir):
+        with patch("skills.scout_scorer.HISTORY_DIR", history_dir):
             result = _is_cold_start()
 
         assert result is False
@@ -442,17 +442,17 @@ class TestCollectAll:
     def test_collects_from_multiple_sources(self):
         """Should collect from china-hot, github, and materials."""
         from unittest.mock import patch, MagicMock
-        from skills.scout import collect_all
+        from skills.scout_collectors import collect_all
 
         mock_china_hot = [{"title": "Weibo Topic", "source": "weibo"}]
         mock_github = [{"title": "GitHub Repo", "source": "github"}]
         mock_materials = [{"title": "Material Topic", "source": "materials"}]
 
-        with patch("skills.scout._call_china_hot", return_value=mock_china_hot):
-            with patch("skills.scout._call_github_trending", return_value=mock_github):
-                with patch("skills.scout._collect_materials", return_value=mock_materials):
-                    with patch("skills.scout._call_firecrawl_search", return_value=[]):
-                        with patch("skills.scout._write_status"):
+        with patch("skills.scout_collectors._call_china_hot", return_value=mock_china_hot):
+            with patch("skills.scout_collectors._call_github_trending", return_value=mock_github):
+                with patch("skills.scout_collectors._collect_materials", return_value=mock_materials):
+                    with patch("skills.scout_collectors._call_firecrawl_search", return_value=[]):
+                        with patch("skills.scout_collectors._write_status"):
                             result = collect_all()
 
         assert len(result) >= 3
@@ -460,13 +460,13 @@ class TestCollectAll:
     def test_handles_collector_failure(self):
         """Should handle collector failures gracefully."""
         from unittest.mock import patch
-        from skills.scout import collect_all
+        from skills.scout_collectors import collect_all
 
-        with patch("skills.scout._call_china_hot", return_value=[]):
-            with patch("skills.scout._call_github_trending", return_value=[]):
-                with patch("skills.scout._collect_materials", return_value=[]):
-                    with patch("skills.scout._call_firecrawl_search", return_value=[]):
-                        with patch("skills.scout._write_status"):
+        with patch("skills.scout_collectors._call_china_hot", return_value=[]):
+            with patch("skills.scout_collectors._call_github_trending", return_value=[]):
+                with patch("skills.scout_collectors._collect_materials", return_value=[]):
+                    with patch("skills.scout_collectors._call_firecrawl_search", return_value=[]):
+                        with patch("skills.scout_collectors._write_status"):
                             result = collect_all()
 
         assert result == []
@@ -477,7 +477,7 @@ class TestConstants:
 
     def test_source_weights_exist(self):
         """SOURCE_WEIGHTS should have expected keys."""
-        from skills.scout import SOURCE_WEIGHTS
+        from skills.scout_scorer import SOURCE_WEIGHTS
 
         assert "github" in SOURCE_WEIGHTS
         assert "weibo" in SOURCE_WEIGHTS
@@ -485,7 +485,8 @@ class TestConstants:
 
     def test_scoring_thresholds(self):
         """Scoring thresholds should be reasonable."""
-        from skills.scout import ATTENTION_FLOOR, FINAL_FLOOR, CANDIDATE_CAP
+        from skills.scout_scorer import ATTENTION_FLOOR, FINAL_FLOOR
+        from skills.scout import CANDIDATE_CAP
 
         assert 0 < ATTENTION_FLOOR < 100
         assert 0 < FINAL_FLOOR < 100
@@ -497,7 +498,7 @@ class TestCallFirecrawlSearch:
 
     def test_returns_empty_for_invalid_query(self):
         """Should return empty list for empty or too long query."""
-        from skills.scout import _call_firecrawl_search
+        from skills.scout_collectors import _call_firecrawl_search
 
         assert _call_firecrawl_search("") == []
         assert _call_firecrawl_search("x" * 501) == []
@@ -505,7 +506,7 @@ class TestCallFirecrawlSearch:
     def test_returns_empty_on_subprocess_timeout(self):
         """Should return empty list on timeout."""
         from unittest.mock import patch
-        from skills.scout import _call_firecrawl_search
+        from skills.scout_collectors import _call_firecrawl_search
 
         with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("cmd", 30)):
             result = _call_firecrawl_search("AI trends")
@@ -514,7 +515,7 @@ class TestCallFirecrawlSearch:
     def test_returns_empty_on_json_error(self):
         """Should return empty list on JSON decode error."""
         from unittest.mock import patch, MagicMock
-        from skills.scout import _call_firecrawl_search
+        from skills.scout_collectors import _call_firecrawl_search
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -527,7 +528,7 @@ class TestCallFirecrawlSearch:
     def test_returns_items_on_success(self):
         """Should return parsed items on success."""
         from unittest.mock import patch, MagicMock
-        from skills.scout import _call_firecrawl_search
+        from skills.scout_collectors import _call_firecrawl_search
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -542,7 +543,7 @@ class TestCallFirecrawlSearch:
     def test_handles_data_wrapper(self):
         """Should handle response with 'data' key."""
         from unittest.mock import patch, MagicMock
-        from skills.scout import _call_firecrawl_search
+        from skills.scout_collectors import _call_firecrawl_search
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -556,7 +557,7 @@ class TestCallFirecrawlSearch:
     def test_returns_empty_on_nonzero_exit(self):
         """Should return empty list on non-zero exit code."""
         from unittest.mock import patch, MagicMock
-        from skills.scout import _call_firecrawl_search
+        from skills.scout_collectors import _call_firecrawl_search
 
         mock_result = MagicMock()
         mock_result.returncode = 1
@@ -573,7 +574,7 @@ class TestCallGithubTrending:
     def test_returns_empty_on_import_error(self):
         """Should return empty list when httpx is not available."""
         from unittest.mock import patch
-        from skills.scout import _call_github_trending
+        from skills.scout_collectors import _call_github_trending
 
         with patch.dict("sys.modules", {"httpx": None}):
             result = _call_github_trending()
@@ -582,7 +583,7 @@ class TestCallGithubTrending:
     def test_returns_empty_on_http_error(self):
         """Should return empty list on HTTP error."""
         from unittest.mock import patch, MagicMock
-        from skills.scout import _call_github_trending
+        from skills.scout_collectors import _call_github_trending
 
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -601,7 +602,7 @@ class TestCallGithubTrending:
     def test_returns_repos_on_success(self):
         """Should return parsed repos on success."""
         from unittest.mock import patch, MagicMock
-        from skills.scout import _call_github_trending
+        from skills.scout_collectors import _call_github_trending
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -638,7 +639,7 @@ class TestScoreCandidate:
     def test_returns_scored_candidate(self):
         """Should return scored candidate with all fields."""
         from unittest.mock import patch, MagicMock
-        from skills.scout import score_candidate
+        from skills.scout_scorer import score_candidate
 
         mock_llm_result = {
             "viral_score": 75,
@@ -648,7 +649,7 @@ class TestScoreCandidate:
             "direction": "AI应用",
         }
 
-        with patch("skills.scout.chat_structured", return_value=mock_llm_result):
+        with patch("skills.scout_scorer.chat_structured", return_value=mock_llm_result):
             result = score_candidate({"title": "Test Topic", "source": "weibo"}, cold_start=False)
 
         assert result is not None
@@ -660,7 +661,7 @@ class TestScoreCandidate:
     def test_returns_none_below_attention_floor(self):
         """Should return None when attention score is below floor."""
         from unittest.mock import patch
-        from skills.scout import score_candidate, ATTENTION_FLOOR
+        from skills.scout_scorer import score_candidate, ATTENTION_FLOOR
 
         # Very low scores to ensure below floor
         mock_llm_result = {
@@ -670,7 +671,7 @@ class TestScoreCandidate:
             "feasibility_score": 0,
         }
 
-        with patch("skills.scout.chat_structured", return_value=mock_llm_result):
+        with patch("skills.scout_scorer.chat_structured", return_value=mock_llm_result):
             result = score_candidate({"title": "Test", "source": "unknown"}, cold_start=False)
 
         # May or may not be None depending on source_weight
@@ -680,7 +681,7 @@ class TestScoreCandidate:
     def test_cold_start_overrides(self):
         """Should override scores during cold start."""
         from unittest.mock import patch
-        from skills.scout import score_candidate
+        from skills.scout_scorer import score_candidate
 
         mock_llm_result = {
             "viral_score": 80,
@@ -691,7 +692,7 @@ class TestScoreCandidate:
         }
 
         # Use a source with high weight to ensure above attention floor
-        with patch("skills.scout.chat_structured", return_value=mock_llm_result):
+        with patch("skills.scout_scorer.chat_structured", return_value=mock_llm_result):
             result = score_candidate({"title": "Test", "source": "github"}, cold_start=True)
 
         assert result is not None
@@ -701,9 +702,9 @@ class TestScoreCandidate:
     def test_returns_none_on_llm_failure(self):
         """Should return None when LLM call fails."""
         from unittest.mock import patch
-        from skills.scout import score_candidate
+        from skills.scout_scorer import score_candidate
 
-        with patch("skills.scout.chat_structured", side_effect=Exception("LLM error")):
+        with patch("skills.scout_scorer.chat_structured", side_effect=Exception("LLM error")):
             result = score_candidate({"title": "Test", "source": "weibo"}, cold_start=False)
 
         assert result is None
@@ -754,13 +755,13 @@ class TestMain:
             {"title": "Topic 2", "source": "zhihu", "final_score": 70, "direction": "tech"},
         ]
 
-        with patch("skills.scout.collect_all", return_value=mock_candidates):
-            with patch("skills.scout.dedup_and_filter", return_value=mock_candidates):
-                with patch("skills.scout._is_cold_start", return_value=False):
+        with patch("skills.scout_collectors.collect_all", return_value=mock_candidates):
+            with patch("skills.scout_dedup.dedup_and_filter", return_value=mock_candidates):
+                with patch("skills.scout_scorer._is_cold_start", return_value=False):
                     with patch("skills.scout._score_candidate_wrapper", side_effect=lambda args: mock_scored[0] if args[0]["title"] == "Topic 1" else mock_scored[1]):
                         with patch("skills.scout._enforce_diversity", return_value=mock_scored):
                             with patch("skills.scout.write_topic_pending"):
-                                with patch("skills.scout._write_status"):
+                                with patch("skills.scout_collectors._write_status"):
                                     with patch("skills.common.atomic_write_json"):
                                         main()
 
@@ -769,10 +770,10 @@ class TestMain:
         from unittest.mock import patch
         from skills.scout import main
 
-        with patch("skills.scout.collect_all", return_value=[]):
-            with patch("skills.scout.dedup_and_filter", return_value=[]):
-                with patch("skills.scout._is_cold_start", return_value=False):
-                    with patch("skills.scout._write_status"):
+        with patch("skills.scout_collectors.collect_all", return_value=[]):
+            with patch("skills.scout_dedup.dedup_and_filter", return_value=[]):
+                with patch("skills.scout_scorer._is_cold_start", return_value=False):
+                    with patch("skills.scout_collectors._write_status"):
                         with patch("skills.common.atomic_write_json"):
                             main()
 

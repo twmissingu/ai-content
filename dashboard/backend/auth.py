@@ -12,6 +12,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from config.settings import ENVIRONMENT
+
 logger = logging.getLogger("gaoding.dashboard")
 
 # Paths that don't require authentication
@@ -29,6 +31,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self._api_key = api_key or os.getenv("API_KEY", "")
         if self._api_key:
             logger.info("API authentication enabled")
+        elif ENVIRONMENT == "production":
+            raise RuntimeError(
+                "API_KEY must be set in production mode. "
+                "Set the API_KEY environment variable before starting the server."
+            )
         else:
             logger.warning("⚠️ API authentication disabled (no API_KEY set). "
                           "Set API_KEY env var to enable authentication.")

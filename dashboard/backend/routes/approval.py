@@ -38,7 +38,7 @@ def _safe_article_id(article_id: str) -> str:
 
 
 @router.get("/queue")
-def get_approval_queue():
+def get_approval_queue(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
     """List articles pending approval from queue/review/ and database."""
     articles = []
 
@@ -69,7 +69,9 @@ def get_approval_queue():
     except Exception as e:
         logger.error(f"Error fetching pending versions: {e}")
 
-    return {"articles": articles, "count": len(articles)}
+    total = len(articles)
+    articles = articles[offset:offset + limit]
+    return {"articles": articles, "count": len(articles), "total": total}
 
 
 @router.post("/act")
@@ -100,8 +102,8 @@ def approval_act(req: ApproveRequest):
                 status="approved" if req.action == "approve" else "rejected",
             )
         except Exception as e:
-            db_warning = f"Database recording failed: {e}"
-            logger.error(db_warning)
+            logger.exception("Database recording failed for approval action")
+            db_warning = "Database recording failed"
 
     response = {"status": "ok", "action": req.action, "target_id": req.target_id, "path": str(path)}
     if db_warning:

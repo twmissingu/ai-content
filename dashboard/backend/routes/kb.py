@@ -99,10 +99,14 @@ def get_kb_sections():
         indexed_sections = {}
 
     if KB_DIR.exists():
-        # Single-pass file count
+        # Single-pass file count (bounded to 500 files)
         section_counts: dict[str, int] = {}
         history_count = 0
+        file_count = 0
         for md_file in KB_DIR.rglob("*.md"):
+            file_count += 1
+            if file_count > 500:
+                break
             parts = md_file.relative_to(KB_DIR).parts
             if len(parts) > 0:
                 if parts[0] == "history":

@@ -1,12 +1,12 @@
 """Pydantic models for API request/response schemas."""
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel
 
 
 class ApproveRequest(BaseModel):
-    action: str  # approve | reject | rewrite
+    action: Literal["approve", "reject", "rewrite"]
     target_id: str
     reason: Optional[str] = None
     platform_versions: Optional[list[str]] = None

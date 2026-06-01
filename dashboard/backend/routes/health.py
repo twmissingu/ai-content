@@ -63,7 +63,8 @@ def health():
             conn.execute("SELECT 1")
         health_status["services"]["database"] = "ok"
     except Exception as e:
-        health_status["services"]["database"] = f"error: {str(e)}"
+        logger.exception("Database health check failed")
+        health_status["services"]["database"] = "error: service unavailable"
         health_status["status"] = "degraded"
 
     try:
@@ -73,7 +74,8 @@ def health():
             "indexed_documents": index_stats.get("total_indexed", 0),
         }
     except Exception as e:
-        health_status["services"]["search"] = f"error: {str(e)}"
+        logger.exception("Search index health check failed")
+        health_status["services"]["search"] = "error: service unavailable"
 
     try:
         budget = check_budget_limit()
@@ -81,7 +83,8 @@ def health():
         if budget.get("is_exceeded"):
             health_status["status"] = "warning"
     except Exception as e:
-        health_status["budget"] = {"error": str(e)}
+        logger.exception("Budget check failed")
+        health_status["budget"] = {"error": "service unavailable"}
 
     health_status["queue_sizes"] = {
         "pending": len(list(PENDING_DIR.glob("*.json"))),

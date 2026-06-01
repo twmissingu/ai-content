@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -29,3 +30,47 @@ def _close_db_connections():
             local.conn = None
     except Exception:
         pass
+
+
+@pytest.fixture
+def mock_db_context():
+    """Reusable mock for get_db() context manager.
+
+    Returns (mock_conn, mock_context) where mock_context is a context manager
+    that yields mock_conn. Use with patch("module.get_db", return_value=mock_context).
+    """
+    mock_conn = MagicMock()
+    mock_context = MagicMock()
+    mock_context.__enter__ = MagicMock(return_value=mock_conn)
+    mock_context.__exit__ = MagicMock(return_value=False)
+    return mock_conn, mock_context
+
+
+@pytest.fixture
+def mock_llm_client():
+    """Reusable mock for LLM chat function."""
+    with MagicMock() as mock:
+        mock.return_value = "Mocked LLM response"
+        yield mock
+
+
+@pytest.fixture
+def sample_topic_data():
+    """Sample topic data for tests."""
+    return {
+        "title": "AI Agent 框架对比：LangChain vs CrewAI vs AutoGen",
+        "score": 85,
+        "source": "rss",
+        "keywords": ["AI", "Agent", "LangChain"],
+        "url": "https://example.com/ai-agents",
+    }
+
+
+@pytest.fixture
+def temp_settings(tmp_path):
+    """Temporary settings override for tests that need isolated config."""
+    return {
+        "queue_dir": tmp_path / "queue",
+        "config_dir": tmp_path / "config",
+        "data_dir": tmp_path / "data",
+    }

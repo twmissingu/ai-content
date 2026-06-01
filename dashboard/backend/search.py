@@ -83,10 +83,10 @@ def index_kb_file(file_path: Path, section: str = None) -> bool:
 
 def index_all_kb(force: bool = False) -> dict:
     """Index all knowledge base files.
-    
+
     Args:
         force: If True, reindex all files regardless of modification time
-    
+
     Returns:
         Statistics about indexing
     """
@@ -96,43 +96,57 @@ def index_all_kb(force: bool = False) -> dict:
         'skipped': 0,
         'errors': 0,
     }
-    
+
     if not KB_DIR.exists():
         return stats
-    
+
     # Get existing index with modification times
-    existing_files = {}
+    existing_files: set[str] = set()
     with get_db() as conn:
         rows = conn.execute("SELECT path FROM kb_search").fetchall()
         for row in rows:
-            existing_files[row['path']] = True
-    
-    # Scan all markdown files
+            existing_files.add(row['path'])
+
+    # Collect files to index
+    files_to_index: list[tuple[Path, str]] = []
     for md_file in KB_DIR.rglob("*.md"):
         stats['total_files'] += 1
-        
         try:
             relative_path = str(md_file.relative_to(KB_DIR))
-            
-            # Skip if already indexed and not forcing
             if not force and relative_path in existing_files:
                 stats['skipped'] += 1
                 continue
-            
-            # Determine section
             parts = md_file.relative_to(KB_DIR).parts
             section = parts[0] if len(parts) > 0 else 'root'
-            
-            # Index the file
-            if index_kb_file(md_file, section):
-                stats['indexed'] += 1
-            else:
-                stats['errors'] += 1
-                
+            files_to_index.append((md_file, section))
         except Exception as e:
             logger.error(f"Error processing {md_file}: {e}")
             stats['errors'] += 1
-    
+
+    # Index all files in a single transaction
+    if files_to_index:
+        with get_db() as conn:
+            for md_file, section in files_to_index:
+                try:
+                    content = md_file.read_text(encoding='utf-8', errors='ignore')
+                    title_match = re.search(r'^#\s+(.+)$', content, re.MULTILINE)
+                    title = title_match.group(1).strip() if title_match else md_file.stem
+                    cleaned = clean_text(content)
+                    path_str = str(md_file.relative_to(KB_DIR))
+
+                    conn.execute(
+                        "DELETE FROM kb_search WHERE path = ?",
+                        (path_str,),
+                    )
+                    conn.execute(
+                        "INSERT INTO kb_search (path, title, content, section) VALUES (?, ?, ?, ?)",
+                        (path_str, title, cleaned, section),
+                    )
+                    stats['indexed'] += 1
+                except Exception as e:
+                    logger.error(f"Error indexing {md_file}: {e}")
+                    stats['errors'] += 1
+
     logger.info(f"Indexed {stats['indexed']}/{stats['total_files']} files")
     return stats
 
@@ -305,7 +319,10 @@ def auto_index_if_needed():
                 logger.info("Index empty or small, rebuilding...")
                 return index_all_kb(force=True)
 
-            # Count files on disk vs index using SQL EXISTS check
+            # Load all indexed paths into a set (single query instead of N+1)
+            rows = conn.execute("SELECT path FROM kb_search").fetchall()
+            indexed_paths = {row['path'] for row in rows}
+
             # Sample a few files to check if index is stale
             new_files = 0
             checked = 0
@@ -314,11 +331,7 @@ def auto_index_if_needed():
                 if checked > 50:  # sample limit
                     break
                 relative = str(md_file.relative_to(KB_DIR))
-                exists = conn.execute(
-                    "SELECT 1 FROM kb_search WHERE path = ? LIMIT 1",
-                    (relative,)
-                ).fetchone()
-                if not exists:
+                if relative not in indexed_paths:
                     new_files += 1
 
             # If >10% of sampled files are new, reindex

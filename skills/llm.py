@@ -82,6 +82,13 @@ def _load_fallback_chain() -> list[dict]:
 # Load once at module level (immutable after import)
 FALLBACK_CHAIN: list[dict] = _load_fallback_chain()
 
+# Per-model timeout map: model_name -> timeout_seconds
+_MODEL_TIMEOUTS: dict[str, float] = {
+    f["model"]: f["timeout"]
+    for f in FALLBACK_CHAIN
+    if "model" in f and "timeout" in f
+}
+
 
 # ── HTTP Client (thread-safe singleton) ────────────────────────────
 def _build_llm_headers() -> dict:
@@ -235,7 +242,11 @@ def chat(
 
         try:
             client = _get_client()
-            resp = client.post("/chat/completions", json=body)
+            request_timeout = _MODEL_TIMEOUTS.get(attempt_model)
+            post_kwargs: dict = {}
+            if request_timeout is not None:
+                post_kwargs["timeout"] = request_timeout
+            resp = client.post("/chat/completions", json=body, **post_kwargs)
             resp.raise_for_status()
             data = resp.json()
             _set_last_model(attempt_model)

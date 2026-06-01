@@ -16,6 +16,7 @@ Usage:
 import hashlib
 import json
 import logging
+import os
 import re
 import sys
 import time
@@ -192,8 +193,11 @@ def _save_cached(items: list[dict]):
             continue
         path = RSS_CACHE_DIR / f"{item['content_hash']}.json"
         tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(item, ensure_ascii=False, indent=2))
-        tmp.rename(path)
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(item, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.rename(tmp, path)
         known_hashes.add(item["content_hash"])
 
 
@@ -213,8 +217,11 @@ def _write_candidates(items: list[dict]):
     batch_time = datetime.now().strftime("%Y%m%d-%H%M%S")
     path = RSS_CANDIDATES_DIR / f"batch-{batch_time}.json"
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2))
-    tmp.rename(path)
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(items, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.rename(tmp, path)
     logger.info(f"Wrote {len(items)} candidates to {path.name}")
 
 

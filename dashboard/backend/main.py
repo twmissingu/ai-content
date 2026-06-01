@@ -26,7 +26,7 @@ from dashboard.backend.background import (
     trail_import_loop,
     trail_import_stop_event,
 )
-from dashboard.backend.database import init_db, import_prompts_from_files
+from dashboard.backend.database import init_db, import_prompts_from_files, shutdown_db_connections
 from dashboard.backend.search import auto_index_if_needed
 from dashboard.backend.ws import ws_manager
 
@@ -148,6 +148,17 @@ async def lifespan(app: FastAPI):
     init_db()
     logger.info("SQLite database initialized")
 
+    # Register prompt loader to break circular dependency (skills/ <-> dashboard/)
+    from skills.common import register_prompt_loader
+    from dashboard.backend.database.prompts import get_prompt as _get_prompt
+
+    def _db_prompt_loader(name: str) -> str | None:
+        row = _get_prompt(name)
+        return row["template"] if row else None
+
+    register_prompt_loader(_db_prompt_loader)
+    logger.info("Prompt loader registered")
+
     try:
         index_stats = auto_index_if_needed()
         logger.info(f"Knowledge base index: {index_stats}")
@@ -186,6 +197,7 @@ async def lifespan(app: FastAPI):
     budget_stop_event.set()
     token_import_stop_event.set()
     trail_import_stop_event.set()
+    shutdown_db_connections()
     logger.info("Background tasks stopped")
 
 

@@ -26,7 +26,7 @@ def _load_all_sources(limit_files: int = 10) -> tuple[list[dict], int]:
     Returns (items, file_count) tuple.
     """
     global _sources_cache, _sources_cache_ts
-    cache_key = limit_files
+    cache_key = f"sources_{limit_files}"
     now = time.time()
     if cache_key in _sources_cache and (now - _sources_cache_ts) < _SOURCES_CACHE_TTL:
         return _sources_cache[cache_key]
