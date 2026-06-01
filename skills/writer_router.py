@@ -23,6 +23,7 @@ from config.settings import (
     STATUS_DIR,
     TMP_DIR,
 )
+from skills.common import atomic_write_json
 
 RUN_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
@@ -66,9 +67,7 @@ def _write_router_status(pct: int, detail: str, workers: Optional[dict] = None):
         "workers": workers or {},
     }
     path = STATUS_DIR / "writer-router.json"
-    tmp = STATUS_DIR / ".writer-router.json.tmp"
-    tmp.write_text(json.dumps(status, ensure_ascii=False, indent=2))
-    os.rename(tmp, path)
+    atomic_write_json(path, status)
 
 
 def _find_topic(topic_id: Optional[str] = None) -> tuple[Optional[Path], Optional[dict]]:
@@ -119,16 +118,25 @@ async def _run_worker(config: dict, topic_path: Path, topic: dict) -> dict:
     ]
 
     try:
-        proc = await asyncio.wait_for(
-            asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=PROJECT_ROOT,
-            ),
-            timeout=config["timeout"],
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=PROJECT_ROOT,
         )
-        stdout, stderr = await proc.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=config["timeout"],
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return {
+                "type": worker_type,
+                "status": "timeout",
+                "detail": f"Exceeded {config['timeout']}s timeout",
+            }
 
         if proc.returncode == 0:
             # Find the output files in work_dir
@@ -147,12 +155,6 @@ async def _run_worker(config: dict, topic_path: Path, topic: dict) -> dict:
                 "status": "failed",
                 "detail": stderr.decode()[:300] or stdout.decode()[:300],
             }
-    except asyncio.TimeoutError:
-        return {
-            "type": worker_type,
-            "status": "timeout",
-            "detail": f"Exceeded {config['timeout']}s timeout",
-        }
     except Exception as e:
         return {
             "type": worker_type,

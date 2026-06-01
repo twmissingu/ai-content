@@ -1,5 +1,6 @@
 """Shared helper functions for dashboard routes."""
 
+import json
 import logging
 import time
 from datetime import datetime, timezone

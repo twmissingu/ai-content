@@ -21,6 +21,9 @@ def writer_agent():
     agent = WriterAgent.__new__(WriterAgent)
     agent.worker_type = "wechat"
     agent._run_timestamp = "20260528_120000"
+    agent._session_id = None
+    agent._start_timestamp = "20260528_120000"
+    agent._trace_ctx = None
     import logging
     agent.logger = logging.getLogger("test.writer")
     agent._lock = None

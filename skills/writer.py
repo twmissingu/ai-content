@@ -152,6 +152,29 @@ class WriterAgent(AgentBase):
         if not url:
             return "无原文链接。将仅基于选题方向生成内容。"
 
+        # SSRF protection: block private/internal IPs
+        try:
+            from urllib.parse import urlparse
+            import ipaddress as _ipaddress
+            import socket as _socket
+            parsed = urlparse(url)
+            hostname = parsed.hostname
+            if hostname:
+                if hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+                    self.logger.warning(f"Blocked fetch to localhost: {url}")
+                    return "[原文抓取失败：禁止访问本地地址]"
+                try:
+                    resolved = _socket.getaddrinfo(hostname, None)
+                    for family, _, _, _, sockaddr in resolved:
+                        ip = _ipaddress.ip_address(sockaddr[0])
+                        if ip.is_private or ip.is_loopback or ip.is_link_local:
+                            self.logger.warning(f"Blocked fetch to private IP {ip}: {url}")
+                            return "[原文抓取失败：禁止访问内网地址]"
+                except _socket.gaierror:
+                    pass
+        except Exception:
+            pass  # URL parsing failure, let the fetch proceed
+
         try:
             result = subprocess.run(
                 ["hermes", "mcp", "call", "firecrawl_scrape",

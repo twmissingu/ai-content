@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
@@ -13,10 +14,25 @@ logger = logging.getLogger("gaoding.dashboard")
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
 
+# Module-level cache for source files
+_sources_cache: dict = {}
+_sources_cache_ts: float = 0
+_SOURCES_CACHE_TTL = 30.0  # seconds
 
-def _load_all_sources(limit_files: int = 10) -> list[dict]:
-    """Load recent source files and merge into a flat list."""
+
+def _load_all_sources(limit_files: int = 10) -> tuple[list[dict], int]:
+    """Load recent source files and merge into a flat list.
+
+    Returns (items, file_count) tuple.
+    """
+    global _sources_cache, _sources_cache_ts
+    cache_key = limit_files
+    now = time.time()
+    if cache_key in _sources_cache and (now - _sources_cache_ts) < _SOURCES_CACHE_TTL:
+        return _sources_cache[cache_key]
+
     files = sorted(SOURCES_DIR.glob("*.json"), key=os.path.getmtime, reverse=True)
+    file_count = len(files)
     all_items = []
     for f in files[:limit_files]:
         try:
@@ -25,7 +41,11 @@ def _load_all_sources(limit_files: int = 10) -> list[dict]:
                 all_items.extend(items)
         except (json.JSONDecodeError, OSError) as e:
             logger.warning(f"Failed to read {f.name}: {e}")
-    return all_items
+
+    result = (all_items, file_count)
+    _sources_cache[cache_key] = result
+    _sources_cache_ts = now
+    return result
 
 
 @router.get("")
@@ -36,7 +56,7 @@ def list_sources(
     offset: int = Query(0, ge=0),
 ):
     """List raw source candidates with optional filters."""
-    items = _load_all_sources()
+    items, _ = _load_all_sources()
 
     if source:
         items = [i for i in items if i.get("source", "") == source]
@@ -55,7 +75,7 @@ def list_sources(
 @router.get("/stats")
 def sources_stats():
     """Aggregate stats across all source files."""
-    items = _load_all_sources(limit_files=20)
+    items, file_count = _load_all_sources(limit_files=20)
 
     source_counts: dict[str, int] = {}
     score_sum = 0.0
@@ -73,5 +93,5 @@ def sources_stats():
         "total_items": len(items),
         "by_source": source_counts,
         "avg_score": round(score_sum / score_count, 1) if score_count else 0,
-        "file_count": len(list(SOURCES_DIR.glob("*.json"))),
+        "file_count": file_count,
     }

@@ -7,11 +7,17 @@ Helps Scout pick underserved topics with high potential.
 
 import json
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
 from config.settings import KB_DIR
+
+_history_cache: dict = {}
+_history_cache_key: tuple = ()
+_history_cache_ts: float = 0
+_HISTORY_CACHE_TTL = 60.0  # seconds — cache for duration of scout run
 
 
 def extract_keywords(title: str) -> set[str]:
@@ -42,6 +48,12 @@ def extract_keywords(title: str) -> set[str]:
 
 def get_history_articles(days: int = 30) -> list[dict]:
     """Get recent articles from knowledge base history."""
+    global _history_cache, _history_cache_key, _history_cache_ts
+    cache_key = (days, str(KB_DIR))
+    now = time.time()
+    if _history_cache_key == cache_key and (now - _history_cache_ts) < _HISTORY_CACHE_TTL:
+        return _history_cache
+
     history_dir = KB_DIR / "history"
     articles = []
     if not history_dir.exists():
@@ -71,6 +83,9 @@ def get_history_articles(days: int = 30) -> list[dict]:
                     "keywords": extract_keywords(title),
                 })
 
+    _history_cache = articles
+    _history_cache_key = cache_key
+    _history_cache_ts = now
     return articles
 
 

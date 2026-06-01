@@ -15,9 +15,15 @@ from dashboard.backend.search import (
     search_kb as search_kb_fts,
 )
 
+import time
+
 logger = logging.getLogger("gaoding.dashboard")
 
 router = APIRouter(prefix="/api/kb", tags=["kb"])
+
+_section_cache: dict = {}
+_section_cache_ts: float = 0
+_SECTION_CACHE_TTL = 30.0  # seconds
 
 MAX_TREE_DEPTH = 3
 
@@ -41,7 +47,11 @@ def search_kb(q: str = Query("", min_length=1), section: Optional[str] = None):
         logger.warning(f"FTS5 search failed, using fallback: {e}")
 
         results = []
+        scanned = 0
         for path in KB_DIR.rglob("*.md"):
+            scanned += 1
+            if scanned > 200:  # limit fallback scan
+                break
             if q.lower() in path.stem.lower():
                 results.append({
                     "path": str(path.relative_to(KB_DIR)),
@@ -75,6 +85,11 @@ def search_kb(q: str = Query("", min_length=1), section: Optional[str] = None):
 @router.get("/sections")
 def get_kb_sections():
     """List knowledge base sections and their article counts."""
+    global _section_cache, _section_cache_ts
+    now = time.time()
+    if _section_cache and (now - _section_cache_ts) < _SECTION_CACHE_TTL:
+        return {"sections": _section_cache}
+
     sections = []
 
     try:
@@ -84,24 +99,36 @@ def get_kb_sections():
         indexed_sections = {}
 
     if KB_DIR.exists():
+        # Single-pass file count
+        section_counts: dict[str, int] = {}
+        history_count = 0
+        for md_file in KB_DIR.rglob("*.md"):
+            parts = md_file.relative_to(KB_DIR).parts
+            if len(parts) > 0:
+                if parts[0] == "history":
+                    history_count += 1
+                else:
+                    section_counts[parts[0]] = section_counts.get(parts[0], 0) + 1
+
         for d in sorted(KB_DIR.iterdir()):
             if d.is_dir() and d.name != "history":
-                count = indexed_sections.get(d.name, len(list(d.rglob("*.md"))))
+                count = indexed_sections.get(d.name, section_counts.get(d.name, 0))
                 sections.append({
                     "name": d.name,
                     "count": count,
                     "path": str(d),
                 })
 
-        history_dir = KB_DIR / "history"
-        if history_dir.exists():
-            total_history = indexed_sections.get('history', sum(1 for _ in history_dir.rglob("*.md")))
+        if (KB_DIR / "history").exists():
+            total_history = indexed_sections.get('history', history_count)
             sections.append({
                 "name": "history",
                 "count": total_history,
-                "path": str(history_dir),
+                "path": str(KB_DIR / "history"),
             })
 
+    _section_cache = sections
+    _section_cache_ts = now
     return {"sections": sections}
 
 

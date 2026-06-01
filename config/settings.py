@@ -117,6 +117,7 @@ PLATFORM_DISPLAY: dict[str, str] = {
 FEISHU_WEBHOOK_URL: Optional[str] = os.getenv("FEISHU_WEBHOOK_URL")
 NOTIFICATION_QUIET_START: int = int(os.getenv("NOTIFICATION_QUIET_START", "22"))  # 22:00
 NOTIFICATION_QUIET_END: int = int(os.getenv("NOTIFICATION_QUIET_END", "8"))      # 08:00
+# NOTE: Quiet hours cross midnight (22→8). Use `hour >= start or hour < end` logic, NOT `start <= hour < end`.
 
 # ── Helper ─────────────────────────────────────────────────────────
 def require_api_key(name: str = "XIAOMI_API_KEY") -> str:

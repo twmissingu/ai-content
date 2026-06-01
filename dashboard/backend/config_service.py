@@ -10,6 +10,7 @@ Implements PRD 9.1-9.5:
 """
 
 import json
+import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Optional
@@ -17,10 +18,12 @@ from typing import Any, Optional
 from config.settings import (
     CONFIG_DIR,
     MONTHLY_BUDGET_USD,
-    QUALITY_THRESHOLD,
     MAX_REWRITE_ROUNDS,
     STAGE_TIMEOUT_MINUTES,
 )
+
+# Default quality threshold (not in settings.py to avoid circular dependency)
+_QUALITY_THRESHOLD: int = 70
 
 
 def get_default_schedule() -> dict:
@@ -86,8 +89,8 @@ def get_default_writing_styles() -> dict:
 def get_default_quality_gates() -> dict:
     """Get default quality gate thresholds."""
     return {
-        "ai_slop_threshold": QUALITY_THRESHOLD,
-        "critique_threshold": QUALITY_THRESHOLD,
+        "ai_slop_threshold": _QUALITY_THRESHOLD,
+        "critique_threshold": _QUALITY_THRESHOLD,
         "max_rewrite_rounds": MAX_REWRITE_ROUNDS,
         "topic_score_floor": 55,
         "attention_floor": 40,
@@ -263,6 +266,7 @@ def update_schedule(key: str, value: Any) -> dict:
     config.pop(f'_pending_{key}', None)
     
     save_config_to_file("schedule.json", config)
+    _invalidate_config_cache()
     return config
 
 
@@ -275,6 +279,7 @@ def update_writing_style(style_name: str, updates: dict) -> dict:
     
     styles[style_name].update(updates)
     save_config_to_file("writing_styles.json", styles)
+    _invalidate_config_cache()
     return styles[style_name]
 
 
@@ -283,6 +288,7 @@ def update_quality_gates(updates: dict) -> dict:
     gates = get_quality_gates()
     gates.update(updates)
     save_config_to_file("quality_gates.json", gates)
+    _invalidate_config_cache()
     return gates
 
 
@@ -303,7 +309,7 @@ def update_source(source_name: str, updates: dict) -> dict:
         save_config_to_file("sources.json", full_config)
     else:
         save_config_to_file("sources.json", sources)
-    
+    _invalidate_config_cache()
     return sources[source_name]
 
 
@@ -312,6 +318,7 @@ def update_budget(updates: dict) -> dict:
     budget = get_budget_config()
     budget.update(updates)
     save_config_to_file("budget.json", budget)
+    _invalidate_config_cache()
     return budget
 
 
@@ -376,12 +383,28 @@ def generate_style_prompt(style_name: str) -> str:
     return "你是一位内容创作者。" + " ".join(parts)
 
 
+_config_summary_cache: dict = {}
+_config_summary_ts: float = 0
+_CONFIG_SUMMARY_TTL = 30.0  # seconds
+
+
+def _invalidate_config_cache() -> None:
+    """Invalidate config summary cache (call after any config write)."""
+    global _config_summary_cache
+    _config_summary_cache = {}
+
+
 def get_all_config_summary() -> dict:
-    """Get summary of all configuration."""
-    return {
+    """Get summary of all configuration (cached for 30s)."""
+    global _config_summary_cache, _config_summary_ts
+    now = time.time()
+    if _config_summary_cache and (now - _config_summary_ts) < _CONFIG_SUMMARY_TTL:
+        return _config_summary_cache
+
+    result = {
         "schedule": get_schedule_config(),
         "writing_styles": {
-            name: style.get('name', name) 
+            name: style.get('name', name)
             for name, style in get_writing_styles().items()
         },
         "quality_gates": get_quality_gates(),
@@ -392,6 +415,9 @@ def get_all_config_summary() -> dict:
         "budget": get_budget_config(),
         "model": get_model_config(),
     }
+    _config_summary_cache = result
+    _config_summary_ts = now
+    return result
 
 
 # ── CLI interface ──────────────────────────────────────────────────

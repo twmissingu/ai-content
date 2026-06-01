@@ -301,11 +301,10 @@ class TestChatErrors:
 class TestRecordUsage:
     """Test usage recording."""
 
-    @patch("skills.llm.LOGS_DIR")
-    def test_record_usage_creates_csv(self, mock_logs_dir, tmp_path):
+    def test_record_usage_creates_csv(self, tmp_path, monkeypatch):
         from skills.llm import _record_usage
 
-        mock_logs_dir.__truediv__ = lambda self, x: tmp_path / x
+        monkeypatch.setattr("config.settings.TOKENS_DIR", tmp_path)
 
         data = {
             "usage": {

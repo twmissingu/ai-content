@@ -16,8 +16,7 @@ def client(tmp_path, monkeypatch):
     actions_dir.mkdir(parents=True)
 
     monkeypatch.setattr("dashboard.backend.routes.approval.REVIEW_DIR", review_dir)
-    monkeypatch.setattr("dashboard.backend.routes.approval.ACTIONS_DIR", actions_dir)
-    monkeypatch.setattr("dashboard.backend.helpers.ACTIONS_DIR", actions_dir)
+    monkeypatch.setattr("skills.action.ACTIONS_DIR", actions_dir)
 
     # Create test article
     article_id = "test-article-001"
@@ -73,8 +72,7 @@ class TestApprovalAct:
 
     def test_approve_creates_action_file(self, client, tmp_path, monkeypatch):
         actions = tmp_path / "queue" / "actions"
-        monkeypatch.setattr("dashboard.backend.routes.approval.ACTIONS_DIR", actions)
-        monkeypatch.setattr("dashboard.backend.helpers.ACTIONS_DIR", actions)
+        monkeypatch.setattr("skills.action.ACTIONS_DIR", actions)
         resp = client.post("/api/approval/act", json={
             "action": "approve",
             "target_id": "test-article-001",

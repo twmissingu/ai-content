@@ -23,9 +23,39 @@ from dashboard.backend.database import get_quality_flywheel_data
 from dashboard.backend.helpers import load_schedule
 from dashboard.backend.models import ConfigUpdate
 
+from pydantic import BaseModel, Field
+from typing import Any
+
 logger = logging.getLogger("gaoding.dashboard")
 
 router = APIRouter(prefix="/api/config", tags=["config"])
+
+
+class StyleUpdate(BaseModel):
+    """Validation for style config updates."""
+    name: str | None = None
+    platform: str | None = None
+    length: int | None = Field(None, ge=100, le=10000)
+    tone: str | None = None
+    stance: str | None = None
+
+class GatesUpdate(BaseModel):
+    """Validation for quality gates updates."""
+    ai_slop_threshold: int | None = Field(None, ge=0, le=100)
+    critique_threshold: int | None = Field(None, ge=0, le=100)
+    max_rewrite_rounds: int | None = Field(None, ge=1, le=10)
+    topic_score_floor: int | None = Field(None, ge=0, le=100)
+
+class SourceUpdate(BaseModel):
+    """Validation for source config updates."""
+    enabled: bool | None = None
+    weight: float | None = Field(None, ge=0, le=1)
+
+class BudgetUpdate(BaseModel):
+    """Validation for budget config updates."""
+    monthly_limit_usd: float | None = Field(None, ge=0)
+    warning_threshold_pct: int | None = Field(None, ge=0, le=100)
+    auto_pause_on_exceed: bool | None = None
 
 
 @router.get("")
@@ -90,10 +120,10 @@ def update_schedule_config(update: ConfigUpdate):
 
 
 @router.post("/styles/{style_name}")
-def update_style_config(style_name: str, updates: dict):
+def update_style_config(style_name: str, updates: StyleUpdate):
     """Update a writing style preset."""
     try:
-        result = update_writing_style(style_name, updates)
+        result = update_writing_style(style_name, updates.model_dump(exclude_none=True))
         return {"status": "ok", "style": style_name, "config": result}
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -103,10 +133,10 @@ def update_style_config(style_name: str, updates: dict):
 
 
 @router.post("/gates")
-def update_gates_config(updates: dict):
+def update_gates_config(updates: GatesUpdate):
     """Update quality gate thresholds."""
     try:
-        result = update_quality_gates(updates)
+        result = update_quality_gates(updates.model_dump(exclude_none=True))
         return {"status": "ok", "config": result}
     except Exception as e:
         logger.error(f"Error updating gates: {e}")
@@ -114,10 +144,10 @@ def update_gates_config(updates: dict):
 
 
 @router.post("/sources/{source_name}")
-def update_source_config(source_name: str, updates: dict):
+def update_source_config(source_name: str, updates: SourceUpdate):
     """Update source configuration."""
     try:
-        result = update_source(source_name, updates)
+        result = update_source(source_name, updates.model_dump(exclude_none=True))
         return {"status": "ok", "source": source_name, "config": result}
     except Exception as e:
         logger.error(f"Error updating source: {e}")
@@ -125,10 +155,10 @@ def update_source_config(source_name: str, updates: dict):
 
 
 @router.post("/budget")
-def update_budget_config(updates: dict):
+def update_budget_config(updates: BudgetUpdate):
     """Update budget configuration."""
     try:
-        result = update_budget(updates)
+        result = update_budget(updates.model_dump(exclude_none=True))
         return {"status": "ok", "config": result}
     except Exception as e:
         logger.error(f"Error updating budget: {e}")

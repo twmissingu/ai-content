@@ -2,9 +2,14 @@
 
 import json as _json
 import logging
+import time
 from pathlib import Path
 
 from .core import get_db
+
+_budget_cache: dict = {}
+_budget_cache_ts: float = 0
+_BUDGET_CACHE_TTL = 30.0  # seconds
 
 logger = logging.getLogger("gaoding.database")
 
@@ -100,6 +105,13 @@ def get_monthly_cost() -> float:
 
 def check_budget_limit(budget_usd: float = None) -> dict:
     """Check if monthly cost exceeds budget limit."""
+    global _budget_cache, _budget_cache_ts
+
+    # Use cache if no explicit budget and cache is fresh
+    now = time.time()
+    if budget_usd is None and _budget_cache and (now - _budget_cache_ts) < _BUDGET_CACHE_TTL:
+        return _budget_cache
+
     if budget_usd is None:
         try:
             from .config_ops import get_config_value
@@ -114,7 +126,7 @@ def check_budget_limit(budget_usd: float = None) -> dict:
     current_cost = get_monthly_cost()
     percentage = (current_cost / budget_usd * 100) if budget_usd > 0 else 0
 
-    return {
+    result = {
         'current_cost': round(current_cost, 4),
         'budget': budget_usd,
         'percentage': round(percentage, 2),
@@ -122,3 +134,7 @@ def check_budget_limit(budget_usd: float = None) -> dict:
         'is_exceeded': percentage >= 100,
         'remaining': round(max(0, budget_usd - current_cost), 4),
     }
+
+    _budget_cache = result
+    _budget_cache_ts = now
+    return result

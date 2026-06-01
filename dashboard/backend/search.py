@@ -64,25 +64,15 @@ def index_kb_file(file_path: Path, section: str = None) -> bool:
         path_str = str(file_path.relative_to(KB_DIR))
         
         with get_db() as conn:
-            # Check if already indexed
-            existing = conn.execute(
-                "SELECT path FROM kb_search WHERE path = ?", 
+            # Upsert: delete-then-insert pattern for FTS5
+            conn.execute(
+                "DELETE FROM kb_search WHERE path = ?",
                 (path_str,)
-            ).fetchone()
-            
-            if existing:
-                # Update existing record
-                conn.execute("""
-                    UPDATE kb_search 
-                    SET title = ?, content = ?, section = ?
-                    WHERE path = ?
-                """, (title, cleaned, section, path_str))
-            else:
-                # Insert new record
-                conn.execute("""
-                    INSERT INTO kb_search (path, title, content, section)
-                    VALUES (?, ?, ?, ?)
-                """, (path_str, title, cleaned, section))
+            )
+            conn.execute("""
+                INSERT INTO kb_search (path, title, content, section)
+                VALUES (?, ?, ?, ?)
+            """, (path_str, title, cleaned, section))
         
         return True
         
@@ -308,33 +298,36 @@ def delete_from_index(path: str):
 def auto_index_if_needed():
     """Check if index needs updating and rebuild if necessary."""
     with get_db() as conn:
-        # Check if kb_search table exists and has data
         try:
             count = conn.execute("SELECT COUNT(*) as count FROM kb_search").fetchone()['count']
-            
-            # If index is empty or very small, rebuild
+
             if count < 10:
                 logger.info("Index empty or small, rebuilding...")
                 return index_all_kb(force=True)
-            
-            # Check for new files not in index
-            indexed_paths = set()
-            rows = conn.execute("SELECT path FROM kb_search").fetchall()
-            for row in rows:
-                indexed_paths.add(row['path'])
-            
+
+            # Count files on disk vs index using SQL EXISTS check
+            # Sample a few files to check if index is stale
             new_files = 0
+            checked = 0
             for md_file in KB_DIR.rglob("*.md"):
+                checked += 1
+                if checked > 50:  # sample limit
+                    break
                 relative = str(md_file.relative_to(KB_DIR))
-                if relative not in indexed_paths:
+                exists = conn.execute(
+                    "SELECT 1 FROM kb_search WHERE path = ? LIMIT 1",
+                    (relative,)
+                ).fetchone()
+                if not exists:
                     new_files += 1
-            
-            if new_files > 5:
-                logger.info(f"Found {new_files} new files, updating index...")
+
+            # If >10% of sampled files are new, reindex
+            if checked > 0 and new_files / checked > 0.1:
+                logger.info(f"Found {new_files}/{checked} new files in sample, updating index...")
                 return index_all_kb(force=False)
-            
+
             return {'status': 'up_to_date', 'indexed': count}
-            
+
         except Exception as e:
             logger.error(f"Error checking index: {e}")
             return index_all_kb(force=True)

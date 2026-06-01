@@ -201,6 +201,12 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_pipeline_traces_agent ON pipeline_traces(agent);
             CREATE INDEX IF NOT EXISTS idx_prompt_versions_name ON prompt_versions(name);
             CREATE INDEX IF NOT EXISTS idx_prompt_versions_active ON prompt_versions(name, is_active);
+
+            -- Composite indexes for common query patterns
+            CREATE INDEX IF NOT EXISTS idx_token_usage_date_cost
+                ON token_usage(created_at, estimated_cost, input_tokens, output_tokens);
+            CREATE INDEX IF NOT EXISTS idx_pv_status_session
+                ON platform_versions(status, session_id);
         """)
 
         # Create FTS5 virtual table for knowledge base search

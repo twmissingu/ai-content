@@ -46,7 +46,7 @@ def get_platform_versions(session_id: int) -> list[dict]:
         return [dict(row) for row in rows]
 
 
-def get_pending_versions() -> list[dict]:
+def get_pending_versions(limit: int = 200) -> list[dict]:
     """Get all pending platform versions for approval queue."""
     with get_db() as conn:
         rows = conn.execute("""
@@ -55,7 +55,8 @@ def get_pending_versions() -> list[dict]:
             JOIN pipeline_sessions ps ON pv.session_id = ps.id
             WHERE pv.status = 'pending'
             ORDER BY ps.date DESC, ps.created_at DESC
-        """).fetchall()
+            LIMIT ?
+        """, (limit,)).fetchall()
         return [dict(row) for row in rows]
 
 

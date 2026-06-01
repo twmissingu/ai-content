@@ -5,6 +5,9 @@ data/
 *.db-shm
 *.db-wal
 .env
+runtime/
+runtime/**/.env
+runtime/**/docker-compose*.yml
 
 # Python
 __pycache__/

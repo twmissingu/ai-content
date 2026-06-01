@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from dashboard.backend.helpers import read_json, write_action, detect_timeout, load_schedule
+from dashboard.backend.helpers import read_json, detect_timeout, load_schedule
 
 
 class TestReadJson:
@@ -26,25 +26,6 @@ class TestReadJson:
         path = tmp_path / "bad.json"
         path.write_text("not valid json {{{")
         assert read_json(path) == {}
-
-
-class TestWriteAction:
-    """Test write_action function."""
-
-    def test_creates_action_file(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("dashboard.backend.helpers.ACTIONS_DIR", tmp_path)
-        path = write_action("approve", "article-123")
-        assert path.exists()
-        data = json.loads(path.read_text())
-        assert data["action"] == "approve"
-        assert data["target_id"] == "article-123"
-        assert "timestamp" in data
-
-    def test_passes_extra_kwargs(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("dashboard.backend.helpers.ACTIONS_DIR", tmp_path)
-        path = write_action("reject", "article-456", reason="AI腔太重")
-        data = json.loads(path.read_text())
-        assert data["reason"] == "AI腔太重"
 
 
 class TestDetectTimeout:

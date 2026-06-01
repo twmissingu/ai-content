@@ -53,6 +53,7 @@ def get_pending_config(key: str = None) -> list[dict]:
                 SELECT * FROM config_entries
                 WHERE status = 'pending'
                 ORDER BY key, effective_from
+                LIMIT 500
             """).fetchall()
         return [dict(row) for row in rows]
 

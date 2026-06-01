@@ -139,8 +139,7 @@ class TestRunWorker:
         with patch("skills.writer_router.PROJECT_ROOT", tmp_path):
             with patch("skills.writer_router.TMP_DIR", tmp_path / "tmp"):
                 with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-                    with patch("asyncio.wait_for", return_value=mock_proc):
-                        result = await _run_worker(config, topic_path, {"title": "Test"})
+                    result = await _run_worker(config, topic_path, {"title": "Test"})
 
         assert result["status"] == "completed"
         assert result["type"] == "test"
@@ -169,8 +168,7 @@ class TestRunWorker:
         with patch("skills.writer_router.PROJECT_ROOT", tmp_path):
             with patch("skills.writer_router.TMP_DIR", tmp_path / "tmp"):
                 with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-                    with patch("asyncio.wait_for", return_value=mock_proc):
-                        result = await _run_worker(config, topic_path, {"title": "Test"})
+                    result = await _run_worker(config, topic_path, {"title": "Test"})
 
         assert result["status"] == "failed"
         assert "Error occurred" in result["detail"]
@@ -192,14 +190,19 @@ class TestRunWorker:
             "timeout": 60,
         }
 
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
+        mock_proc.kill = MagicMock()
+        mock_proc.wait = AsyncMock()
+
         with patch("skills.writer_router.PROJECT_ROOT", tmp_path):
             with patch("skills.writer_router.TMP_DIR", tmp_path / "tmp"):
-                with patch("asyncio.create_subprocess_exec", side_effect=asyncio.TimeoutError()):
-                    with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()):
-                        result = await _run_worker(config, topic_path, {"title": "Test"})
+                with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+                    result = await _run_worker(config, topic_path, {"title": "Test"})
 
         assert result["status"] == "timeout"
         assert "timeout" in result["detail"].lower()
+        mock_proc.kill.assert_called_once()
 
 
 @pytest.mark.asyncio

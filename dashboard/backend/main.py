@@ -3,6 +3,7 @@
 Slim entry point: middleware setup, route mounting, lifespan management.
 """
 
+import hmac
 import json
 import logging
 import os
@@ -92,10 +93,18 @@ rate_limiter = RateLimiter(requests_per_minute=120)
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, trusted_proxies: set[str] | None = None):
+        super().__init__(app)
+        self._trusted_proxies = trusted_proxies or set()
+
     async def dispatch(self, request: Request, call_next):
         if request.url.path == "/api/health":
             return await call_next(request)
+        # Support X-Forwarded-For only from trusted proxies
         client_ip = request.client.host if request.client else "unknown"
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded and client_ip in self._trusted_proxies:
+            client_ip = forwarded.split(",")[0].strip()
         if not rate_limiter.is_allowed(client_ip):
             logger.warning(f"Rate limit exceeded for {client_ip}")
             return JSONResponse(
@@ -120,7 +129,8 @@ def _get_cors_origins() -> list[str]:
     origins = [o.strip() for o in env_value.split(",") if o.strip()]
     environment = os.getenv("ENV", os.getenv("NODE_ENV", "development"))
     if "*" in origins and environment == "production":
-        logger.warning("CORS_ORIGINS='*' is not recommended for production!")
+        logger.warning("CORS_ORIGINS='*' blocked in production — using default origins")
+        return default_origins
     valid_origins = []
     for origin in origins:
         if origin == "*":
@@ -182,7 +192,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="稿定 Dashboard", version="0.7.0", lifespan=lifespan)
 
 # Middleware (order matters: last added = first executed)
-app.add_middleware(RateLimitMiddleware)
+_trusted_proxies = set(
+    p.strip() for p in os.getenv("TRUSTED_PROXIES", "").split(",") if p.strip()
+)
+app.add_middleware(RateLimitMiddleware, trusted_proxies=_trusted_proxies)
 app.add_middleware(
     AuthMiddleware,
     api_key=os.getenv("API_KEY"),
@@ -212,6 +225,14 @@ app.include_router(reader_router)
 @app.websocket("/ws/pipeline")
 async def websocket_pipeline(websocket: WSProtocol):
     """WebSocket endpoint for real-time pipeline status updates."""
+    # Check API key from query params or first message
+    api_key = os.getenv("API_KEY", "")
+    if api_key:
+        ws_key = websocket.query_params.get("api_key", "")
+        if not hmac.compare_digest(ws_key, api_key):
+            await websocket.close(code=4001, reason="Invalid API key")
+            return
+
     await ws_manager.connect(websocket)
     try:
         # Send initial status immediately

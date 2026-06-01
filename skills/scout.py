@@ -31,10 +31,11 @@ from config.settings import (
     SOURCES_DIR,
     STATUS_DIR,
     TMP_DIR,
+    TRAIL_DIR,
 )
 from skills.action import write_topic_pending
 from skills.agent_schemas import ScoutOutput, TopicCandidate
-from skills.common import AgentBase, agent_main, get_agent_logger, load_prompt, write_status as _write_status_fn
+from skills.common import AgentBase, agent_main, atomic_write_json, get_agent_logger, load_prompt, write_status as _write_status_fn
 from skills.llm import chat_structured, set_current_agent
 from skills.topic_analyzer import analyze_topic_competition
 
@@ -311,9 +312,7 @@ def _save_raw_sources(candidates: list[dict]) -> None:
         return
     date_str = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_path = SOURCES_DIR / f"{date_str}.json"
-    tmp_path = out_path.with_suffix(".tmp")
-    tmp_path.write_text(json.dumps(candidates, ensure_ascii=False, indent=2))
-    tmp_path.rename(out_path)
+    atomic_write_json(out_path, candidates)
     logger.info(f"Saved {len(candidates)} raw sources to {out_path}")
 
 
@@ -362,10 +361,14 @@ def _recent_topics(days: int = SAME_TOPIC_BLOCK_DAYS) -> set[str]:
         for d in list(HISTORY_DIR.iterdir()):
             if d.is_dir():
                 for f in d.glob("*.md"):
-                    text = f.read_text(encoding="utf-8", errors="ignore")
-                    title = text.split("\n")[0].removeprefix("# ").strip()
-                    if title:
-                        recent.add(title)
+                    try:
+                        with open(f, encoding="utf-8", errors="ignore") as fh:
+                            first_line = fh.readline(200)  # read only first 200 bytes
+                        title = first_line.removeprefix("# ").strip()
+                        if title:
+                            recent.add(title)
+                    except OSError:
+                        pass
     # Also check pending
     for f in PENDING_DIR.glob("*.json"):
         try:
@@ -438,6 +441,7 @@ def dedup_and_filter(candidates: list[dict]) -> list[dict]:
                 unique.append(c)
         else:
             seen_title_sets.append({title})
+            seen_keyword_sets.append(set())
             unique.append(c)
 
     return unique
@@ -615,7 +619,8 @@ def score_candidate(candidate: dict, cold_start: bool) -> dict | None:
     tier_multiplier = TIER_MULTIPLIERS.get(tier, 1.0)
     final_score = raw_score * tier_multiplier
 
-    candidate.update({
+    result = dict(candidate)
+    result.update({
         "source_weight": round(source_weight, 2),
         "viral_score": viral,
         "freshness_score": freshness_score,
@@ -631,7 +636,7 @@ def score_candidate(candidate: dict, cold_start: bool) -> dict | None:
         "final_score": round(final_score, 1),
         "direction": direction,
     })
-    return candidate
+    return result
 
 
 def _enforce_diversity(scored: list[dict]) -> list[dict]:
@@ -689,8 +694,6 @@ def main():
     # Step 1: Collect
     _write_status("collecting", 15, "Collecting from all sources")
     try:
-        from config.settings import TRAIL_DIR
-        from skills.common import atomic_write_json
         import time as _time
         _trail_start = _time.monotonic()
         _trail_id = f"scout-collect-{int(_time.time())}"
@@ -713,8 +716,6 @@ def main():
     # Step 2: Dedup & filter
     _write_status("dedup", 35, f"Deduplicating {len(candidates)} candidates")
     try:
-        from config.settings import TRAIL_DIR
-        from skills.common import atomic_write_json
         import time as _time
         _trail_start = _time.monotonic()
         _trail_id = f"scout-dedup-{int(_time.time())}"
@@ -793,8 +794,6 @@ def main():
     # Step 7: Write to pending
     _write_status("writing", 85, f"Writing {len(validated_final)} candidates to queue/pending/")
     try:
-        from config.settings import TRAIL_DIR
-        from skills.common import atomic_write_json
         import time as _time
         _trail_start = _time.monotonic()
         _trail_id = f"scout-write-{int(_time.time())}"
@@ -838,8 +837,7 @@ def main():
         "session": SESSION,
         "error": None,
     }
-    
-    from skills.common import atomic_write_json
+
     path = STATUS_DIR / "scout.json"
     atomic_write_json(path, summary)
 

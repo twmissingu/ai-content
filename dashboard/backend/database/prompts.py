@@ -179,11 +179,19 @@ def import_prompts_from_files() -> int:
     if not prompts_dir.exists():
         return 0
 
+    # Batch check: get all existing prompt names in one query
+    existing_names = set()
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT name FROM prompt_versions WHERE is_active = 1"
+        ).fetchall()
+        for row in rows:
+            existing_names.add(row["name"])
+
     imported = 0
     for f in sorted(prompts_dir.glob("*.txt")):
         name = f.stem
-        existing = get_prompt(name)
-        if existing:
+        if name in existing_names:
             continue
 
         template = f.read_text(encoding="utf-8")

@@ -77,7 +77,7 @@ class ConnectionManager:
             "budget": budget,
         }
 
-    def _status_hash(self, status: dict) -> str:
+    def _status_hash(self) -> str:
         """Compute deterministic change key from status file mtimes + sizes."""
         # This is deterministic across processes, unlike Python's hash()
         parts = []
@@ -93,10 +93,10 @@ class ConnectionManager:
         """Poll status files every 3s and broadcast on change."""
         while True:
             try:
-                status = await asyncio.to_thread(self._build_status)
-                h = self._status_hash(status)
+                h = self._status_hash()
                 if h != self._last_status_hash:
                     self._last_status_hash = h
+                    status = await asyncio.to_thread(self._build_status)
                     await self.broadcast(status)
             except Exception as e:
                 logger.error(f"Status watcher error: {e}")

@@ -37,6 +37,32 @@ async def fetch_url(url: str = Query(..., min_length=1)):
     if not url.startswith(("http://", "https://")):
         raise HTTPException(400, "仅支持 http/https URL")
 
+    # SSRF protection: block private/internal IPs
+    try:
+        from urllib.parse import urlparse
+        import ipaddress
+        import socket
+
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        if hostname:
+            # Block localhost variants
+            if hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+                raise HTTPException(403, "禁止访问本地地址")
+            # Resolve and check IP
+            try:
+                resolved = socket.getaddrinfo(hostname, None)
+                for family, _, _, _, sockaddr in resolved:
+                    ip = ipaddress.ip_address(sockaddr[0])
+                    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                        raise HTTPException(403, f"禁止访问内网地址: {ip}")
+            except socket.gaierror:
+                pass  # DNS resolution failed, let httpx handle it
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # URL parsing failed, let httpx handle it
+
     try:
         import httpx
     except ImportError:

@@ -331,8 +331,12 @@ class TestAutoIndexIfNeeded:
         monkeypatch.setattr("dashboard.backend.search.KB_DIR", kb_dir)
 
         mock_conn = MagicMock()
-        mock_conn.execute.return_value.fetchone.return_value = {"count": 50}
-        mock_conn.execute.return_value.fetchall.return_value = []
+        # First call: COUNT returns 50. Subsequent calls: EXISTS returns None (new file)
+        count_result = MagicMock()
+        count_result.fetchone.return_value = {"count": 50}
+        exists_result = MagicMock()
+        exists_result.fetchone.return_value = None  # file not in index
+        mock_conn.execute.side_effect = [count_result] + [exists_result] * 60
         mock_context = MagicMock()
         mock_context.__enter__ = MagicMock(return_value=mock_conn)
         mock_context.__exit__ = MagicMock(return_value=False)

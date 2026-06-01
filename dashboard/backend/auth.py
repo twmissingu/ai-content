@@ -30,7 +30,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if self._api_key:
             logger.info("API authentication enabled")
         else:
-            logger.info("API authentication disabled (no API_KEY set)")
+            logger.warning("⚠️ API authentication disabled (no API_KEY set). "
+                          "Set API_KEY env var to enable authentication.")
 
     async def dispatch(self, request: Request, call_next):
         # Skip auth if no key configured

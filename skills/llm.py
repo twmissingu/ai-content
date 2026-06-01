@@ -93,6 +93,48 @@ def _build_llm_headers() -> dict:
     }
 
 
+# Module-level HTTP client singleton (thread-safe, connection pooling)
+_llm_client: httpx.Client | None = None
+_llm_client_lock = threading.Lock()
+
+
+def _get_client() -> httpx.Client:
+    """Get or create the shared HTTP client (thread-safe singleton)."""
+    global _llm_client
+    if _llm_client is None:
+        with _llm_client_lock:
+            if _llm_client is None:
+                _llm_client = httpx.Client(
+                    base_url=LLM_BASE_URL,
+                    headers=_build_llm_headers(),
+                    timeout=120,
+                )
+    return _llm_client
+
+
+class _HTTPClientManager:
+    """Manages the shared HTTP client singleton (test-compatible interface)."""
+
+    @property
+    def _client(self) -> httpx.Client | None:
+        return _llm_client
+
+    def reset(self) -> None:
+        global _llm_client
+        with _llm_client_lock:
+            if _llm_client is not None:
+                _llm_client.close()
+            _llm_client = None
+
+
+_client_manager = _HTTPClientManager()
+
+
+def reset_client() -> None:
+    """Reset the shared HTTP client (forces re-creation on next use)."""
+    _client_manager.reset()
+
+
 # ── Cost tracking (thread-safe) ────────────────────────────────────
 
 
@@ -192,13 +234,9 @@ def chat(
             body["response_format"] = {"type": "json_object"}
 
         try:
-            with httpx.Client(
-                base_url=LLM_BASE_URL,
-                headers=_build_llm_headers(),
-                timeout=120,
-            ) as _llm_client:
-                resp = _llm_client.post("/chat/completions", json=body)
-                resp.raise_for_status()
+            client = _get_client()
+            resp = client.post("/chat/completions", json=body)
+            resp.raise_for_status()
             data = resp.json()
             _set_last_model(attempt_model)
             break  # success — exit the retry loop
@@ -259,11 +297,6 @@ def chat_structured(
         return json.loads(raw)
     except json.JSONDecodeError as e:
         raise LLMError(f"LLM returned invalid JSON: {e}\nRaw: {raw[:300]}") from e
-
-
-def reset_client() -> None:
-    """No-op: clients are per-request, no singleton to reset."""
-    logger.warning("reset_client() is deprecated - no singleton to reset")
 
 
 # ── Backward compatibility aliases ─────────────────────────────────

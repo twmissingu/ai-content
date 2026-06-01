@@ -23,6 +23,20 @@ logger = logging.getLogger("gaoding.dashboard")
 router = APIRouter(prefix="/api/approval", tags=["approval"])
 
 
+def _safe_article_id(article_id: str) -> str:
+    """Sanitize article_id to prevent path traversal."""
+    # Remove path separators and traversal sequences
+    safe = article_id.replace("/", "_").replace("\\", "_").replace("\0", "")
+    safe = safe.replace("..", "")
+    # Verify the resolved path stays within REVIEW_DIR
+    target = REVIEW_DIR / f"{safe}.md"
+    try:
+        target.resolve().relative_to(REVIEW_DIR.resolve())
+    except ValueError:
+        return ""  # invalid — outside REVIEW_DIR
+    return safe
+
+
 @router.get("/queue")
 def get_approval_queue():
     """List articles pending approval from queue/review/ and database."""
@@ -31,12 +45,10 @@ def get_approval_queue():
     for f in sorted(REVIEW_DIR.glob("*.meta.json"), key=os.path.getmtime, reverse=True):
         meta = read_json(f)
         article_id = f.stem.replace(".meta", "")
-        article_path = REVIEW_DIR / f"{article_id}.md"
-        article_content = article_path.read_text(encoding="utf-8") if article_path.exists() else ""
         articles.append({
             "id": article_id,
             "meta": meta,
-            "content_preview": article_content[:500],
+            "content_preview": "",
             "source": "filesystem",
         })
 
@@ -150,7 +162,10 @@ def get_all_approval_records(limit: int = Query(50, ge=1, le=200)):
 @router.get("/article/{article_id}/content")
 def get_article_content(article_id: str):
     """Return full markdown content of a review article."""
-    article_path = REVIEW_DIR / f"{article_id}.md"
+    safe_id = _safe_article_id(article_id)
+    if not safe_id:
+        raise HTTPException(400, f"非法的文章 ID: {article_id}")
+    article_path = REVIEW_DIR / f"{safe_id}.md"
     if not article_path.exists():
         raise HTTPException(404, f"文章不存在: {article_id}")
     content = article_path.read_text(encoding="utf-8")
@@ -160,7 +175,10 @@ def get_article_content(article_id: str):
 @router.put("/article/{article_id}")
 def update_article_content(article_id: str, req: UpdateArticleRequest):
     """Update markdown content of a review article."""
-    article_path = REVIEW_DIR / f"{article_id}.md"
+    safe_id = _safe_article_id(article_id)
+    if not safe_id:
+        raise HTTPException(400, f"非法的文章 ID: {article_id}")
+    article_path = REVIEW_DIR / f"{safe_id}.md"
     if not article_path.exists():
         raise HTTPException(404, f"文章不存在: {article_id}")
     article_path.write_text(req.content, encoding="utf-8")

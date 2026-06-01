@@ -88,15 +88,19 @@ class TestBroadcast:
 
 
 class TestStatusHash:
-    def test_deterministic(self, manager):
-        status = {"type": "test", "value": 42}
-        h1 = manager._status_hash(status)
-        h2 = manager._status_hash(status)
+    def test_deterministic(self, manager, tmp_path, monkeypatch):
+        monkeypatch.setattr("dashboard.backend.ws.STATUS_DIR", tmp_path)
+        (tmp_path / "scout.json").write_text('{"agent":"scout"}')
+        h1 = manager._status_hash()
+        h2 = manager._status_hash()
         assert h1 == h2
 
-    def test_different_for_different_data(self, manager):
-        h1 = manager._status_hash({"a": 1})
-        h2 = manager._status_hash({"a": 2})
+    def test_different_for_different_data(self, manager, tmp_path, monkeypatch):
+        monkeypatch.setattr("dashboard.backend.ws.STATUS_DIR", tmp_path)
+        (tmp_path / "scout.json").write_text('{"agent":"scout","v":1}')
+        h1 = manager._status_hash()
+        (tmp_path / "scout.json").write_text('{"agent":"scout","v":2}')
+        h2 = manager._status_hash()
         assert h1 != h2
 
 
