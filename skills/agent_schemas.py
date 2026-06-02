@@ -48,6 +48,8 @@ class ArticleDraft(BaseModel):
     videos: list[str] = Field(default_factory=list, description="视频路径")
     video_prompts: list[str] = Field(default_factory=list, description="视频生成 prompt")
     video_generation_method: str = Field(default="agnes", description="视频生成方式")
+    tts_audio: list[str] = Field(default_factory=list, description="TTS 语音路径")
+    tts_method: str = Field(default="mimo-v2.5-tts", description="TTS 方式")
 
 
 class QualityGateResult(BaseModel):

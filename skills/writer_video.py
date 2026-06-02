@@ -1,9 +1,10 @@
-"""Writer video — Agnes AI video generation with LLM prompt engineering.
+"""Writer video — Agnes AI video generation + MiMo TTS with LLM prompt engineering.
 
 Stage 7b flow (optional, after illustration):
   1. Load video count from writing_styles.json
   2. LLM generates English video prompt based on article content
   3. Agnes API generates video from prompt (async polling, up to 15 min)
+  4. MiMo-V2.5-TTS generates voiceover audio from article text
 
 Note: This is a helper module, not an agent. WriterAgent passes its own logger
 to each function here, so this module does not extend AgentBase directly.
@@ -212,6 +213,22 @@ def generate_video(
 
     # Step 2: Generate video via Agnes
     path = generate_video_agnes(video_prompt, video_dir, duration, logger)
+
+    # Step 3: Generate TTS voiceover (optional, non-blocking)
+    try:
+        from skills.tts import synthesize_speech
+        tts_path = video_dir / "voiceover.wav"
+        # Use first 500 chars for TTS (video is short, voiceover should be concise)
+        tts_text = text[:500]
+        audio_path = synthesize_speech(
+            tts_text, tts_path,
+            content_type=content_type,
+            logger=logger,
+        )
+        if audio_path:
+            logger.info(f"TTS voiceover generated: {audio_path}")
+    except Exception as e:
+        logger.warning(f"TTS voiceover failed (non-blocking): {e}")
 
     if path:
         logger.info(f"Video generation complete: {path}")
