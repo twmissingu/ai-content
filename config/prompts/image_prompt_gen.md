@@ -26,20 +26,38 @@
 [主体描述] + [动作/姿态] + [场景环境] + [光线] + [镜头/构图] + [色调/氛围] + [质感修饰]
 ```
 
-### 1. 主体描述 — 用摄影语言，不用形容词堆砌
+### 1. 主体描述 — 先理解概念本质，再选择视觉语言
 
-**正确**: `A developer reviewing code on a laptop, hands resting on keyboard`
+**核心原则：不要用表面符号，要抓深层隐喻。**
+
+- 不要把"效率"理解成钟表和箭头，要理解成流程压缩、阻力消除、时间折叠
+- 不要把"安全"理解成盾牌和锁，要理解成边界、包裹、内部空间、无威胁的静止
+- 不要把"创新"理解成灯泡和火箭，要理解成旧结构断裂、新形态涌现、边界模糊
+- 不要把"连接"理解成线条和网络，要理解成接触点、信息流、间隙消失
+
+**正确**: `A developer reviewing code on a laptop, hands resting on keyboard, soft window light`
 **错误**: `A beautiful amazing stunning developer workspace`
 
 - 描述具体的人/物/动作，而非抽象形容
 - 用"摄影师在拍什么"的方式描述，而非"AI画什么"
 - 控制在 1-2 个核心主体，不要塞入过多元素
 
-### 2. 场景环境 — 用物理空间锚定真实感
+### 2. 场景环境 — 用物理空间和材质锚定真实感
 
 - 包含具体材质：`marble desk`, `brushed aluminum`, `soft linen curtain`, `warm wood surface`
 - 包含空间细节：`minimalist studio`, `cluttered workshop`, `sun-drenched cafe`
 - 避免抽象场景：不要 `beautiful background`，要 `white concrete wall with subtle texture`
+
+**材质选择指南（根据内容主题选择）：**
+
+| 主题倾向 | 推荐材质 | 避免材质 |
+|---------|---------|---------|
+| 科技/精密 | `brushed metal, glass, transparent layers` | 木材、纸张 |
+| 温暖/人文 | `paper texture, linen, warm wood, ceramic` | 金属、塑料 |
+| 冷静/理性 | `concrete, matte surface, clean glass` | 暖色织物 |
+| 艺术/创意 | `canvas texture, ink, watercolor paper, pigment` | 工业材料 |
+| 自然/有机 | `stone, wood grain, leaf veins, water surface` | 金属、数字网格 |
+| 高端/奢侈 | `marble, silk, leather, brushed gold` | 塑料、廉价合成 |
 
 ### 3. 光线描述 — 决定画面质感的关键
 
@@ -115,14 +133,38 @@
 - 过长（>12 个短语）：画面混乱，元素冲突
 - 过短（<3 个短语）：细节不足，缺乏质感
 
+### 8. 风格自适应 — 让主题决定风格，不要套模板
+
+不同内容类型需要真正的风格差异，不是换颜色那么简单：
+
+- 新闻/工具 → 冷静、理性、精确 → `editorial photography, clean composition, cool tones`
+- 观点/洞察 → 深度、思考、层次 → `fine art photography, chiaroscuro, moody atmosphere`
+- 生活/分享 → 温暖、真实、亲近 → `lifestyle photography, golden hour, natural grain`
+- 教程/指南 → 清晰、有序、友好 → `flat illustration, clean lines, soft pastel`
+- 科技/未来 → 精密、前沿、结构 → `cyberpunk aesthetic, volumetric lighting, dark atmosphere`
+
 ## 禁忌
 
+### 绝对禁止
 - 不要生成包含文字、字母、数字的图片（AI 渲染文字效果差）
 - 不要生成过于血腥、暴力、政治敏感的内容
-- 不要使用过于抽象或与文章内容无关的描述
 - 不要使用中文，全部用英文
-- 不要堆砌质量修饰词（1-2 个足够）
-- 不要使用 `vibrant`, `HDR`, `oversaturated` 等过度饱和词
+
+### 高级感杀手（必须避免）
+- 不要堆砌质量修饰词（`ultra-detailed masterpiece 8K hyperrealistic` = AI 味）
+- 不要使用 `vibrant`, `HDR`, `oversaturated`, `rainbow` 等过度饱和词
+- 不要使用廉价视觉风格：`PPT style`, `Canva template`, `stock photo look`
+- 不要使用无意义渐变：`gradient background`（无具体色彩描述）
+- 不要使用俗气霓虹：`neon colors`（除非明确的赛博风格且有目的）
+- 不要使用过度拟真：`photorealistic, hyperrealistic`（用具体相机型号替代）
+- 不要使用 AI 随机纹理：`abstract digital art, AI generated texture`
+
+### 构图禁忌
+- 不要把主体放在画面边缘或角落（除非刻意裁切构图）
+- 不要让背景比主体更抢眼
+- 不要让装饰元素比核心主体更大
+- 不要使用"满屏堆砌"构图（留白 = 高级感）
+- 不要所有图片都用同一种构图模板
 
 ## 输出格式
 
