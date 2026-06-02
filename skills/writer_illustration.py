@@ -1,105 +1,202 @@
-"""Writer illustration helpers — HTML template generation and screenshots.
+"""Writer illustration — Agnes AI image generation with LLM prompt engineering.
 
-Extracted from WriterAgent (Stage 7: illustrate) to keep writer.py focused
-on the pipeline orchestration logic.
+Replaces the old HTML template + Playwright screenshot approach.
+Stage 7 flow:
+  1. Load style config from image_styles.json + illustration count from writing_styles.json
+  2. LLM generates English image prompts based on article content
+  3. Agnes API generates images from prompts
+
+Note (#23): This is a helper module, not an agent. WriterAgent (which extends
+AgentBase) passes its own logger to each function here, so this module does not
+extend AgentBase directly.
 """
 
+import json
 import logging
+import os
+import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 
+from config.settings import CONFIG_DIR
+from skills.common import get_agent_logger
 
-def generate_html_templates(
+
+def _load_image_styles() -> dict:
+    """Load image style mappings from config/image_styles.json."""
+    path = CONFIG_DIR / "image_styles.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _load_illustration_count(worker_type: str) -> int:
+    """Load illustration count from writing_styles.json for the given platform.
+
+    Uses the platform default style (e.g., 'wechat_default').
+    """
+    path = CONFIG_DIR / "writing_styles.json"
+    if not path.exists():
+        return 3  # fallback
+    try:
+        styles = json.loads(path.read_text(encoding="utf-8"))
+        default_key = f"{worker_type}_default"
+        style = styles.get(default_key, {})
+        return style.get("illustrations", 3)
+    except (json.JSONDecodeError, OSError):
+        return 3
+
+
+def generate_image_prompts(
     text: str,
     topic_title: str,
-    img_dir: Path,
-    domain: str,
-) -> list[Path]:
-    """Generate HTML template files for illustrations.
+    worker_type: str,
+    content_type: Optional[str] = None,
+    logger: Optional[logging.Logger] = None,
+    image_styles: Optional[dict] = None,
+) -> dict:
+    """Use LLM to generate image prompts from article content.
 
-    Takes the first 3 paragraphs longer than 50 chars and renders them
-    as card-style HTML snippets suitable for screenshot conversion.
+    Returns: {"cover_prompt": str, "image_prompts": [str, ...]}
     """
-    html_files: list[Path] = []
-    paragraphs = [p for p in text.split("\n\n") if len(p) > 50]
-    sections_to_illustrate = paragraphs[:3]
+    from skills.llm import LLMError, chat_structured
+    from skills.common import load_prompt
 
-    for i, section in enumerate(sections_to_illustrate):
-        section_title = section[:60].replace("\n", " ")
-        html = f"""<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="utf-8"><style>
-body {{ font-family: -apple-system, sans-serif; background: #f8f9fa;
-       display: flex; justify-content: center; align-items: center;
-       min-height: 400px; margin: 0; padding: 20px; }}
-.card {{ background: white; border-radius: 16px; padding: 32px;
-        max-width: 580px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }}
-.label {{ color: #666; font-size: 12px; letter-spacing: 0.5px;
-         text-transform: uppercase; margin-bottom: 8px; }}
-h2 {{ font-size: 20px; line-height: 1.5; color: #111; margin: 0 0 12px 0; }}
-p {{ font-size: 15px; line-height: 1.7; color: #333; margin: 0; }}
-.divider {{ height: 1px; background: #eee; margin: 16px 0; }}
-.tag {{ display: inline-block; background: #e8f4fd; color: #1a73e8;
-        padding: 4px 12px; border-radius: 20px; font-size: 12px; }}
-</style></head><body>
-<div class="card">
-  <div class="label">稿定 · AI 观点</div>
-  <h2>{topic_title}</h2>
-  <div class="divider"></div>
-  <p>{section_title[:200]}</p>
-  <div class="divider"></div>
-  <span class="tag">{domain}</span>
-</div></body></html>"""
-        html_path = img_dir / f"illustration_{i + 1}.html"
-        html_path.write_text(html, encoding="utf-8")
-        html_files.append(html_path)
+    if logger is None:
+        logger = get_agent_logger(__name__)
 
-    return html_files
+    if image_styles is None:
+        image_styles = _load_image_styles()
+    count = _load_illustration_count(worker_type)
+
+    if count == 0:
+        logger.info(f"illustrations=0 for {worker_type}, skipping image generation")
+        return {"cover_prompt": "", "image_prompts": []}
+
+    # Determine content type for style lookup
+    if content_type is None:
+        content_type = "tutorial"  # default fallback
+
+    style_cfg = image_styles.get(content_type, image_styles.get("tutorial", {}))
+    style_keywords = style_cfg.get("style", "modern, clean, high quality")
+    aspect_ratio = style_cfg.get("aspect_ratio", "16:9")
+    size = style_cfg.get("size", "1024x576")
+
+    # image_count = total - 1 (cover)
+    image_count = max(0, count - 1)
+
+    # Load prompt template
+    prompt_template = load_prompt(
+        "image_prompt_gen",
+        topic=topic_title,
+        content_type=content_type,
+        platform=worker_type,
+        style=style_keywords,
+        count=count,
+        image_count=image_count,
+        aspect_ratio=aspect_ratio,
+        size=size,
+        text_summary=text[:2000],
+    )
+
+    system_prompt = (
+        "You are a professional AI image prompt engineer. "
+        "Generate high-quality English image prompts based on article content. "
+        "Always respond with valid JSON only."
+    )
+
+    try:
+        result = chat_structured(
+            system_prompt=system_prompt,
+            user_prompt=prompt_template,
+            json_mode=True,
+            temperature=0.7,
+        )
+        cover_prompt = result.get("cover_prompt", "")
+        image_prompts = result.get("image_prompts", [])
+
+        logger.info(
+            f"Generated {len(image_prompts) + 1} image prompts "
+            f"(cover + {len(image_prompts)} inline)"
+        )
+        return {"cover_prompt": cover_prompt, "image_prompts": image_prompts}
+
+    except (LLMError, json.JSONDecodeError, KeyError) as e:
+        logger.error(f"Image prompt generation failed: {e}")
+        return {"cover_prompt": "", "image_prompts": []}
 
 
-def batch_screenshot(
-    html_files: list[Path],
+def generate_images_agnes(
+    prompts: list[str],
+    img_dir: Path,
+    size: str = "1024x576",
     logger: Optional[logging.Logger] = None,
 ) -> list[str]:
-    """Batch screenshot HTML files, reusing a single browser instance.
+    """Generate images using Agnes API for a list of prompts.
 
-    Falls back to returning the HTML paths when Playwright is not installed.
+    Returns list of local image file paths.
     """
     if logger is None:
-        logger = logging.getLogger(__name__)
+        logger = get_agent_logger(__name__)
 
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        logger.info("Playwright not installed, returning HTML files")
-        return [str(f) for f in html_files]
+    agnes_script = Path(os.environ.get(
+        "AGNES_SCRIPT_PATH",
+        str(Path.home() / ".agents/skills/agnes-generate/scripts/image_gen.py"),
+    ))
+    if not agnes_script.exists():
+        logger.error(f"Agnes script not found: {agnes_script}")
+        return []
 
-    png_paths: list[str] = []
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            for html_path in html_files:
-                try:
-                    page = browser.new_page(
-                        viewport={"width": 580, "height": 440},
-                        device_scale_factor=2,
-                    )
-                    page.goto(f"file://{html_path.resolve()}")
-                    page.wait_for_load_state("networkidle")
-                    png_path = html_path.with_suffix(".png")
-                    page.screenshot(path=str(png_path))
-                    page.close()
-                    png_paths.append(str(png_path))
-                    logger.info(f"Screenshot: {png_path}")
-                except Exception as e:
-                    logger.warning(f"Screenshot failed for {html_path.name}: {e}")
-                    png_paths.append(str(html_path))
-            browser.close()
-    except Exception as e:
-        logger.error(f"Browser launch failed: {e}")
-        return [str(f) for f in html_files]
+    def _sanitize_prompt(raw: str, max_len: int = 2000) -> str:
+        """Strip control chars/null bytes and truncate LLM-generated prompt."""
+        cleaned = raw.replace("\x00", "")
+        cleaned = "".join(c for c in cleaned if c == "\n" or c == "\t" or (ord(c) >= 32))
+        if len(cleaned) > max_len:
+            logger.warning(
+                f"Image prompt truncated from {len(cleaned)} to {max_len} chars"
+            )
+            cleaned = cleaned[:max_len]
+        return cleaned
 
-    return png_paths
+    def _generate_one(i: int, prompt: str) -> Optional[str]:
+        output = img_dir / f"image_{i + 1}.png"
+        safe_prompt = _sanitize_prompt(prompt)
+        try:
+            result = subprocess.run(
+                ["python3", str(agnes_script), safe_prompt, str(output), size],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode == 0 and output.exists():
+                logger.info(f"Agnes generated: {output.name}")
+                return str(output)
+            else:
+                logger.warning(
+                    f"Agnes failed for image {i + 1}: {result.stderr[:200]}"
+                )
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Agnes timeout for image {i + 1}")
+        except (OSError, subprocess.SubprocessError) as e:
+            logger.warning(f"Agnes error for image {i + 1}: {e}")
+        return None
+
+    tasks = [(i, p) for i, p in enumerate(prompts) if p]
+    paths: list[str] = []
+    with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+        futures = {
+            executor.submit(_generate_one, i, p): i for i, p in tasks
+        }
+        for future in as_completed(futures):
+            result = future.result()
+            if result is not None:
+                paths.append(result)
+
+    return paths
 
 
 def illustrate(
@@ -109,16 +206,54 @@ def illustrate(
     run_timestamp: str,
     domain: str,
     logger: Optional[logging.Logger] = None,
+    worker_type: str = "wechat",
+    content_type: Optional[str] = None,
 ) -> list[str]:
-    """Full illustration pipeline: generate HTML templates then screenshot them."""
+    """Full illustration pipeline: LLM prompts → Agnes image generation.
+
+    Args:
+        text: Article body text
+        topic_title: Article title
+        images_dir: Base images directory (config.settings.IMAGES_DIR)
+        run_timestamp: Current run timestamp for directory naming
+        domain: Domain tag (unused in Agnes mode, kept for compatibility)
+        logger: Logger instance
+        worker_type: Platform type (wechat/xiaohongshu/douyin)
+        content_type: Content type (tutorial/news/etc.) for style lookup
+
+    Returns: List of image file paths (PNG).
+    """
     if logger is None:
-        logger = logging.getLogger(__name__)
+        logger = get_agent_logger(__name__)
 
     img_dir = images_dir / run_timestamp
     img_dir.mkdir(parents=True, exist_ok=True)
 
-    html_files = generate_html_templates(text, topic_title, img_dir, domain)
-    if not html_files:
+    # Load image styles once (shared between prompt generation and size lookup)
+    image_styles = _load_image_styles()
+
+    # Step 1: Generate prompts via LLM
+    prompts_data = generate_image_prompts(
+        text, topic_title, worker_type, content_type, logger,
+        image_styles=image_styles,
+    )
+
+    all_prompts = []
+    if prompts_data["cover_prompt"]:
+        all_prompts.append(prompts_data["cover_prompt"])
+    all_prompts.extend(prompts_data["image_prompts"])
+
+    if not all_prompts:
+        logger.info("No image prompts generated, skipping illustration")
         return []
 
-    return batch_screenshot(html_files, logger)
+    # Step 2: Determine image size from style config
+    ct = content_type or "tutorial"
+    style_cfg = image_styles.get(ct, image_styles.get("tutorial", {}))
+    size = style_cfg.get("size", "1024x576")
+
+    # Step 3: Generate images via Agnes
+    paths = generate_images_agnes(all_prompts, img_dir, size, logger)
+
+    logger.info(f"Illustration complete: {len(paths)} images generated")
+    return paths

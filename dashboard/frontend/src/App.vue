@@ -38,6 +38,7 @@ let refreshInterval: ReturnType<typeof setInterval> | null = null
 // WebSocket for real-time pipeline updates
 const { isConnected: wsConnected, isReconnecting: wsReconnecting } = useWebSocket({
   url: '/ws/pipeline',
+  apiKey: import.meta.env.VITE_API_KEY || '',
   onMessage: (data) => {
     store.handleWsMessage(data)
   },

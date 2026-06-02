@@ -115,36 +115,36 @@ class TestPublisherAgent:
 
         assert result is False
 
-    def test_publish_aitoearn_success(self, tmp_path):
-        """Should return True when AiToEarn publish succeeds."""
+    def test_publish_aitoearn_mcp_success(self, tmp_path):
+        """Should return True when AiToEarn MCP publish succeeds."""
         agent = PublisherAgent()
         article = tmp_path / "test.md"
         article.write_text("# Test Article\nContent here.")
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
-            result = agent._publish_aitoearn("xiaohongshu", article, {"topic": "Test"})
+            result = agent._publish_aitoearn_mcp("kuaishou", article, {"topic": "Test"})
 
         assert result is True
 
-    def test_publish_aitoearn_unsupported_platform(self, tmp_path):
+    def test_publish_aitoearn_mcp_unsupported_platform(self, tmp_path):
         """Should return False for unsupported platform."""
         agent = PublisherAgent()
         article = tmp_path / "test.md"
         article.write_text("# Test Article\nContent here.")
 
-        result = agent._publish_aitoearn("unsupported", article, {"topic": "Test"})
+        result = agent._publish_aitoearn_mcp("unsupported", article, {"topic": "Test"})
         assert result is False
 
-    def test_publish_aitoearn_failure(self, tmp_path):
-        """Should return False when AiToEarn publish fails."""
+    def test_publish_aitoearn_mcp_failure(self, tmp_path):
+        """Should return False when AiToEarn MCP publish fails."""
         agent = PublisherAgent()
         article = tmp_path / "test.md"
         article.write_text("# Test Article\nContent here.")
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value.returncode = 1
-            result = agent._publish_aitoearn("douyin", article, {"topic": "Test"})
+            result = agent._publish_aitoearn_mcp("shipinhao", article, {"topic": "Test"})
 
         assert result is False
 
@@ -158,13 +158,13 @@ class TestPublisherAgent:
             (tmp_path / "test123.md").write_text("# Test Article")
 
             with patch.object(agent, "_publish_wechat", return_value=True) as mock_wechat:
-                with patch.object(agent, "_publish_aitoearn", return_value=True) as mock_aitoearn:
+                with patch.object(agent, "_publish_webbridge", return_value=True) as mock_webbridge:
                     with patch.object(agent, "write_status"):
                         with patch.object(agent, "write_completed"):
                             agent.run(target_id="test123", platforms=["wechat", "xiaohongshu"])
 
         mock_wechat.assert_called_once()
-        mock_aitoearn.assert_called_once()
+        mock_webbridge.assert_called_once()
 
     def test_run_records_failures(self, tmp_path):
         """Should record failures when platform publish fails."""

@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -28,6 +29,7 @@ from skills.action import mark_processed
 from skills.agent_schemas import PublisherResult
 from skills.common import AgentBase, agent_main
 from skills.platform_adapters import adapt_content
+from skills.publisher_webbridge import WebBridgePublisher
 
 
 class PublisherAgent(AgentBase):
@@ -65,23 +67,32 @@ class PublisherAgent(AgentBase):
         """Publish to WeChat draft box via baoyu-post-to-wechat.
 
         Uses temp file instead of command-line args for security.
+        Passes image paths as --cover and --image arguments.
         """
         raw_content = article_path.read_text(encoding='utf-8')
         title = raw_content.split('\n')[0].lstrip('# ').strip() if raw_content else ""
         title, content = adapt_content(title, raw_content, "wechat")
         content = content[:5000]
-        
+
+        # Collect image paths from meta
+        images = meta.get("images", [])
+        cover = images[0] if images else None
+        inline_images = images[1:] if len(images) > 1 else []
+
         # Write content to temp file (avoid command-line injection)
         tmp_fd, tmp_path = tempfile.mkstemp(suffix='.md', prefix='wechat_')
         try:
             with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
                 f.write(content)
-            
-            result = subprocess.run(
-                ["npx", "skills", "run", "baoyu-post-to-wechat",
-                 "--file", tmp_path],
-                capture_output=True, text=True, timeout=90,
-            )
+
+            cmd = ["npx", "skills", "run", "baoyu-post-to-wechat", "--file", tmp_path]
+            if cover and Path(cover).exists():
+                cmd.extend(["--cover", cover])
+            for img in inline_images:
+                if Path(img).exists():
+                    cmd.extend(["--image", img])
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             return result.returncode == 0
         except Exception as e:
             self.logger.error(f"WeChat publish failed: {e}")
@@ -92,42 +103,64 @@ class PublisherAgent(AgentBase):
             except OSError:
                 pass
 
-    def _publish_aitoearn(self, platform: str, article_path: Path, meta: dict) -> bool:
-        """Publish to AiToEarn platform draft box via MCP."""
+    def _publish_webbridge(self, platform: str, article_path: Path, meta: dict) -> bool:
+        """Publish to Xiaohongshu/Douyin via Kimi WebBridge browser automation."""
+        raw_content = article_path.read_text(encoding="utf-8")
+        title = raw_content.split('\n')[0].lstrip('# ').strip() if raw_content else ""
+        title, content = adapt_content(title, raw_content, platform)
+
+        images = meta.get("images", [])
+        # Filter to only existing files
+        valid_images = [img for img in images if Path(img).exists()]
+
+        publisher = WebBridgePublisher(logger=self.logger)
+
+        if platform == "xiaohongshu":
+            result = publisher.publish_xiaohongshu(title, content[:3000], valid_images)
+        elif platform == "douyin":
+            result = publisher.publish_douyin(title, content[:3000], valid_images)
+        else:
+            self.logger.warning(f"WebBridge does not support platform: {platform}")
+            return False
+
+        if result["status"] == "success":
+            return True
+        else:
+            self.logger.error(f"{platform} publish failed: {result.get('error')}")
+            return False
+
+    def _publish_aitoearn_mcp(self, platform: str, article_path: Path, meta: dict) -> bool:
+        """Fallback: publish via AiToEarn MCP (for kuaishou/shipinhao)."""
         raw_content = article_path.read_text(encoding="utf-8")
         title = raw_content.split('\n')[0].lstrip('# ').strip() if raw_content else ""
         title, content = adapt_content(title, raw_content, platform)
         tool_map = {
-            "xiaohongshu": ("aitoearn_createImageTextDraft", "IMAGE_TEXT"),
-            "douyin": ("aitoearn_createVideoDraft", "VIDEO"),
-            "kuaishou": ("aitoearn_createVideoDraft", "VIDEO"),
-            "shipinhao": ("aitoearn_createVideoDraft", "VIDEO"),
+            "kuaishou": "aitoearn_createVideoDraft",
+            "shipinhao": "aitoearn_createVideoDraft",
         }
-        tool_name, draft_type = tool_map.get(platform, (None, None))
+        tool_name = tool_map.get(platform)
         if not tool_name:
-            self.logger.warning(f"No tool mapping for platform: {platform}")
+            self.logger.warning(f"No MCP tool for platform: {platform}")
             return False
 
-        # Write params to temp file for security
         params = {
             "title": title or meta.get("topic", ""),
             "content": content[:3000],
-            "draftType": draft_type,
+            "draftType": "VIDEO",
             "platform": platform,
         }
-        
+
         tmp_fd, tmp_path = tempfile.mkstemp(suffix='.json', prefix='aitoearn_')
         try:
             with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
                 json.dump(params, f, ensure_ascii=False)
-            
             result = subprocess.run(
                 ["hermes", "mcp", "call", tool_name, "--params-file", tmp_path],
                 capture_output=True, text=True, timeout=90,
             )
             return result.returncode == 0
         except Exception as e:
-            self.logger.error(f"{platform} publish failed: {e}")
+            self.logger.error(f"{platform} MCP publish failed: {e}")
             return False
         finally:
             try:
@@ -158,46 +191,44 @@ class PublisherAgent(AgentBase):
         self.logger.info(f"Distributing: {meta.get('topic', 'unknown')}")
         results: dict[str, bool] = {}
 
-        for i, platform in enumerate(platforms):
-            display = PLATFORM_DISPLAY.get(platform, platform)
-            progress = 20 + i * (60 // len(platforms))
-            self.write_status("分发中", progress, f"分发到{display}")
-
+        def _publish_one(platform: str) -> tuple[str, bool]:
+            """Publish to a single platform (runs in thread pool)."""
             if platform == "wechat":
-                ok = self._publish_wechat(article, meta)
-            elif platform in ("xiaohongshu", "douyin", "kuaishou", "shipinhao"):
-                ok = self._publish_aitoearn(platform, article, meta)
-            else:
-                ok = False
+                return platform, self._publish_wechat(article, meta)
+            elif platform in ("xiaohongshu", "douyin"):
+                return platform, self._publish_webbridge(platform, article, meta)
+            elif platform in ("kuaishou", "shipinhao"):
+                return platform, self._publish_aitoearn_mcp(platform, article, meta)
+            return platform, False
 
-            results[platform] = ok
+        self.write_status("分发中", 20, f"分发到 {len(platforms)} 个平台")
 
-            # Report per-platform result
-            if ok:
-                self.write_status("分发成功", progress + 60 // len(platforms), f"{display} 发布成功")
-            else:
-                self.write_status("分发失败", progress + 60 // len(platforms), f"{display} 发布失败")
+        with ThreadPoolExecutor(max_workers=len(platforms)) as executor:
+            futures = {executor.submit(_publish_one, p): p for p in platforms}
+            for future in as_completed(futures):
+                platform, ok = future.result()
+                display = PLATFORM_DISPLAY.get(platform, platform)
+                results[platform] = ok
 
-            # Validate result via schema
-            try:
-                PublisherResult.model_validate({
-                    "platform": platform,
-                    "status": "success" if ok else "failed",
-                })
-            except Exception as e:
-                self.logger.warning(f"PublisherResult validation failed for {platform}: {e}")
+                if ok:
+                    self.logger.info(f"{display}: success")
+                else:
+                    self.logger.warning(f"{display}: failed")
+                    self.write_failed_action(
+                        target_id=target_id,
+                        platform=platform,
+                        error=f"分发到{display}失败",
+                        meta=meta,
+                    )
 
-            if ok:
-                self.logger.info(f"{display}: ✅")
-            else:
-                self.logger.warning(f"{display}: ❌")
-                # Record failure
-                self.write_failed_action(
-                    target_id=target_id,
-                    platform=platform,
-                    error=f"分发到{display}失败",
-                    meta=meta,
-                )
+                # Validate result via schema
+                try:
+                    PublisherResult.model_validate({
+                        "platform": platform,
+                        "status": "success" if ok else "failed",
+                    })
+                except Exception as e:
+                    self.logger.warning(f"PublisherResult validation failed for {platform}: {e}")
 
         # Summary
         success_count = sum(1 for v in results.values() if v)

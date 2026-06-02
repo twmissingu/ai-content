@@ -13,7 +13,6 @@ Uses AgentBase for unified status writing, logging, and metrics.
 """
 
 import json
-import os
 import re
 import subprocess
 import sys
@@ -21,7 +20,7 @@ import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from config.settings import DATA_DIR, DOMAIN, KB_DIR, STATUS_DIR
 from skills.common import AgentBase, agent_main

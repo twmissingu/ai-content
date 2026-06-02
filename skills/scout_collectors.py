@@ -4,6 +4,7 @@ Provides collector functions for china-hot MCP, GitHub trending,
 Firecrawl web search, kb/materials, and RSS candidates.
 """
 
+import concurrent.futures
 import json
 import logging
 import re
@@ -167,40 +168,57 @@ def collect_all() -> list[dict]:
 
     candidates: list[dict] = []
 
-    # china-hot sources (may fail, graceful degrade)
-    for source in ["weibo", "zhihu", "bilibili", "baidu", "douyin", "toutiao", "kr36"]:
-        items = _call_china_hot(source)
-        for item in items[:3]:  # top 3 per source
-            title = item.get("title", "") or item.get("name", "") or ""
-            if title:
-                candidates.append({
-                    "title": title,
-                    "description": item.get("description", "") or item.get("desc", "") or "",
-                    "url": item.get("url", "") or item.get("link", "") or "",
-                    "source": source,
-                    "hot_value": item.get("hot_value", 0) or item.get("score", 50),
-                })
+    # Run independent collectors in parallel (subprocess + httpx calls)
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        # china-hot sources (7 independent subprocess calls)
+        china_hot_futures = {
+            pool.submit(_call_china_hot, s): s
+            for s in ["weibo", "zhihu", "bilibili", "baidu", "douyin", "toutiao", "kr36"]
+        }
+        for future in concurrent.futures.as_completed(china_hot_futures):
+            source = china_hot_futures[future]
+            try:
+                for item in future.result()[:3]:  # top 3 per source
+                    title = item.get("title", "") or item.get("name", "") or ""
+                    if title:
+                        candidates.append({
+                            "title": title,
+                            "description": item.get("description", "") or item.get("desc", "") or "",
+                            "url": item.get("url", "") or item.get("link", "") or "",
+                            "source": source,
+                            "hot_value": item.get("hot_value", 0) or item.get("score", 50),
+                        })
+            except Exception:
+                logger.debug(f"china-hot {source} collector failed unexpectedly")
 
-    # GitHub
-    for item in _call_github_trending():
-        candidates.append(item)
+        # GitHub trending + kb/materials + Firecrawl searches (all independent)
+        github_fut = pool.submit(_call_github_trending)
+        materials_fut = pool.submit(_collect_materials)
+        firecrawl_queries = [f"今日科技热点 {DOMAIN}", "AI 最新动态"]
+        firecrawl_futures = {
+            pool.submit(_call_firecrawl_search, q): q for q in firecrawl_queries
+        }
 
-    # kb/materials
-    for item in _collect_materials():
-        candidates.append(item)
+        for item in github_fut.result():
+            candidates.append(item)
 
-    # Firecrawl web search
-    for query in [f"今日科技热点 {DOMAIN}", "AI 最新动态"]:
-        for item in _call_firecrawl_search(query):
-            title = item.get("title", "") or ""
-            if title:
-                candidates.append({
-                    "title": title,
-                    "description": item.get("description", "") or item.get("content", "") or "",
-                    "url": item.get("url", "") or item.get("link", "") or "",
-                    "source": "web_search",
-                    "hot_value": 50,
-                })
+        for item in materials_fut.result():
+            candidates.append(item)
+
+        for future in concurrent.futures.as_completed(firecrawl_futures):
+            try:
+                for item in future.result():
+                    title = item.get("title", "") or ""
+                    if title:
+                        candidates.append({
+                            "title": title,
+                            "description": item.get("description", "") or item.get("content", "") or "",
+                            "url": item.get("url", "") or item.get("link", "") or "",
+                            "source": "web_search",
+                            "hot_value": 50,
+                        })
+            except Exception:
+                logger.debug("Firecrawl search collector failed unexpectedly")
 
 
     # RSS candidates from rss_collector (pre-collected, cached)

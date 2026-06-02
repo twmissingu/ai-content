@@ -1,5 +1,12 @@
 """Pytest configuration for ai-content tests."""
 
+# TODO: Add performance/load/concurrency tests for:
+#   - API endpoint response times under concurrent requests
+#   - WebSocket broadcast latency with many connected clients
+#   - Rate limiter accuracy under high throughput
+#   - Database connection pool behavior under load
+#   - File watcher scalability with many status files
+
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock

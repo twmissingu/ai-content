@@ -25,7 +25,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-import sys
 from config.settings import DATA_DIR
 
 

@@ -56,9 +56,10 @@ def sample_topic(temp_dirs):
 class TestWriterIntegration:
     """Integration tests for Writer agent."""
     
-    @patch('skills.llm.chat')
-    @patch('skills.llm.chat_structured')
-    def test_writer_creates_article(self, mock_structured, mock_chat, temp_dirs, sample_topic, monkeypatch):
+    @patch('skills.writer_illustration.generate_image_prompts')
+    @patch('skills.writer.chat')
+    @patch('skills.writer.chat_structured')
+    def test_writer_creates_article(self, mock_structured, mock_chat, mock_img_prompts, temp_dirs, sample_topic, monkeypatch):
         """Test that Writer creates an article file."""
         # Mock LLM responses
         mock_chat.return_value = "这是一篇测试文章的内容..."
@@ -70,41 +71,49 @@ class TestWriterIntegration:
                 {"title": "AI 技术前沿", "score": 80, "rationale": "专业"},
             ]
         }
-        
+        # Skip illustration by returning empty prompts
+        mock_img_prompts.return_value = {"cover_prompt": "", "image_prompts": []}
+
         # Monkeypatch settings
         monkeypatch.chdir(temp_dirs['queue'].parent.parent)
-        
+
         import config.settings
+        import skills.writer as writer_mod
         monkeypatch.setattr(config.settings, 'PENDING_DIR', temp_dirs['pending'])
         monkeypatch.setattr(config.settings, 'REVIEW_DIR', temp_dirs['review'])
         monkeypatch.setattr(config.settings, 'STATUS_DIR', temp_dirs['status'])
         monkeypatch.setattr(config.settings, 'ACTIONS_DIR', temp_dirs['actions'])
-        
+        monkeypatch.setattr(writer_mod, 'PENDING_DIR', temp_dirs['pending'])
+        monkeypatch.setattr(writer_mod, 'REVIEW_DIR', temp_dirs['review'])
+        monkeypatch.setattr(writer_mod, 'STATUS_DIR', temp_dirs['status'])
+        monkeypatch.setattr(writer_mod, 'ACTIONS_DIR', temp_dirs['actions'])
+
         # Run writer
         from skills.writer import WriterAgent
         agent = WriterAgent()
-        
+
         # Mock _fetch_source to avoid subprocess call
         agent._fetch_source = MagicMock(return_value="测试素材内容")
-        
+
         agent.run()
-        
+
         # Verify article was created
         review_files = list(temp_dirs['review'].glob("*.md"))
         assert len(review_files) > 0, "No article file created"
-        
+
         # Verify meta was created
         meta_files = list(temp_dirs['review'].glob("*.meta.json"))
         assert len(meta_files) > 0, "No meta file created"
-        
+
         # Verify meta content
         meta = json.loads(meta_files[0].read_text())
         assert meta['status'] == 'completed'
         assert meta['word_count'] > 0
-    
+
+    @patch('skills.writer_illustration.generate_image_prompts')
     @patch('skills.writer.chat')
     @patch('skills.writer.chat_structured')
-    def test_writer_handles_low_quality(self, mock_structured, mock_chat, temp_dirs, sample_topic, monkeypatch):
+    def test_writer_handles_low_quality(self, mock_structured, mock_chat, mock_img_prompts, temp_dirs, sample_topic, monkeypatch):
         """Test that Writer handles low quality scores with rewriting."""
         # Mock LLM responses - first draft is low quality
         call_count = 0
@@ -121,15 +130,22 @@ class TestWriterIntegration:
             "weakness": "论点不够鲜明",
             "suggestions": ["加强论点", "增加案例"]
         }
+        # Skip illustration by returning empty prompts
+        mock_img_prompts.return_value = {"cover_prompt": "", "image_prompts": []}
 
         # Monkeypatch settings
         monkeypatch.chdir(temp_dirs['queue'].parent.parent)
 
         import config.settings
+        import skills.writer as writer_mod
         monkeypatch.setattr(config.settings, 'PENDING_DIR', temp_dirs['pending'])
         monkeypatch.setattr(config.settings, 'REVIEW_DIR', temp_dirs['review'])
         monkeypatch.setattr(config.settings, 'STATUS_DIR', temp_dirs['status'])
         monkeypatch.setattr(config.settings, 'ACTIONS_DIR', temp_dirs['actions'])
+        monkeypatch.setattr(writer_mod, 'PENDING_DIR', temp_dirs['pending'])
+        monkeypatch.setattr(writer_mod, 'REVIEW_DIR', temp_dirs['review'])
+        monkeypatch.setattr(writer_mod, 'STATUS_DIR', temp_dirs['status'])
+        monkeypatch.setattr(writer_mod, 'ACTIONS_DIR', temp_dirs['actions'])
 
         # Run writer
         from skills.writer import WriterAgent

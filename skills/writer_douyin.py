@@ -1,3 +1,4 @@
+# DEPRECATED: This module is not used by production code. Kept for reference only.
 """Writer Worker — Douyin script standard (15-60s video script).
 
 Phase 3: called by writer_router.py as a parallel Worker.

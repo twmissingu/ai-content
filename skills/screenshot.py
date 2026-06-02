@@ -1,3 +1,4 @@
+# DEPRECATED: This module is not used by production code. Kept for reference only.
 """HTML → PNG screenshot pipeline for article illustrations.
 
 Converts HTML templates to PNG images using Playwright.
@@ -11,11 +12,12 @@ from typing import Optional
 from config.settings import IMAGES_DIR
 
 
-def html_to_png(html_path: Path, output_path: Optional[Path] = None, width: int = 580, height: int = 440) -> Optional[Path]:
+def html_to_png(html_path: Path, output_path: Optional[Path] = None, width: int = 580, height: int = 440, browser=None) -> Optional[Path]:
     """Render an HTML file to PNG screenshot.
 
     Uses Playwright headless Chromium. Returns the output PNG path.
     Returns None on failure (graceful degrade — caller should fallback).
+    If a browser instance is provided, reuses it; otherwise launches a new one.
     """
     if output_path is None:
         output_path = html_path.with_suffix(".png")
@@ -26,35 +28,53 @@ def html_to_png(html_path: Path, output_path: Optional[Path] = None, width: int 
         print("[screenshot] Playwright not installed. Run: pip install playwright && python3 -m playwright install chromium")
         return None
 
+    own_browser = browser is None
     try:
-        with sync_playwright() as p:
+        if own_browser:
+            p = sync_playwright().start()
             browser = p.chromium.launch(headless=True)
-            page = browser.new_page(
-                viewport={"width": width, "height": height},
-                device_scale_factor=2,  # Retina quality
-            )
-            page.goto(f"file://{html_path.resolve()}")
-            page.wait_for_load_state("networkidle")
-            page.screenshot(path=str(output_path), full_page=False)
-            browser.close()
+        page = browser.new_page(
+            viewport={"width": width, "height": height},
+            device_scale_factor=2,  # Retina quality
+        )
+        page.goto(f"file://{html_path.resolve()}")
+        page.wait_for_load_state("networkidle")
+        page.screenshot(path=str(output_path), full_page=False)
+        page.close()
         print(f"[screenshot] OK: {output_path}")
         return output_path
     except Exception as e:
         print(f"[screenshot] Failed: {e}")
         return None
+    finally:
+        if own_browser:
+            browser.close()
+            p.stop()
 
 
 def batch_convert(html_dir: Path) -> list[str]:
     """Convert all .html files in a directory to .png.
 
+    Reuses a single browser instance across all files for better performance.
     Returns list of generated PNG paths.
     """
+    from playwright.sync_api import sync_playwright
+
+    html_files = sorted(html_dir.glob("*.html"))
+    if not html_files:
+        return []
+
     pngs: list[str] = []
-    for html_file in sorted(html_dir.glob("*.html")):
-        png_path = html_file.with_suffix(".png")
-        result = html_to_png(html_file, png_path)
-        if result:
-            pngs.append(str(result))
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            for html_file in html_files:
+                png_path = html_file.with_suffix(".png")
+                result = html_to_png(html_file, png_path, browser=browser)
+                if result:
+                    pngs.append(str(result))
+        finally:
+            browser.close()
     return pngs
 
 

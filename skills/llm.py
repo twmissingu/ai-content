@@ -186,6 +186,9 @@ def chat(
     track_cost: bool = True,
     injection_safety: bool = True,
 ) -> str:
+    # TODO(perf): Add LLM response caching. Hash (system_prompt, user_prompt, model, temperature)
+    # as cache key. Use a disk-based LRU cache (e.g. shelve or SQLite) with configurable TTL.
+    # This would eliminate redundant API calls for repeated prompts (e.g. scoring similar topics).
     """Send a chat completion request and return the text content.
 
     Parameters

@@ -48,3 +48,8 @@ class PromptSaveRequest(BaseModel):
 
 class UpdateArticleRequest(BaseModel):
     content: str
+
+
+class PublishRequest(BaseModel):
+    article_id: str
+    platforms: list[str] = ["wechat"]

@@ -87,10 +87,10 @@ def health():
         health_status["budget"] = {"error": "service unavailable"}
 
     health_status["queue_sizes"] = {
-        "pending": len(list(PENDING_DIR.glob("*.json"))),
-        "review": len(list(REVIEW_DIR.glob("*.meta.json"))),
-        "actions": len(list(ACTIONS_DIR.glob("*.json"))),
-        "failed": len(list(FAILED_DIR.glob("*.json"))),
+        "pending": sum(1 for _ in PENDING_DIR.glob("*.json")),
+        "review": sum(1 for _ in REVIEW_DIR.glob("*.meta.json")),
+        "actions": sum(1 for _ in ACTIONS_DIR.glob("*.json")),
+        "failed": sum(1 for _ in FAILED_DIR.glob("*.json")),
     }
 
     if health_status["queue_sizes"]["failed"] > 50:

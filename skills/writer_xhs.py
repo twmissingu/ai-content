@@ -1,3 +1,4 @@
+# DEPRECATED: This module is not used by production code. Kept for reference only.
 """Writer Worker — Xiaohongshu standard (300-800 chars, emoji, carousel).
 
 Phase 3: called by writer_router.py as a parallel Worker.

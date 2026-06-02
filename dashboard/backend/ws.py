@@ -22,6 +22,9 @@ from dashboard.backend.database import check_budget_limit
 logger = logging.getLogger("gaoding.dashboard")
 
 
+MAX_CONNECTIONS = 100
+
+
 class ConnectionManager:
     """Manages WebSocket connections and broadcasts status updates."""
 
@@ -32,8 +35,19 @@ class ConnectionManager:
         self._watcher_task: asyncio.Task | None = None
 
     async def connect(self, websocket: WebSocket):
+        """Accept and register a WebSocket connection."""
         await websocket.accept()
+        await self.register(websocket)
+
+    async def register(self, websocket: WebSocket):
+        """Register an already-accepted WebSocket connection."""
         async with self._lock:
+            if len(self._connections) >= MAX_CONNECTIONS:
+                logger.warning(
+                    f"Connection limit reached ({MAX_CONNECTIONS}), rejecting"
+                )
+                await websocket.close(code=4002, reason="Connection limit reached")
+                return
             self._connections.append(websocket)
         logger.info(f"WebSocket connected ({len(self._connections)} total)")
 

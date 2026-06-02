@@ -23,13 +23,10 @@ import time
 import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import feedparser
 import httpx
-
-# Ensure config is importable
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.settings import (
     CONFIG_DIR,
@@ -164,13 +161,26 @@ def _parse_entry(entry: dict, source_label: str, rss_type: str) -> Optional[dict
     }
 
 
+_HASH_INDEX_FILE = RSS_CACHE_DIR / "_hash_index.json"
+
+
 def _load_cached_hashes() -> set[str]:
-    """Load all existing content hashes from cache directory into memory."""
-    hashes = set()
+    """Load all existing content hashes from index file (O(1) startup).
+
+    Falls back to scanning individual cache files if index is missing.
+    """
+    if _HASH_INDEX_FILE.exists():
+        try:
+            return set(json.loads(_HASH_INDEX_FILE.read_text()))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Fallback: scan individual cache files and rebuild index
+    hashes: set[str] = set()
     if not RSS_CACHE_DIR.exists():
         return hashes
     for f in RSS_CACHE_DIR.iterdir():
-        if f.suffix == ".json":
+        if f.suffix == ".json" and f.name != "_hash_index.json":
             try:
                 data = json.loads(f.read_text())
                 h = data.get("content_hash")
@@ -178,7 +188,19 @@ def _load_cached_hashes() -> set[str]:
                     hashes.add(h)
             except (json.JSONDecodeError, OSError):
                 continue
+    # Persist index for next run
+    _save_hash_index(hashes)
     return hashes
+
+
+def _save_hash_index(hashes: set[str]) -> None:
+    """Persist the hash set to a single index file."""
+    try:
+        tmp = _HASH_INDEX_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(sorted(hashes), ensure_ascii=False))
+        os.rename(tmp, _HASH_INDEX_FILE)
+    except OSError:
+        pass
 
 
 def _save_cached(items: list[dict]):
@@ -199,6 +221,9 @@ def _save_cached(items: list[dict]):
             os.fsync(f.fileno())
         os.rename(tmp, path)
         known_hashes.add(item["content_hash"])
+
+    # Persist updated hash index
+    _save_hash_index(known_hashes)
 
 
 def _write_candidates(items: list[dict]):

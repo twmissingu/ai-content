@@ -345,91 +345,176 @@ class TestProofreadExtended:
         assert score < 100  # had AI-slop patterns
 
 
-class TestBatchScreenshot:
-    """Test _batch_screenshot method."""
+class TestIllustrate:
+    """Test _illustrate method (Agnes AI image generation)."""
 
-    def test_returns_html_when_no_playwright(self, writer_agent, tmp_path):
-        html1 = tmp_path / "test1.html"
-        html1.write_text("<html>test1</html>")
-        html2 = tmp_path / "test2.html"
-        html2.write_text("<html>test2</html>")
+    def test_illustrate_calls_agnes(self, writer_agent, tmp_path):
+        """Verify _illustrate invokes Agnes with generated prompts."""
+        from skills.writer_illustration import illustrate
 
-        with patch.dict('sys.modules', {'playwright': None, 'playwright.sync_api': None}):
-            result = writer_agent._batch_screenshot([html1, html2])
+        mock_prompts = {
+            "cover_prompt": "A beautiful tech scene",
+            "image_prompts": ["An AI lab", "A data center"],
+        }
 
-        assert len(result) == 2
-        assert all(p.endswith(".html") for p in result)
+        with patch("skills.writer_illustration.generate_image_prompts", return_value=mock_prompts), \
+             patch("skills.writer_illustration.generate_images_agnes", return_value=[
+                 str(tmp_path / "image_1.png"),
+                 str(tmp_path / "image_2.png"),
+                 str(tmp_path / "image_3.png"),
+             ]):
+            result = illustrate(
+                "test text", "test topic", tmp_path, "20260101", "tech",
+                worker_type="wechat",
+            )
 
-    def test_screenshots_successfully(self, writer_agent, tmp_path):
-        html1 = tmp_path / "test1.html"
-        html1.write_text("<html>test1</html>")
+        assert len(result) == 3
 
-        mock_page = MagicMock()
-        mock_browser = MagicMock()
-        mock_browser.new_page.return_value = mock_page
+    def test_illustrate_skips_when_count_zero(self, writer_agent, tmp_path):
+        """Verify illustration is skipped when count is 0."""
+        from skills.writer_illustration import illustrate
 
-        mock_pw_module = MagicMock()
-        mock_pw_module.sync_playwright.return_value = MagicMock(
-            __enter__=MagicMock(return_value=MagicMock(chromium=MagicMock(launch=MagicMock(return_value=mock_browser)))),
-            __exit__=MagicMock(return_value=False),
-        )
+        with patch("skills.writer_illustration._load_illustration_count", return_value=0):
+            result = illustrate(
+                "test text", "test topic", tmp_path, "20260101", "tech",
+                worker_type="tech_science_wechat",
+            )
 
-        with patch.dict('sys.modules', {'playwright': mock_pw_module, 'playwright.sync_api': mock_pw_module}):
-            result = writer_agent._batch_screenshot([html1])
+        assert result == []
 
-        assert len(result) == 1
-        assert result[0].endswith(".png")
+    def test_illustrate_handles_agnes_failure(self, writer_agent, tmp_path):
+        """Verify graceful handling when Agnes fails."""
+        from skills.writer_illustration import illustrate
 
-    def test_browser_launch_failure(self, writer_agent, tmp_path):
-        html1 = tmp_path / "test1.html"
-        html1.write_text("<html>test1</html>")
+        mock_prompts = {
+            "cover_prompt": "A scene",
+            "image_prompts": [],
+        }
 
-        mock_pw_module = MagicMock()
-        mock_pw_module.sync_playwright.return_value = MagicMock(
-            __enter__=MagicMock(return_value=MagicMock(chromium=MagicMock(launch=MagicMock(side_effect=Exception("browser not found"))))),
-            __exit__=MagicMock(return_value=False),
-        )
+        with patch("skills.writer_illustration.generate_image_prompts", return_value=mock_prompts), \
+             patch("skills.writer_illustration.generate_images_agnes", return_value=[]):
+            result = illustrate(
+                "test text", "test topic", tmp_path, "20260101", "tech",
+                worker_type="wechat",
+            )
 
-        with patch.dict('sys.modules', {'playwright': mock_pw_module, 'playwright.sync_api': mock_pw_module}):
-            result = writer_agent._batch_screenshot([html1])
-
-        assert len(result) == 1
-        assert result[0].endswith(".html")  # falls back to HTML
+        assert result == []
 
 
-class TestGenerateHtmlTemplates:
-    """Test _generate_html_templates method."""
+class TestLoadImageStyles:
+    """Test _load_image_styles() from writer_illustration module."""
 
-    def test_generates_html_files(self, writer_agent, tmp_path):
-        text = "段落一" * 20 + "\n\n" + "段落二" * 20 + "\n\n" + "段落三" * 20
-        topic_title = "AI 发展趋势"
+    def test_returns_empty_when_no_file(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("skills.writer_illustration.CONFIG_DIR", tmp_path / "nonexistent")
+        from skills.writer_illustration import _load_image_styles
+        result = _load_image_styles()
+        assert result == {}
 
-        html_files = writer_agent._generate_html_templates(text, topic_title, tmp_path)
+    def test_loads_from_file(self, tmp_path, monkeypatch):
+        import json
+        monkeypatch.setattr("skills.writer_illustration.CONFIG_DIR", tmp_path)
+        styles = {
+            "tutorial": {"style": "modern, clean", "aspect_ratio": "16:9", "size": "1024x576"},
+            "news": {"style": "photorealistic", "aspect_ratio": "4:3", "size": "800x600"},
+        }
+        (tmp_path / "image_styles.json").write_text(json.dumps(styles))
+        from skills.writer_illustration import _load_image_styles
+        result = _load_image_styles()
+        assert result["tutorial"]["style"] == "modern, clean"
+        assert result["news"]["size"] == "800x600"
 
-        assert len(html_files) == 3
-        for f in html_files:
-            assert f.exists()
-            content = f.read_text()
-            assert "<!DOCTYPE html>" in content
-            assert topic_title in content
+    def test_returns_empty_on_json_error(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("skills.writer_illustration.CONFIG_DIR", tmp_path)
+        (tmp_path / "image_styles.json").write_text("not json{")
+        from skills.writer_illustration import _load_image_styles
+        result = _load_image_styles()
+        assert result == {}
 
-    def test_skips_short_paragraphs(self, writer_agent, tmp_path):
-        text = "短\n\n这也是短段落\n\n这是一个足够长的段落内容" * 10
-        topic_title = "测试标题"
 
-        html_files = writer_agent._generate_html_templates(text, topic_title, tmp_path)
+class TestLoadIllustrationCount:
+    """Test _load_illustration_count() for different platforms."""
 
-        assert len(html_files) <= 3
+    def test_returns_3_when_no_file(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("skills.writer_illustration.CONFIG_DIR", tmp_path / "nonexistent")
+        from skills.writer_illustration import _load_illustration_count
+        result = _load_illustration_count("wechat")
+        assert result == 3
 
-    def test_html_contains_brand(self, writer_agent, tmp_path):
-        text = "这是一个足够长的段落内容" * 10
-        topic_title = "测试"
+    def test_loads_platform_default(self, tmp_path, monkeypatch):
+        import json
+        monkeypatch.setattr("skills.writer_illustration.CONFIG_DIR", tmp_path)
+        styles = {
+            "wechat_default": {"illustrations": 5},
+            "xiaohongshu_default": {"illustrations": 9},
+        }
+        (tmp_path / "writing_styles.json").write_text(json.dumps(styles))
+        from skills.writer_illustration import _load_illustration_count
+        assert _load_illustration_count("wechat") == 5
+        assert _load_illustration_count("xiaohongshu") == 9
 
-        html_files = writer_agent._generate_html_templates(text, topic_title, tmp_path)
+    def test_returns_3_for_unknown_platform(self, tmp_path, monkeypatch):
+        import json
+        monkeypatch.setattr("skills.writer_illustration.CONFIG_DIR", tmp_path)
+        styles = {"wechat_default": {"illustrations": 5}}
+        (tmp_path / "writing_styles.json").write_text(json.dumps(styles))
+        from skills.writer_illustration import _load_illustration_count
+        assert _load_illustration_count("unknown_platform") == 3
 
-        if html_files:
-            content = html_files[0].read_text()
-            assert "稿定" in content
+    def test_returns_3_on_json_error(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("skills.writer_illustration.CONFIG_DIR", tmp_path)
+        (tmp_path / "writing_styles.json").write_text("bad json{")
+        from skills.writer_illustration import _load_illustration_count
+        assert _load_illustration_count("wechat") == 3
+
+
+class TestGenerateImagePrompts:
+    """Test generate_image_prompts() with mocked LLM."""
+
+    def test_returns_prompts_from_llm(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("skills.writer_illustration.CONFIG_DIR", tmp_path)
+        mock_result = {
+            "cover_prompt": "A futuristic AI lab",
+            "image_prompts": ["Server room", "Data visualization"],
+        }
+        with patch("skills.llm.chat_structured", return_value=mock_result):
+            from skills.writer_illustration import generate_image_prompts
+            result = generate_image_prompts(
+                "Article text", "AI Topic", "wechat", "tutorial"
+            )
+        assert result["cover_prompt"] == "A futuristic AI lab"
+        assert len(result["image_prompts"]) == 2
+
+    def test_returns_empty_when_count_zero(self, tmp_path, monkeypatch):
+        import json
+        monkeypatch.setattr("skills.writer_illustration.CONFIG_DIR", tmp_path)
+        (tmp_path / "writing_styles.json").write_text(json.dumps({
+            "wechat_default": {"illustrations": 0},
+        }))
+        from skills.writer_illustration import generate_image_prompts
+        result = generate_image_prompts("text", "topic", "wechat")
+        assert result["cover_prompt"] == ""
+        assert result["image_prompts"] == []
+
+    def test_returns_empty_on_llm_error(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("skills.writer_illustration.CONFIG_DIR", tmp_path)
+        from skills.llm import LLMError
+        with patch("skills.llm.chat_structured", side_effect=LLMError("API error")):
+            from skills.writer_illustration import generate_image_prompts
+            result = generate_image_prompts("text", "topic", "wechat", "tutorial")
+        assert result["cover_prompt"] == ""
+        assert result["image_prompts"] == []
+
+    def test_default_content_type_fallback(self, tmp_path, monkeypatch):
+        """When content_type is None, defaults to 'tutorial'."""
+        monkeypatch.setattr("skills.writer_illustration.CONFIG_DIR", tmp_path)
+        mock_result = {
+            "cover_prompt": "Cover",
+            "image_prompts": [],
+        }
+        with patch("skills.llm.chat_structured", return_value=mock_result):
+            from skills.writer_illustration import generate_image_prompts
+            result = generate_image_prompts("text", "topic", "wechat", content_type=None)
+        assert result["cover_prompt"] == "Cover"
 
 
 if __name__ == "__main__":

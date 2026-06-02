@@ -7,6 +7,7 @@ import { ref, onUnmounted } from 'vue'
 
 export interface WebSocketOptions {
   url: string
+  apiKey?: string
   onMessage?: (data: any) => void
   onConnect?: () => void
   onDisconnect?: () => void
@@ -17,6 +18,7 @@ export interface WebSocketOptions {
 export function useWebSocket(options: WebSocketOptions) {
   const {
     url,
+    apiKey,
     onMessage,
     onConnect,
     onDisconnect,
@@ -45,6 +47,10 @@ export function useWebSocket(options: WebSocketOptions) {
       ws = new WebSocket(wsUrl)
 
       ws.onopen = () => {
+        // Send API key as first message for authentication
+        if (apiKey) {
+          ws?.send(JSON.stringify({ api_key: apiKey }))
+        }
         isConnected.value = true
         isReconnecting.value = false
         currentInterval = reconnectInterval

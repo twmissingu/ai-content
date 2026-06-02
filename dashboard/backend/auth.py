@@ -1,7 +1,9 @@
 """API authentication middleware.
 
 Simple API Key authentication via X-API-Key header.
-When API_KEY env var is not set, authentication is skipped.
+When API_KEY env var is not set, authentication is skipped
+only in development mode. In production/staging, missing API_KEY
+denies all requests.
 """
 
 import hmac
@@ -29,19 +31,29 @@ class AuthMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, api_key: str | None = None):
         super().__init__(app)
         self._api_key = api_key or os.getenv("API_KEY", "")
+        self._deny_all = False
         if self._api_key:
             logger.info("API authentication enabled")
-        elif ENVIRONMENT == "production":
-            raise RuntimeError(
-                "API_KEY must be set in production mode. "
-                "Set the API_KEY environment variable before starting the server."
+        elif ENVIRONMENT in ("production", "staging"):
+            logger.error(
+                "API_KEY is not set in %s mode — denying all requests. "
+                "Set the API_KEY environment variable before starting the server.",
+                ENVIRONMENT,
             )
+            self._deny_all = True
         else:
-            logger.warning("⚠️ API authentication disabled (no API_KEY set). "
+            logger.warning("API authentication disabled (no API_KEY set). "
                           "Set API_KEY env var to enable authentication.")
 
     async def dispatch(self, request: Request, call_next):
-        # Skip auth if no key configured
+        # Deny all requests if API_KEY is missing in non-development mode
+        if self._deny_all:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Server misconfiguration: API_KEY is not set"},
+            )
+
+        # Skip auth if no key configured (development only)
         if not self._api_key:
             return await call_next(request)
 
