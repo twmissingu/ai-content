@@ -45,6 +45,9 @@ class ArticleDraft(BaseModel):
     images: list[str] = Field(default_factory=list, description="配图路径")
     image_prompts: list[str] = Field(default_factory=list, description="图片生成 prompt")
     image_generation_method: str = Field(default="agnes", description="图片生成方式")
+    videos: list[str] = Field(default_factory=list, description="视频路径")
+    video_prompts: list[str] = Field(default_factory=list, description="视频生成 prompt")
+    video_generation_method: str = Field(default="agnes", description="视频生成方式")
 
 
 class QualityGateResult(BaseModel):

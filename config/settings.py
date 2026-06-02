@@ -41,6 +41,7 @@ REVIEW_DIR = QUEUE_DIR / "review"
 PENDING_DIR = QUEUE_DIR / "pending"
 FAILED_DIR = QUEUE_DIR / "failed"
 IMAGES_DIR = QUEUE_DIR / "images"
+VIDEOS_DIR = QUEUE_DIR / "videos"
 SOURCES_DIR = QUEUE_DIR / "sources"
 TMP_DIR = QUEUE_DIR / "tmp"
 KB_DIR = PROJECT_ROOT / "kb"
@@ -53,7 +54,7 @@ CONFIG_DIR = PROJECT_ROOT / "config"
 
 # Ensure runtime directories exist
 for _d in [ACTIONS_DIR, PROCESSED_DIR, FAILED_ACTIONS_DIR, STATUS_DIR, REVIEW_DIR,
-           PENDING_DIR, FAILED_DIR, IMAGES_DIR, SOURCES_DIR, TMP_DIR, LOGS_DIR,
+           PENDING_DIR, FAILED_DIR, IMAGES_DIR, VIDEOS_DIR, SOURCES_DIR, TMP_DIR, LOGS_DIR,
            TOKENS_DIR, TRAIL_DIR, RSS_CACHE_DIR, QUEUE_DIR / "rss_candidates"]:
     _d.mkdir(parents=True, exist_ok=True)
 

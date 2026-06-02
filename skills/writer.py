@@ -33,11 +33,13 @@ from config.settings import (
     STATUS_DIR,
     TONE,
     STANCE,
+    VIDEOS_DIR,
 )
 from skills.agent_schemas import ArticleDraft, QualityGateResult
 from skills.common import AgentBase, agent_main, load_prompt
 from skills.llm import chat, chat_structured, LLMError
 from skills.writer_illustration import illustrate as _illustrate_fn
+from skills.writer_video import generate_video as _generate_video_fn
 
 
 _DEFAULT_GATES = {
@@ -481,6 +483,14 @@ class WriterAgent(AgentBase):
             worker_type=self.worker_type,
         )
 
+    def _generate_video(self, text: str, topic_title: str) -> Optional[str]:
+        """Stage 7b: Generate video via Agnes AI (optional)."""
+        return _generate_video_fn(
+            text, topic_title, VIDEOS_DIR, self._run_timestamp,
+            logger=self.logger,
+            worker_type=self.worker_type,
+        )
+
     def _parse_cli_args(self, topic_id, rewrite_mode, rerun_from):
         """Parse CLI arguments. Returns (topic_id, rewrite_mode, rewrite_target, rerun_from_arg, topic_file_arg, work_dir_arg)."""
         topic_file_arg = None
@@ -541,7 +551,7 @@ class WriterAgent(AgentBase):
 
     def _write_output(self, text, final_title, topic, source_url,
                       proofread_score, critique_scores, title_candidates,
-                      images, extra_meta=None):
+                      images, extra_meta=None, videos=None, video_prompts=None):
         """Write final article + meta to REVIEW_DIR. Returns (article_path, meta_path)."""
         self.write_status("完成", 95, "写入输出文件")
         article_path = REVIEW_DIR / f"{self._run_timestamp}-{self.worker_type}.md"
@@ -562,6 +572,9 @@ class WriterAgent(AgentBase):
             "word_count": len(text),
             "images": images,
             "image_generation_method": "agnes",
+            "videos": videos or [],
+            "video_prompts": video_prompts or [],
+            "video_generation_method": "agnes" if videos else "",
             "status": "completed",
         }
         if extra_meta:
@@ -647,10 +660,17 @@ class WriterAgent(AgentBase):
                 images = self._illustrate(text, topic["title"])
                 self.end_stage("illustrate")
 
+                # Stage 7b: Video generation (optional)
+                video_path = self._generate_video(text, topic["title"])
+                videos = [video_path] if video_path else []
+                video_prompts = []  # prompt logged internally
+
             article_path, meta_path = self._write_output(
                 text, final_title, topic, source_url,
                 proofread_score, critique_scores, title_candidates, images,
                 extra_meta={"rerun_from": rerun_from_arg},
+                videos=videos,
+                video_prompts=video_prompts,
             )
             self.write_completed(
                 detail=f"从阶段{rerun_from_arg}重跑完成 · 评分{proofread_score}/{critique_scores[-1] if critique_scores else 0}",
@@ -742,11 +762,20 @@ class WriterAgent(AgentBase):
         self.end_stage("illustrate")
         self.logger.info(f"Stage 7 done. Images: {len(images)}")
 
+        # Stage 7b: Video generation (optional)
+        video_path = self._generate_video(text, topic["title"])
+        videos = [video_path] if video_path else []
+        video_prompts = []  # prompt logged internally
+        if videos:
+            self.logger.info(f"Stage 7b done. Videos: {len(videos)}")
+
         # Write output
         source_url = topic.get("url", topic.get("source_url", ""))
         article_path, meta_path = self._write_output(
             text, final_title, topic, source_url,
             proofread_score, critique_scores, title_candidates, images,
+            videos=videos,
+            video_prompts=video_prompts,
         )
 
         self.write_completed(
