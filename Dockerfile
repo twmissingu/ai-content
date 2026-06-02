@@ -22,11 +22,10 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python requirements
-COPY requirements.txt requirements-test.txt ./
+COPY requirements.txt ./
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir -r requirements-test.txt
+# Install Python dependencies (production only, no test deps)
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy frontend package files
 COPY dashboard/frontend/package.json dashboard/frontend/package-lock.json ./dashboard/frontend/
@@ -42,13 +41,19 @@ RUN cd dashboard/frontend && npm run build
 
 # Create necessary directories
 RUN mkdir -p /app/data/logs \
+    /app/data/backups \
     /app/queue/actions/processed \
+    /app/queue/actions/failed \
     /app/queue/status \
     /app/queue/review \
     /app/queue/pending \
     /app/queue/failed \
     /app/queue/images \
-    /app/queue/topics \
+    /app/queue/videos \
+    /app/queue/sources \
+    /app/queue/tokens \
+    /app/queue/trails \
+    /app/queue/rss_cache \
     /app/queue/tmp
 
 # Set ownership
@@ -58,7 +63,7 @@ RUN chown -R gaoding:gaoding /app
 EXPOSE 8710
 
 # Environment variables
-ENV CORS_ORIGINS="http://localhost:5173"
+ENV CORS_ORIGINS="http://localhost:5173,http://127.0.0.1:5173,http://localhost:8710,http://127.0.0.1:8710"
 
 # Switch to non-root user
 USER gaoding

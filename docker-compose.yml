@@ -15,8 +15,8 @@ services:
       - ./queue:/app/queue
       # Persist knowledge base
       - ./kb:/app/kb
-      # Persist config
-      - ./config:/app/config
+      # Persist config (read-only)
+      - ./config:/app/config:ro
       # Mount .env file
       - ./.env:/app/.env:ro
     environment:
@@ -62,6 +62,3 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-volumes:
-  gaoding-data:
-    driver: local

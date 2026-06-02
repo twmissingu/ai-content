@@ -20,6 +20,7 @@ cp .env.docker.example .env
 |------|------|------|
 | `LLM_BASE_URL` | LLM API 端点 | `https://api.xiaomimimo.com/v1` |
 | `XIAOMI_API_KEY` | LLM API Key | `sk-xxx` |
+| `API_KEY` | API 认证密钥（**生产环境必须**，`ENV=production` 时未设会拒绝所有请求） | `your-strong-random-key` |
 
 可选变量：
 
@@ -28,8 +29,8 @@ cp .env.docker.example .env
 | `LLM_MODEL` | 模型名称 | `mimo-v2.5` |
 | `FEISHU_WEBHOOK_URL` | 飞书告警 Webhook | - |
 | `MONTHLY_BUDGET_USD` | 月度预算上限 | `15` |
-| `CORS_ORIGINS` | 前端域名 | `http://localhost:5173` |
-| `API_KEY` | API 认证密钥 | -（留空则不启用认证） |
+| `CORS_ORIGINS` | 前端域名（逗号分隔） | `http://localhost:5173,http://127.0.0.1:5173,http://localhost:8710,http://127.0.0.1:8710` |
+| `ENV` | 运行环境 | `development`（生产设为 `production`） |
 
 ### 2. Docker 部署（推荐）
 
@@ -40,6 +41,9 @@ docker compose up -d
 # 查看日志
 docker compose logs -f dashboard
 
+# 查看 watchdog 状态
+docker compose logs -f watchdog
+
 # 停止服务
 docker compose down
 ```
@@ -47,6 +51,8 @@ docker compose down
 服务启动后：
 - Dashboard API: `http://localhost:8710`
 - 健康检查: `http://localhost:8710/api/health`
+
+> **Watchdog 服务：** Docker Compose 内置 watchdog 容器，每分钟自动检测 Dashboard 和 FastAPI 进程状态，异常时自动重启并发送飞书告警。
 
 ### 3. 本地开发部署
 
@@ -66,18 +72,23 @@ npm run dev
 - 前端: `http://localhost:5173`
 - 后端: `http://localhost:8710`
 
+> 前端通过 Vite 内置 proxy 将 `/api` 请求代理到 `http://localhost:8710`，无需设置 `VITE_API_BASE_URL`。排查连接问题时检查 `dashboard/frontend/vite.config.ts` 的 proxy 配置。
+
 ---
 
 ## 生产环境配置
 
 ### 安全加固
 
-1. **启用 API 认证**
+1. **启用 API 认证（生产环境必须）**
 
    ```bash
    # .env
+   ENV=production
    API_KEY=your-strong-random-key-here
    ```
+
+   > ⚠️ `ENV=production` 时若未设置 `API_KEY`，系统将拒绝所有请求返回 503。
 
    客户端请求需携带 `X-API-Key` header。
 
@@ -118,13 +129,14 @@ server {
     }
 
     # WebSocket 代理
+    # 注意：WebSocket 认证通过首条消息中的 api_key 字段完成（非 HTTP header）
     location /ws {
         proxy_pass http://127.0.0.1:8710;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
-        proxy_read_timeout 86400;
+        proxy_read_timeout 3600;
     }
 }
 ```
@@ -150,18 +162,22 @@ your-domain.com {
 
 Docker 部署时，以下目录通过 volume 挂载持久化：
 
-| 容器路径 | 说明 |
-|----------|------|
-| `/app/data` | 数据库、日志、分析数据 |
-| `/app/queue` | Agent 队列文件 |
-| `/app/kb` | 知识库文件 |
-| `/app/config` | 配置文件（提示词、审校模式等） |
+| 容器路径 | 说明 | 挂载模式 |
+|----------|------|---------|
+| `/app/data` | 数据库、日志、分析数据、自动备份 | 读写 |
+| `/app/queue` | Agent 队列文件 | 读写 |
+| `/app/kb` | 知识库文件 | 读写 |
+| `/app/config` | 配置文件（提示词、审校模式等） | 只读（`:ro`） |
 
 **备份策略：**
 
 ```bash
 # 备份数据目录
 tar -czf gaoding-backup-$(date +%Y%m%d).tar.gz data/ queue/ kb/ config/
+
+# SQLite 自动备份（每小时，保留 72 小时）
+# 由 cron 或 watchdog 容器执行
+sqlite3 data/analytics.db ".backup data/backups/analytics-$(date +%Y%m%d%H%M).db"
 ```
 
 ---
@@ -179,7 +195,7 @@ curl http://localhost:8710/api/health
 ```json
 {
   "status": "ok",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "services": {
     "database": "ok",
     "search": {"status": "ok", "indexed_documents": 42}
@@ -204,6 +220,9 @@ Docker Compose 内置健康检查，每 30 秒检测一次：
 ```bash
 # 查看容器健康状态
 docker inspect --format='{{.State.Health.Status}}' gaoding-dashboard
+
+# 查看 watchdog 日志
+docker compose logs -f watchdog --tail 50
 ```
 
 ---
@@ -230,7 +249,7 @@ docker inspect --format='{{.State.Health.Status}}' gaoding-dashboard
 
 **1. 前端无法连接后端**
 
-检查 `VITE_API_BASE_URL` 环境变量是否指向正确的后端地址。
+前端通过 Vite 内置 proxy 转发 `/api` 请求到 `http://localhost:8710`。排查时检查 `dashboard/frontend/vite.config.ts` 的 proxy 配置是否正确。
 
 **2. LLM 调用失败**
 
@@ -255,11 +274,18 @@ curl -X POST http://localhost:8710/api/kb/reindex
 curl http://localhost:8710/api/health | jq '.queue_sizes'
 ```
 
+**5. 生产环境 503 错误**
+
+检查是否设置了 `API_KEY`。`ENV=production` 时未设 `API_KEY` 会拒绝所有请求。
+
 ### 日志查看
 
 ```bash
 # Docker 日志
 docker compose logs -f dashboard --tail 100
+
+# Watchdog 日志
+docker compose logs -f watchdog --tail 50
 
 # 本地日志文件
 tail -f data/logs/gaoding.log
