@@ -64,8 +64,15 @@ STRONG_PUSH = 85
 # ── LLM scoring ────────────────────────────────────────────────────
 def _is_cold_start() -> bool:
     """Check if system is in cold start (first 2 weeks)."""
-    history_count = sum(1 for _ in HISTORY_DIR.rglob("*.md")) if HISTORY_DIR.exists() else 0
-    return history_count < 5  # less than 5 articles → cold start
+    if not HISTORY_DIR.exists():
+        return True
+    # Limit scan to 10 files — we only need to know if >= 5 exist
+    count = 0
+    for _ in HISTORY_DIR.rglob("*.md"):
+        count += 1
+        if count >= 5:
+            return False
+    return count < 5
 
 
 def calculate_freshness(candidate: dict) -> int:

@@ -18,14 +18,14 @@ router = APIRouter(prefix="/api/topics", tags=["topics"])
 @router.get("")
 def get_topics(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
     """List pending topic candidates from queue/pending/."""
+    files = sorted(PENDING_DIR.glob("topic_*.json"), key=os.path.getmtime, reverse=True)
+    total = len(files)
     topics = []
-    for f in sorted(PENDING_DIR.glob("topic_*.json"), key=os.path.getmtime, reverse=True):
+    for f in files[offset:offset + limit]:
         data = read_json(f)
         data["id"] = f.stem
         data["filename"] = f.name
         topics.append(data)
-    total = len(topics)
-    topics = topics[offset:offset + limit]
     return {"topics": topics, "count": len(topics), "total": total}
 
 

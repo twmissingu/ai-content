@@ -1,0 +1,50 @@
+{
+  "news": {
+    "style": "photorealistic, cinematic lighting, DSLR, high detail, sharp focus",
+    "aspect_ratio": "16:9",
+    "size": "1024x576",
+    "description": "新闻 — 摄影写实风格"
+  },
+  "tutorial": {
+    "style": "flat illustration, minimal, vector art, clean lines, soft pastel colors, modern",
+    "aspect_ratio": "16:9",
+    "size": "1024x576",
+    "description": "教程 — 扁平插画风格"
+  },
+  "tool_update": {
+    "style": "3D render, isometric, soft lighting, blender style, modern UI, clean background",
+    "aspect_ratio": "1:1",
+    "size": "1024x1024",
+    "description": "工具更新 — 3D 渲染风格"
+  },
+  "tech_science": {
+    "style": "cyberpunk, neon glow, futuristic, dark background, high tech, holographic",
+    "aspect_ratio": "16:9",
+    "size": "1024x576",
+    "description": "技术科普 — 赛博未来风格"
+  },
+  "insight": {
+    "style": "cyberpunk, neon glow, futuristic, abstract, conceptual, atmospheric",
+    "aspect_ratio": "16:9",
+    "size": "1024x576",
+    "description": "洞察 — 赛博未来风格"
+  },
+  "opinion": {
+    "style": "hand drawn, watercolor, sketch style, warm tones, artistic, expressive",
+    "aspect_ratio": "4:3",
+    "size": "1024x768",
+    "description": "观点 — 手绘水彩风格"
+  },
+  "sharing": {
+    "style": "hand drawn, watercolor, sketch style, cozy, lifestyle, warm lighting",
+    "aspect_ratio": "4:3",
+    "size": "1024x768",
+    "description": "分享 — 手绘水彩风格"
+  },
+  "roundup": {
+    "style": "flat illustration, minimal, organized layout, infographic feel, clean design",
+    "aspect_ratio": "16:9",
+    "size": "1024x576",
+    "description": "合集 — 扁平插画风格"
+  }
+}

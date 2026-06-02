@@ -3,6 +3,7 @@
 Slim entry point: middleware setup, route mounting, lifespan management.
 """
 
+import asyncio
 import hmac
 import json
 import logging
@@ -14,6 +15,7 @@ import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from dashboard.backend.auth import AuthMiddleware
 from dashboard.backend.background import (
@@ -60,7 +62,12 @@ import time
 
 
 class RateLimiter:
-    """Simple in-memory rate limiter with bounded memory."""
+    """Simple in-memory rate limiter with bounded memory.
+
+    NOTE: In-memory storage means per-process isolation — each worker gets its
+    own counter. Multi-worker deployments (e.g. gunicorn --workers=N) require a
+    shared store (Redis, memcached) for accurate rate limiting.
+    """
 
     _MAX_CLIENTS = 10000
 
@@ -73,7 +80,9 @@ class RateLimiter:
         now = time.time()
         minute_ago = now - 60
         with self._lock:
-            # Evict stale clients when map grows too large
+            # Evict stale clients when map grows too large.
+            # NOTE: O(n) scan over all entries; could be optimized with an LRU
+            # cache or time-bucketed counters if the client map grows very large.
             if len(self.requests) > self._MAX_CLIENTS:
                 stale = [ip for ip, ts in self.requests.items()
                          if not ts or ts[-1] < minute_ago]
@@ -201,7 +210,7 @@ async def lifespan(app: FastAPI):
     logger.info("Background tasks stopped")
 
 
-app = FastAPI(title="稿定 Dashboard", version="0.7.0", lifespan=lifespan)
+app = FastAPI(title="稿定 Dashboard", version="0.8.0", lifespan=lifespan)
 
 # Middleware (order matters: last added = first executed)
 _trusted_proxies = set(
@@ -233,19 +242,56 @@ app.include_router(prompts_router)
 app.include_router(sources_router)
 app.include_router(reader_router)
 
+# Static file serving for generated images.
+# SECURITY NOTE: FastAPI's StaticFiles does not validate filenames — paths like
+# ../..  are blocked by the library, but callers should still ensure that only
+# safe filenames are written to IMAGES_DIR upstream.
+from config.settings import IMAGES_DIR
+IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+app.mount(
+    "/api/images",
+    StaticFiles(directory=str(IMAGES_DIR), check_dir=True),
+    name="images",
+)
+
+
+@app.middleware("http")
+async def add_image_cache_headers(request: Request, call_next):
+    """Add Cache-Control headers for static image responses."""
+    response = await call_next(request)
+    if request.url.path.startswith("/api/images/"):
+        response.headers["Cache-Control"] = "public, max-age=86400"
+    return response
+
 
 @app.websocket("/ws/pipeline")
 async def websocket_pipeline(websocket: WSProtocol):
-    """WebSocket endpoint for real-time pipeline status updates."""
-    # Check API key from query params or first message
+    """WebSocket endpoint for real-time pipeline status updates.
+
+    Auth: When API_KEY is set, the client must send {"api_key": "..."} as the
+    first message within 10 seconds.  Invalid or missing key closes with 4001.
+    """
     api_key = os.getenv("API_KEY", "")
     if api_key:
-        ws_key = websocket.query_params.get("api_key", "")
-        if not hmac.compare_digest(ws_key, api_key):
+        # Accept connection first, then authenticate via first message
+        await websocket.accept()
+        try:
+            first_msg = await asyncio.wait_for(
+                websocket.receive_text(), timeout=10
+            )
+            data = json.loads(first_msg)
+            ws_key = data.get("api_key", "")
+            if not isinstance(ws_key, str) or not hmac.compare_digest(ws_key, api_key):
+                await websocket.close(code=4001, reason="Invalid API key")
+                return
+        except Exception:
             await websocket.close(code=4001, reason="Invalid API key")
             return
+    else:
+        await websocket.accept()
 
-    await ws_manager.connect(websocket)
+    # Register after successful auth
+    await ws_manager.register(websocket)
     try:
         # Send initial status immediately
         status = ws_manager._build_status()

@@ -43,6 +43,8 @@ class ArticleDraft(BaseModel):
     title_candidates: list[dict] = Field(default_factory=list, description="标题候选列表")
     source_url: Optional[str] = Field(default=None, description="原文链接")
     images: list[str] = Field(default_factory=list, description="配图路径")
+    image_prompts: list[str] = Field(default_factory=list, description="图片生成 prompt")
+    image_generation_method: str = Field(default="agnes", description="图片生成方式")
 
 
 class QualityGateResult(BaseModel):

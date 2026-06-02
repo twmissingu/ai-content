@@ -151,11 +151,14 @@ def load_prompt(template_name: str, **kwargs) -> str:
         except Exception:
             pass  # Loader unavailable, fall back to file
 
-    # Fall back to file
+    # Fall back to file (try .md first, then .txt)
     from config.settings import CONFIG_DIR
-    template_path = CONFIG_DIR / "prompts" / f"{template_name}.txt"
-    if not template_path.exists():
-        raise FileNotFoundError(f"Prompt template not found: {template_path}")
+    for ext in (".md", ".txt"):
+        template_path = CONFIG_DIR / "prompts" / f"{template_name}{ext}"
+        if template_path.exists():
+            break
+    else:
+        raise FileNotFoundError(f"Prompt template not found: {CONFIG_DIR / 'prompts' / template_name}")
     template = template_path.read_text(encoding="utf-8")
     return template.format(**kwargs)
 

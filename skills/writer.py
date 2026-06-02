@@ -13,9 +13,11 @@ import re
 import subprocess
 import sys
 import time
+import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from config.settings import (
     ACTIONS_DIR,
@@ -35,11 +37,7 @@ from config.settings import (
 from skills.agent_schemas import ArticleDraft, QualityGateResult
 from skills.common import AgentBase, agent_main, load_prompt
 from skills.llm import chat, chat_structured, LLMError
-from skills.writer_illustration import (
-    batch_screenshot as _batch_screenshot_fn,
-    generate_html_templates as _generate_html_templates_fn,
-    illustrate as _illustrate_fn,
-)
+from skills.writer_illustration import illustrate as _illustrate_fn
 
 
 _DEFAULT_GATES = {
@@ -76,6 +74,11 @@ TYPE = "wechat"  # Phase 1: single worker
 
 
 # ── Writer Agent ───────────────────────────────────────────────────
+# TODO: Decompose WriterAgent into stage-specific classes (e.g. ProofreaderAgent,
+# CriticAgent, FormatterAgent, TitleAgent, IllustrationAgent). The current god class
+# mixes 7 pipeline stages, CLI parsing, I/O, and rewriting logic into a single ~700-line
+# class. Each stage should be an independent, testable unit with a shared pipeline runner.
+
 class WriterAgent(AgentBase):
     """Writer agent with 7-stage pipeline."""
 
@@ -194,9 +197,18 @@ class WriterAgent(AgentBase):
         return "[原文抓取失败，将基于选题内容生成]"
 
     def _sanitize_text(self, text: str, max_length: int = 500) -> str:
-        """Sanitize text to prevent prompt injection."""
+        """Sanitize text to prevent prompt injection.
+
+        Limitation: regex-based filtering is inherently bypassable.
+        Unicode normalization (NFKD) is applied first to catch homoglyphs
+        (e.g. fullwidth letters, confusables), but adversarial rephrasing
+        or novel injection patterns can still slip through. For high-stakes
+        scenarios, consider a dedicated guardrail model or allowlist approach.
+        """
         if not text:
             return ""
+        # Normalize unicode to catch homoglyph bypasses (e.g. fullwidth "ＩＧＮＯＲＥ")
+        text = unicodedata.normalize("NFKD", text)
         # Remove markdown code blocks that might contain instructions
         text = re.sub(r'```[\s\S]*?```', '', text)
         # Remove system/instruction-like patterns
@@ -327,31 +339,39 @@ class WriterAgent(AgentBase):
         - Perspective 2 (Critic): Devil's advocate, finds weaknesses
         Final score = weighted average of both perspectives.
         """
-        # ── Perspective 1: Strict Scorer ──
-        start_time = time.monotonic()
-        scorer_result = chat_structured(
-            system_prompt="你是一个严格但建设性的写作评委。你给分很吝啬——好文章才给80+，平庸的文章给60以下。你从不给'还行'的文章高分。",
-            injection_safety=False,
-            user_prompt=load_prompt("writer_critique_scorer", topic_title=topic_title, article=text[:4000]),
-            temperature=0.4,
-        )
-        scorer_duration = time.monotonic() - start_time
+        # ── Run Scorer and Critic in parallel ──
+        def _run_scorer():
+            start = time.monotonic()
+            result = chat_structured(
+                system_prompt="你是一个严格但建设性的写作评委。你给分很吝啬——好文章才给80+，平庸的文章给60以下。你从不给'还行'的文章高分。",
+                injection_safety=False,
+                user_prompt=load_prompt("writer_critique_scorer", topic_title=topic_title, article=text[:4000]),
+                temperature=0.4,
+            )
+            return result, time.monotonic() - start
+
+        def _run_critic():
+            start = time.monotonic()
+            result = chat_structured(
+                system_prompt="你是一个挑剔的读者和内容批评家。你的工作是找出文章中所有问题：逻辑漏洞、论据不足、表述模糊、读者可能的质疑。你只关注问题，不夸优点。",
+                injection_safety=False,
+                user_prompt=load_prompt("writer_critique_critic", topic_title=topic_title, article=text[:4000]),
+                temperature=0.6,
+            )
+            return result, time.monotonic() - start
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            scorer_future = executor.submit(_run_scorer)
+            critic_future = executor.submit(_run_critic)
+            scorer_result, scorer_duration = scorer_future.result()
+            critic_result, critic_duration = critic_future.result()
+
         self.record_llm_call(duration=scorer_duration, success=True)
+        self.record_llm_call(duration=critic_duration, success=True)
 
         scorer_score = int(scorer_result.get("score", 50))
         scorer_weakness = scorer_result.get("weakness", "")
         scorer_suggestions = scorer_result.get("suggestions", [])
-
-        # ── Perspective 2: Devil's Advocate (finds weaknesses) ──
-        start_time = time.monotonic()
-        critic_result = chat_structured(
-            system_prompt="你是一个挑剔的读者和内容批评家。你的工作是找出文章中所有问题：逻辑漏洞、论据不足、表述模糊、读者可能的质疑。你只关注问题，不夸优点。",
-            injection_safety=False,
-            user_prompt=load_prompt("writer_critique_critic", topic_title=topic_title, article=text[:4000]),
-            temperature=0.6,
-        )
-        critic_duration = time.monotonic() - start_time
-        self.record_llm_call(duration=critic_duration, success=True)
 
         critic_score = int(critic_result.get("critique_score", 50))
         critic_issues = critic_result.get("issues", [])
@@ -454,18 +474,11 @@ class WriterAgent(AgentBase):
 
         return best["title"], candidates
 
-    def _generate_html_templates(self, text: str, topic_title: str, img_dir: Path) -> list[Path]:
-        """Generate HTML template files for illustrations."""
-        return _generate_html_templates_fn(text, topic_title, img_dir, DOMAIN)
-
-    def _batch_screenshot(self, html_files: list[Path]) -> list[str]:
-        """Batch screenshot HTML files, reusing browser instance."""
-        return _batch_screenshot_fn(html_files, self.logger)
-
     def _illustrate(self, text: str, topic_title: str) -> list[str]:
-        """Stage 7: Generate illustrations with batched screenshots."""
+        """Stage 7: Generate illustrations via Agnes AI."""
         return _illustrate_fn(
             text, topic_title, IMAGES_DIR, self._run_timestamp, DOMAIN, self.logger,
+            worker_type=self.worker_type,
         )
 
     def _parse_cli_args(self, topic_id, rewrite_mode, rerun_from):
@@ -548,6 +561,7 @@ class WriterAgent(AgentBase):
             "title_candidates": title_candidates,
             "word_count": len(text),
             "images": images,
+            "image_generation_method": "agnes",
             "status": "completed",
         }
         if extra_meta:

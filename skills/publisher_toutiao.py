@@ -1,3 +1,4 @@
+# DEPRECATED: This module is not used by production code. Kept for reference only.
 """Toutiao (头条号) Publisher — Playwright browser automation.
 
 Distributes approved articles to Toutiao draft box.

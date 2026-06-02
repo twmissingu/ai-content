@@ -9,6 +9,7 @@ All Agent-produced data flows through file queues:
 import json
 import logging
 import os
+import re
 import subprocess
 import threading
 import time
@@ -43,6 +44,11 @@ def _dispatch_action_async(action: dict) -> int:
     """
     action_type = action.get("action")
     target_id = action.get("target_id", "")
+
+    # Sanitize target_id: only allow safe characters to prevent injection
+    if target_id and not re.fullmatch(r'[a-zA-Z0-9._-]+', target_id):
+        logger.error(f"Rejected target_id with unsafe characters: {target_id!r}")
+        return -1
 
     if action_type == "confirm":
         # Legacy confirm -> also write flag file for backward compat

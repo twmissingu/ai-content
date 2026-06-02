@@ -98,7 +98,8 @@ class TestLoadCachedHashes:
 
     def test_returns_empty_set_for_empty_dir(self, tmp_path):
         from skills.rss_collector import _load_cached_hashes
-        with patch("skills.rss_collector.RSS_CACHE_DIR", tmp_path):
+        with patch("skills.rss_collector.RSS_CACHE_DIR", tmp_path), \
+             patch("skills.rss_collector._HASH_INDEX_FILE", tmp_path / "_hash_index.json"):
             hashes = _load_cached_hashes()
             assert hashes == set()
 
@@ -108,7 +109,8 @@ class TestLoadCachedHashes:
         for h in ["abc123", "def456"]:
             (tmp_path / f"{h}.json").write_text(json.dumps({"content_hash": h}))
 
-        with patch("skills.rss_collector.RSS_CACHE_DIR", tmp_path):
+        with patch("skills.rss_collector.RSS_CACHE_DIR", tmp_path), \
+             patch("skills.rss_collector._HASH_INDEX_FILE", tmp_path / "_hash_index.json"):
             hashes = _load_cached_hashes()
             assert "abc123" in hashes
             assert "def456" in hashes
@@ -118,7 +120,8 @@ class TestLoadCachedHashes:
         (tmp_path / "bad.json").write_text("not valid json{{{")
         (tmp_path / "good.json").write_text(json.dumps({"content_hash": "good123"}))
 
-        with patch("skills.rss_collector.RSS_CACHE_DIR", tmp_path):
+        with patch("skills.rss_collector.RSS_CACHE_DIR", tmp_path), \
+             patch("skills.rss_collector._HASH_INDEX_FILE", tmp_path / "_hash_index.json"):
             hashes = _load_cached_hashes()
             assert "good123" in hashes
 
@@ -127,7 +130,8 @@ class TestLoadCachedHashes:
         (tmp_path / "notes.txt").write_text("not a json file")
         (tmp_path / "valid.json").write_text(json.dumps({"content_hash": "valid1"}))
 
-        with patch("skills.rss_collector.RSS_CACHE_DIR", tmp_path):
+        with patch("skills.rss_collector.RSS_CACHE_DIR", tmp_path), \
+             patch("skills.rss_collector._HASH_INDEX_FILE", tmp_path / "_hash_index.json"):
             hashes = _load_cached_hashes()
             assert hashes == {"valid1"}
 
@@ -142,7 +146,8 @@ class TestSaveCached:
             {"content_hash": "hash2", "title": "Article 2"},
         ]
 
-        with patch("skills.rss_collector.RSS_CACHE_DIR", tmp_path):
+        with patch("skills.rss_collector.RSS_CACHE_DIR", tmp_path), \
+             patch("skills.rss_collector._HASH_INDEX_FILE", tmp_path / "_hash_index.json"):
             _save_cached(items)
 
         assert (tmp_path / "hash1.json").exists()
@@ -151,7 +156,8 @@ class TestSaveCached:
     def test_skips_duplicate_hashes(self, tmp_path):
         from skills.rss_collector import _save_cached
         items = [{"content_hash": "dup1", "title": "First"}]
-        with patch("skills.rss_collector.RSS_CACHE_DIR", tmp_path):
+        with patch("skills.rss_collector.RSS_CACHE_DIR", tmp_path), \
+             patch("skills.rss_collector._HASH_INDEX_FILE", tmp_path / "_hash_index.json"):
             _save_cached(items)
             # Write same hash again — should be skipped
             _save_cached([{"content_hash": "dup1", "title": "Duplicate"}])

@@ -162,6 +162,8 @@ def _escape_fts5_token(token: str) -> str:
     # Remove other special characters that could break the query
     for char in ['*', '(', ')']:
         token = token.replace(char, '')
+    # Strip FTS5 boolean operators that could alter query semantics
+    token = re.sub(r'(?i)\b(AND|OR|NOT|NEAR(\(\d+\))?)\b', '', token)
     return token
 
 
@@ -241,10 +243,15 @@ def _fallback_search(query: str, section: str = None, limit: int = 20) -> list[d
     """Fallback search using simple text matching."""
     results = []
     query_lower = query.lower()
-    
+    max_files = 100  # cap file reads to prevent runaway scanning
+    files_checked = 0
+
     for md_file in KB_DIR.rglob("*.md"):
         if len(results) >= limit:
             break
+        if files_checked >= max_files:
+            break
+        files_checked += 1
         
         try:
             relative_path = str(md_file.relative_to(KB_DIR))

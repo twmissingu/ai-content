@@ -17,6 +17,7 @@ from typing import Any, Optional
 
 from config.settings import (
     CONFIG_DIR,
+    DEFAULT_SCHEDULE,
     MONTHLY_BUDGET_USD,
     MAX_REWRITE_ROUNDS,
     STAGE_TIMEOUT_MINUTES,
@@ -27,18 +28,18 @@ _QUALITY_THRESHOLD: int = 70
 
 
 def get_default_schedule() -> dict:
-    """Get default schedule configuration."""
+    """Get default schedule configuration.
+
+    Merges the base DEFAULT_SCHEDULE from config.settings with
+    dashboard-specific keys (approval, publish, feedback, quiet hours).
+    """
     return {
-        "morning_scout": "09:00",
-        "morning_writer": "09:30",
+        **DEFAULT_SCHEDULE,
         "morning_approval": "10:45",
         "morning_publish": "11:00",
-        "evening_scout": "14:00",
-        "evening_writer": "14:30",
         "evening_approval": "16:15",
         "evening_publish": "16:30",
         "feedback_time": "22:00",
-        "working_days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
         "quiet_start": 22,
         "quiet_end": 8,
     }

@@ -16,7 +16,7 @@ from dashboard.backend.database import (
 )
 from dashboard.backend.helpers import read_json
 from skills.action import write_action
-from dashboard.backend.models import ApproveRequest, UpdateArticleRequest
+from dashboard.backend.models import ApproveRequest, PublishRequest, UpdateArticleRequest
 
 logger = logging.getLogger("gaoding.dashboard")
 
@@ -45,10 +45,19 @@ def get_approval_queue(limit: int = Query(50, ge=1, le=200), offset: int = Query
     for f in sorted(REVIEW_DIR.glob("*.meta.json"), key=os.path.getmtime, reverse=True):
         meta = read_json(f)
         article_id = f.stem.replace(".meta", "")
+        # Read markdown content preview (first 500 chars)
+        md_path = REVIEW_DIR / f"{article_id}.md"
+        content_preview = ""
+        if md_path.exists():
+            try:
+                with md_path.open(encoding="utf-8") as f:
+                    content_preview = f.read(500)
+            except OSError:
+                pass
         articles.append({
             "id": article_id,
             "meta": meta,
-            "content_preview": "",
+            "content_preview": content_preview,
             "source": "filesystem",
         })
 
@@ -186,3 +195,32 @@ def update_article_content(article_id: str, req: UpdateArticleRequest):
     article_path.write_text(req.content, encoding="utf-8")
     logger.info(f"Article updated: {article_id}")
     return {"status": "ok", "article_id": article_id}
+
+
+@router.post("/publish")
+def publish_article(req: PublishRequest):
+    """Trigger article publishing to specified platforms."""
+    safe_id = _safe_article_id(req.article_id)
+    if not safe_id:
+        raise HTTPException(400, f"非法的文章 ID: {req.article_id}")
+
+    # Verify article exists
+    meta_path = REVIEW_DIR / f"{safe_id}.meta.json"
+    if not meta_path.exists():
+        raise HTTPException(404, f"文章不存在: {req.article_id}")
+
+    # Write approve action to trigger publisher
+    path = write_action(
+        "approve",
+        safe_id,
+        platform_versions=req.platforms,
+        trigger_agent="publisher",
+    )
+
+    logger.info(f"Publish triggered: {safe_id} -> {req.platforms}")
+    return {
+        "status": "queued",
+        "article_id": safe_id,
+        "platforms": req.platforms,
+        "action_path": str(path),
+    }

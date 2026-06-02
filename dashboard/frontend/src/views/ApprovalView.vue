@@ -6,6 +6,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
 import PaginationBar from '../components/PaginationBar.vue'
+import ImageGallery from '../components/ImageGallery.vue'
 
 const store = useDashboardStore()
 const toast = useToast()
@@ -192,6 +193,29 @@ async function confirmApprove(id: string) {
 
 function cancelApprove() {
   showApproveConfirm.value = null
+}
+
+// Publish to platforms
+async function publishArticle(articleId: string) {
+  processingIds.value.add(articleId)
+  try {
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+    const res = await fetch(`${API_BASE}/api/approval/publish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        article_id: articleId,
+        platforms: ['wechat', 'xiaohongshu', 'douyin'],
+      }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    toast.success(`发布已触发: ${data.platforms?.join(', ')}`)
+  } catch (e) {
+    toast.error(`发布失败: ${e instanceof Error ? e.message : '未知错误'}`)
+  } finally {
+    processingIds.value.delete(articleId)
+  }
 }
 
 // Inline editing
@@ -560,6 +584,23 @@ onUnmounted(() => {
                 # {{ article.meta.topic }}
               </div>
               <div class="preview-text markdown-body" v-html="renderedContent"></div>
+            </div>
+
+            <!-- Image Gallery -->
+            <div class="preview-images">
+              <span class="preview-label">配图</span>
+              <ImageGallery :images="article.meta.images || []" />
+            </div>
+
+            <!-- Publish Button -->
+            <div class="publish-section">
+              <button
+                class="btn btn-primary btn-sm"
+                :disabled="processingIds.has(article.id)"
+                @click.stop="publishArticle(article.id)"
+              >
+                🚀 发布到平台
+              </button>
             </div>
           </template>
 
@@ -935,6 +976,22 @@ onUnmounted(() => {
   color: var(--text-secondary);
   line-height: 1.8;
   word-break: break-word;
+}
+
+/* ── Image Gallery ───────────────────────────────────────────── */
+.preview-images {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--divider);
+}
+
+/* ── Publish Section ─────────────────────────────────────────── */
+.publish-section {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--divider);
+  display: flex;
+  gap: var(--space-md);
 }
 
 /* Markdown styles */

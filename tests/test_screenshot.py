@@ -58,6 +58,7 @@ class TestHtmlToPng:
         mock_sync_api.sync_playwright.return_value = mock_playwright
         mock_playwright.__enter__ = MagicMock(return_value=mock_playwright)
         mock_playwright.__exit__ = MagicMock(return_value=False)
+        mock_playwright.start.return_value = mock_playwright
         mock_playwright.chromium.launch.return_value = mock_browser
         mock_browser.new_page.return_value = mock_page
 
@@ -111,11 +112,20 @@ class TestHtmlToPng:
         html_file = tmp_path / "test.html"
         html_file.write_text("<html><body>Test</body></html>")
 
-        # Create a mock playwright module that raises exception
+        # Create a mock playwright module — raise at page.goto so browser
+        # is already created and the finally-block close() succeeds.
         mock_playwright_module = MagicMock()
         mock_sync_api = MagicMock()
+        mock_playwright = MagicMock()
+        mock_browser = MagicMock()
+        mock_page = MagicMock()
+
         mock_playwright_module.sync_api = mock_sync_api
-        mock_sync_api.sync_playwright.side_effect = Exception("Browser error")
+        mock_sync_api.sync_playwright.return_value = mock_playwright
+        mock_playwright.start.return_value = mock_playwright
+        mock_playwright.chromium.launch.return_value = mock_browser
+        mock_browser.new_page.return_value = mock_page
+        mock_page.goto.side_effect = Exception("Browser error")
 
         # Add mock module to sys.modules
         sys.modules["playwright"] = mock_playwright_module
@@ -146,6 +156,7 @@ class TestHtmlToPng:
         mock_sync_api.sync_playwright.return_value = mock_playwright
         mock_playwright.__enter__ = MagicMock(return_value=mock_playwright)
         mock_playwright.__exit__ = MagicMock(return_value=False)
+        mock_playwright.start.return_value = mock_playwright
         mock_playwright.chromium.launch.return_value = mock_browser
         mock_browser.new_page.return_value = mock_page
 
@@ -236,13 +247,36 @@ class TestBatchConvert:
 
     def test_returns_empty_for_empty_directory(self, tmp_path):
         """Should return empty list for empty directory."""
-        results = batch_convert(tmp_path)
-        assert results == []
+        mock_playwright_module = MagicMock()
+        mock_sync_api = MagicMock()
+        sys.modules["playwright"] = mock_playwright_module
+        sys.modules["playwright.sync_api"] = mock_sync_api
+        try:
+            results = batch_convert(tmp_path)
+            assert results == []
+        finally:
+            sys.modules.pop("playwright", None)
+            sys.modules.pop("playwright.sync_api", None)
 
     def test_handles_failed_conversions(self, tmp_path):
         """Should skip files that fail to convert."""
         (tmp_path / "good.html").write_text("<html><body>Good</body></html>")
         (tmp_path / "bad.html").write_text("<html><body>Bad</body></html>")
+
+        # Mock playwright module for batch_convert's top-level import
+        mock_playwright_module = MagicMock()
+        mock_sync_api = MagicMock()
+        mock_playwright = MagicMock()
+        mock_browser = MagicMock()
+
+        mock_playwright_module.sync_api = mock_sync_api
+        mock_sync_api.sync_playwright.return_value = mock_playwright
+        mock_playwright.__enter__ = MagicMock(return_value=mock_playwright)
+        mock_playwright.__exit__ = MagicMock(return_value=False)
+        mock_playwright.chromium.launch.return_value = mock_browser
+
+        sys.modules["playwright"] = mock_playwright_module
+        sys.modules["playwright.sync_api"] = mock_sync_api
 
         call_count = 0
 
@@ -253,8 +287,12 @@ class TestBatchConvert:
                 return None
             return output_path or html_path.with_suffix(".png")
 
-        with patch("skills.screenshot.html_to_png", side_effect=mock_html_to_png):
-            results = batch_convert(tmp_path)
+        try:
+            with patch("skills.screenshot.html_to_png", side_effect=mock_html_to_png):
+                results = batch_convert(tmp_path)
 
-        assert len(results) == 1
-        assert "good" in results[0]
+            assert len(results) == 1
+            assert "good" in results[0]
+        finally:
+            sys.modules.pop("playwright", None)
+            sys.modules.pop("playwright.sync_api", None)
