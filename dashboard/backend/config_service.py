@@ -88,13 +88,17 @@ def get_default_writing_styles() -> dict:
 
 
 def get_default_quality_gates() -> dict:
-    """Get default quality gate thresholds."""
+    """Get default quality gate thresholds.
+
+    Keys aligned with config/quality_gates.json and writer.py.
+    """
     return {
-        "ai_slop_threshold": _QUALITY_THRESHOLD,
-        "critique_threshold": _QUALITY_THRESHOLD,
+        "proofread_threshold": 60,
+        "critique_threshold": 70,
+        "title_threshold": 75,
         "max_rewrite_rounds": MAX_REWRITE_ROUNDS,
-        "topic_score_floor": 55,
-        "attention_floor": 40,
+        "auto_approve_threshold": 90,
+        "reject_threshold": 40,
     }
 
 

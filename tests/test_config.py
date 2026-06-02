@@ -92,21 +92,22 @@ class TestQualityGates:
     def test_default_gates(self):
         """Test getting default quality gates."""
         from dashboard.backend.config_service import get_quality_gates
-        
+
         gates = get_quality_gates()
-        assert 'ai_slop_threshold' in gates
+        assert 'proofread_threshold' in gates
         assert 'critique_threshold' in gates
+        assert 'title_threshold' in gates
         assert 'max_rewrite_rounds' in gates
-        assert gates['ai_slop_threshold'] == 70
-    
+        assert gates['proofread_threshold'] == 60
+
     def test_update_gates(self):
         """Test updating quality gates."""
         from dashboard.backend.config_service import update_quality_gates, get_quality_gates
-        
-        update_quality_gates({'ai_slop_threshold': 75})
-        
+
+        update_quality_gates({'proofread_threshold': 65})
+
         gates = get_quality_gates()
-        assert gates['ai_slop_threshold'] == 75
+        assert gates['proofread_threshold'] == 65
 
 
 class TestSourceConfig:

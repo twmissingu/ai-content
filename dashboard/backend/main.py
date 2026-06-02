@@ -51,6 +51,7 @@ from dashboard.backend.routes.traces import router as traces_router
 from dashboard.backend.routes.prompts import router as prompts_router
 from dashboard.backend.routes.sources import router as sources_router
 from dashboard.backend.routes.reader import router as reader_router
+from dashboard.backend.routes.reviews import router as reviews_router
 from fastapi import WebSocket as WSProtocol, WebSocketDisconnect
 
 # Import rate limiter
@@ -239,6 +240,7 @@ app.include_router(config_router)
 app.include_router(health_router)
 app.include_router(traces_router)
 app.include_router(prompts_router)
+app.include_router(reviews_router)
 app.include_router(sources_router)
 app.include_router(reader_router)
 

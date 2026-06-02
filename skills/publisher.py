@@ -168,6 +168,68 @@ class PublisherAgent(AgentBase):
             except OSError:
                 pass
 
+    def _publish_video(self, platform: str, article_path: Path, meta: dict) -> bool:
+        """Publish video content to video platforms (douyin/shipinhao/kuaishou/bilibili).
+
+        Uses AiToEarn createVideoDraft MCP tool with video file.
+        Video file path is read from meta.videos[0].
+        """
+        videos = meta.get("videos", [])
+        if not videos:
+            self.logger.info(f"No video found for {platform}, skipping video distribution")
+            return False
+
+        video_path = videos[0]
+        if not Path(video_path).exists():
+            self.logger.warning(f"Video file not found: {video_path}")
+            return False
+
+        raw_content = article_path.read_text(encoding="utf-8")
+        title = raw_content.split('\n')[0].lstrip('# ').strip() if raw_content else ""
+        title, content = adapt_content(title, raw_content, platform)
+
+        tool_map = {
+            "douyin": "aitoearn_createVideoDraft",
+            "shipinhao": "aitoearn_createVideoDraft",
+            "kuaishou": "aitoearn_createVideoDraft",
+            "bilibili": "aitoearn_createVideoDraft",
+        }
+        tool_name = tool_map.get(platform)
+        if not tool_name:
+            self.logger.warning(f"No video MCP tool for platform: {platform}")
+            return False
+
+        params = {
+            "title": title or meta.get("topic", ""),
+            "content": content[:3000],
+            "draftType": "VIDEO",
+            "platform": platform,
+            "videoPath": video_path,
+        }
+
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix='.json', prefix='aitoearn_video_')
+        try:
+            with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
+                json.dump(params, f, ensure_ascii=False)
+            result = subprocess.run(
+                ["hermes", "mcp", "call", tool_name, "--params-file", tmp_path],
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode == 0:
+                self.logger.info(f"Video published to {platform}: {video_path}")
+                return True
+            else:
+                self.logger.warning(f"Video publish to {platform} failed: {result.stderr[:200]}")
+                return False
+        except Exception as e:
+            self.logger.error(f"{platform} video MCP publish failed: {e}")
+            return False
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
     def run(self, target_id: Optional[str] = None, platforms: Optional[list[str]] = None):
         """Main publisher logic."""
         if target_id is None:
@@ -193,9 +255,17 @@ class PublisherAgent(AgentBase):
 
         def _publish_one(platform: str) -> tuple[str, bool]:
             """Publish to a single platform (runs in thread pool)."""
+            # Video platforms: prefer video distribution if video exists
+            video_platforms = ("douyin", "shipinhao", "kuaishou", "bilibili")
+            has_video = bool(meta.get("videos"))
+
             if platform == "wechat":
                 return platform, self._publish_wechat(article, meta)
-            elif platform in ("xiaohongshu", "douyin"):
+            elif platform in ("xiaohongshu",):
+                return platform, self._publish_webbridge(platform, article, meta)
+            elif platform in video_platforms and has_video:
+                return platform, self._publish_video(platform, article, meta)
+            elif platform in ("douyin",):
                 return platform, self._publish_webbridge(platform, article, meta)
             elif platform in ("kuaishou", "shipinhao"):
                 return platform, self._publish_aitoearn_mcp(platform, article, meta)

@@ -40,11 +40,16 @@ class StyleUpdate(BaseModel):
     stance: str | None = None
 
 class GatesUpdate(BaseModel):
-    """Validation for quality gates updates."""
-    ai_slop_threshold: int | None = Field(None, ge=0, le=100)
+    """Validation for quality gates updates.
+
+    Keys aligned with config/quality_gates.json and writer.py.
+    """
+    proofread_threshold: int | None = Field(None, ge=0, le=100)
     critique_threshold: int | None = Field(None, ge=0, le=100)
+    title_threshold: int | None = Field(None, ge=0, le=100)
     max_rewrite_rounds: int | None = Field(None, ge=1, le=10)
-    topic_score_floor: int | None = Field(None, ge=0, le=100)
+    auto_approve_threshold: int | None = Field(None, ge=0, le=100)
+    reject_threshold: int | None = Field(None, ge=0, le=100)
 
 class SourceUpdate(BaseModel):
     """Validation for source config updates."""

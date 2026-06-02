@@ -71,6 +71,14 @@ from .prompts import (
     save_prompt,
 )
 
+# Manual reviews (人工抽检)
+from .manual_reviews import (
+    create_manual_review,
+    get_manual_reviews,
+    get_pending_review_articles,
+    get_review_stats,
+)
+
 __all__ = [
     # Core
     'DATABASE_PATH', 'cached_query', 'get_db', 'init_db', 'shutdown_db_connections', '_invalidate_cache',
@@ -88,4 +96,6 @@ __all__ = [
     # Prompts
     'activate_prompt', 'delete_prompt_version', 'get_prompt', 'import_prompts_from_files',
     'list_prompt_versions', 'list_prompts', 'save_prompt',
+    # Manual Reviews
+    'create_manual_review', 'get_manual_reviews', 'get_pending_review_articles', 'get_review_stats',
 ]

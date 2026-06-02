@@ -1319,7 +1319,8 @@ system_prompt = "你是一位内容创作者。" + " ".join(parts)
 | 批评修订及格线 | `critique_threshold` | 70分 | 50-90 |
 | 标题优化及格线 | `title_threshold` | 75分 | 60-90 |
 | 最大重写轮数 | `max_rewrite_rounds` | 3轮 | 1-5 |
-| 选题评分淘汰线 | — | 55分 | 40-80 |
+| 自动通过阈值 | `auto_approve_threshold` | 90分 | 70-100 |
+| 自动拒绝阈值 | `reject_threshold` | 40分 | 0-60 |
 
 ### 9.4 信息源配置
 

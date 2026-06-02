@@ -214,6 +214,24 @@ def init_db():
                 UNIQUE(name, version)
             );
 
+            -- 人工抽检记录
+            CREATE TABLE IF NOT EXISTS manual_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER,
+                version_id INTEGER,
+                article_path TEXT,
+                article_title TEXT,
+                llm_score INTEGER,
+                human_score INTEGER,
+                score_diff INTEGER,
+                status TEXT CHECK(status IN ('normal', 'warning', 'critical')) DEFAULT 'normal',
+                reviewer TEXT DEFAULT 'user',
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (session_id) REFERENCES pipeline_sessions(id) ON DELETE SET NULL,
+                FOREIGN KEY (version_id) REFERENCES platform_versions(id) ON DELETE SET NULL
+            );
+
             -- 创建索引
             CREATE INDEX IF NOT EXISTS idx_pipeline_sessions_date ON pipeline_sessions(date);
             CREATE INDEX IF NOT EXISTS idx_pipeline_sessions_status ON pipeline_sessions(status);
@@ -228,6 +246,9 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_pipeline_traces_agent ON pipeline_traces(agent);
             CREATE INDEX IF NOT EXISTS idx_prompt_versions_name ON prompt_versions(name);
             CREATE INDEX IF NOT EXISTS idx_prompt_versions_active ON prompt_versions(name, is_active);
+            CREATE INDEX IF NOT EXISTS idx_manual_reviews_session ON manual_reviews(session_id);
+            CREATE INDEX IF NOT EXISTS idx_manual_reviews_status ON manual_reviews(status);
+            CREATE INDEX IF NOT EXISTS idx_manual_reviews_created ON manual_reviews(created_at);
 
             -- Composite indexes for common query patterns
             CREATE INDEX IF NOT EXISTS idx_token_usage_date_cost

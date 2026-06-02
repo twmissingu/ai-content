@@ -27,10 +27,20 @@ cp .env.docker.example .env
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `LLM_MODEL` | 模型名称 | `mimo-v2.5` |
+| `LLM_MAX_TOKENS` | LLM 最大输出 token | `131072` |
+| `LLM_CONTEXT_LENGTH` | LLM 上下文长度 | `262144` |
 | `FEISHU_WEBHOOK_URL` | 飞书告警 Webhook | - |
 | `MONTHLY_BUDGET_USD` | 月度预算上限 | `15` |
 | `CORS_ORIGINS` | 前端域名（逗号分隔） | `http://localhost:5173,http://127.0.0.1:5173,http://localhost:8710,http://127.0.0.1:8710` |
 | `ENV` | 运行环境 | `development`（生产设为 `production`） |
+| `TRUSTED_PROXIES` | 可信代理 IP | - |
+| `PARALLEL_WORKERS` | 并行 Writer Worker 数 | `1` |
+| `RSSHUB_BASE_URL` | RSSHub 服务地址 | `http://localhost:1200` |
+| `WEWE_RSS_BASE_URL` | wewe-rss 服务地址 | `http://localhost:4000` |
+| `RSS_COLLECTOR_INTERVAL` | RSS 采集间隔（分钟） | `30` |
+| `NOTIFICATION_QUIET_START` | 免打扰开始时间（小时） | `22` |
+| `NOTIFICATION_QUIET_END` | 免打扰结束时间（小时） | `8` |
+| `AGNES_SCRIPT_PATH` | Agnes 脚本路径 | `~/.agents/skills/agnes-generate/scripts/image_gen.py` |
 
 ### 2. Docker 部署（推荐）
 
