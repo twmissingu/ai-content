@@ -5,8 +5,9 @@
 > 状态：四角色交叉审查修订版（PM/架构师/开发/UI-UX，12 项修订）  
 > 基于 Hermes Agent + FastAPI + Vue 3 + SQLite 技术栈
 >
-> **实现说明（v0.7.0）：** PRD 中描述的"飞书审批"已由 Web Dashboard 替代为主要操作界面。
+> **实现说明（v0.8.0）：** PRD 中描述的"飞书审批"已由 Web Dashboard 替代为主要操作界面。
 > 超时自动确认、超时自动跳过等功能标记为"待实现"。质量门阈值已更新为三级配置。
+> 配图已从 HTML 模板/baoyu 替换为 Agnes AI 配图。视频生成采用图文转视频方案（方案 C）。
 > 详见 [CHANGELOG.md](../../CHANGELOG.md)。
 
 ---
@@ -382,7 +383,8 @@ project-root/
 │   ├── writer.py               ← 写手 Agent（7 阶段管线 + 可选视频）
 │   ├── writer_router.py        ← 并行 Writer 路由器
 │   ├── writer_illustration.py  ← Agnes AI 配图
-│   ├── writer_video.py         ← Agnes AI 视频生成
+│   ├── writer_video.py         ← 图文转视频（方案 C）+ Agnes AI 视频（方案 A）
+│   ├── tts.py                  ← MiMo-V2.5-TTS 语音合成
 │   ├── publisher.py            ← 统一分发 Agent
 │   ├── publisher_webbridge.py  ← Kimi WebBridge 浏览器自动化
 │   ├── platform_adapters.py    ← 平台内容适配器
@@ -575,11 +577,12 @@ increment_score = saturation_score × 0.40
 - Aggregator 轮询所有 Worker 完成后合并结果写 aggregated.json
 - Phase 1 优先实现单 Worker（公众号标准）跑通全流程，Phase 3 再启用并行
 
-**HTML 配图截图技术方案（选定）：**
-- HTML 模板渲染信息图后，需要用截图方式转为图片文件方可投递到各平台草稿箱
-- 复用 Playwright Chromium 实例（已作为头条号分发依赖安装）
-- 流程：生成 HTML 模板 → Playwright `page.setContent()` → `page.screenshot()` → 保存 PNG
-- 零额外安装依赖，仅增加 ~200-300MB Chromium 实例磁盘占用
+**Agnes AI 配图方案（已实现）：**
+- LLM 根据文章内容生成英文图片 prompt（`config/prompts/image_prompt_gen.md`）
+- 调用 Agnes AI 图片生成 API（`skills/writer_illustration.py`）
+- 风格配置：`config/image_styles.json`（8 种内容类型 × 视觉风格）
+- 配图数量由 `writing_styles.json` 的 `illustrations` 字段控制
+- 降级策略：Agnes 失败 → 不带图进入审批（不阻塞管线）
 
 **串行 vs 并行对比：**
 - 串行场景：3 个版本 × ~25 分钟/版 = 75 分钟，时间线塞不下
@@ -929,7 +932,7 @@ idle → submitting → submitted → processing → completed/failed
 | Hermes gateway 守护进程宕机 | 系统级 watchdog（crontab 每分钟检查）→ 自动重启 + 飞书告警 |
 | AiToEarn MCP 连接断开 | 降级：跳过 AiToEarn 分发通道，其余通道照常运行 |
 
-### 5.5 飞书集成决策（待验证）
+### 5.5 飞书集成决策（已决策：方案 B，已实现）
 
 Hermes Agent 是否原生支持飞书通知和交互卡片回调**尚未验证**，这是一个重大依赖假设。
 
@@ -1504,11 +1507,14 @@ Hermes 内置 Firecrawl 作为默认 Web 后端，月 500 credits 免费。
 - [ ] 领域切换的"项目化"管理支持 + 评分模型权重配置
 - [ ] 飞书回调签名验证（仅当 Dashboard 公网部署时）
 
-### Phase 4 — 视频阶段
+### Phase 4 — 视频阶段（进行中）
 
-- [ ] 抖音标准内容产出管线
+- [x] Agnes AI 视频生成（`skills/writer_video.py` 方案 A）
+- [x] MiMo-V2.5-TTS 语音合成（`skills/tts.py`）
+- [x] 图文转视频管线 — 文章拆段 → 配图+配音 → ffmpeg 合成（方案 C）
+- [x] Writer 管线 Stage 7b 集成（可选视频生成）
+- [x] 抖音脚本生成（`skills/writer_douyin.py`）
 - [ ] AiToEarn 视频分发（抖音+视频号+快手+B站）
-- [ ] 图文转视频流程
 
 ---
 

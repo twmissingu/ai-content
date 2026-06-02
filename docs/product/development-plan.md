@@ -117,10 +117,10 @@ Knowledge Agent（Python）→ 归档到 kb/history/
 | Agnes 视频生成 | LLM prompt → Agnes 异步视频生成（`skills/writer_video.py`） | ✅ 已完成 |
 | Writer 管线集成 | Stage 7b 可选视频生成，`writing_styles.json` 控制开关 | ✅ 已完成 |
 | 抖音脚本生成 | 15-60 秒脚本生成（`skills/writer_douyin.py`） | ✅ 已完成 |
-| TTS 配音集成 | 脚本 → 语音合成 | ⏳ 待定 |
-| 画面描述/分镜 | 脚本 → 分镜画面描述 | ⏳ 待定 |
+| TTS 配音集成 | MiMo-V2.5-TTS 语音合成（`skills/tts.py`） | ✅ 已完成 |
+| 画面描述/分镜 | LLM 拆段 + 每段配图 prompt（`split_article_into_segments()`） | ✅ 已完成 |
+| 图文转视频 | 拆段 → 配图+配音 → ffmpeg 合成（方案 C） | ✅ 已完成 |
 | 视频分发 | AiToEarn 视频分发（抖音/视频号/快手/B站） | ⏳ 待定 |
-| 图文转视频 | 将公众号/小红书内容转为视频 | ⏳ 待定 |
 
 ---
 
@@ -156,6 +156,4 @@ Knowledge Agent（Python）→ 归档到 kb/history/
 | P2 | 前端 E2E 测试 | Playwright 覆盖 SourcesView / ReaderPanel / 三栏布局 | 1 天 |
 | P3 | 平台适配引擎 | 各平台独立格式适配规则 | 3 天 |
 | P3 | 选题竞争度分析 | 热度 + 饱和度二维评估 | 1 天 |
-| P4 | TTS 配音集成 | 抖音脚本 → 语音合成 | 待定 |
-| P4 | 画面描述/分镜 | 抖音脚本 → 分镜画面描述 | 待定 |
 | P4 | 视频分发 | AiToEarn 视频分发（抖音/视频号/快手/B站） | 待定 |
