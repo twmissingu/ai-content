@@ -103,7 +103,7 @@ class TestSourcesCaching:
 
         # Force cache expiry
         import dashboard.backend.routes.sources as src_mod
-        src_mod._sources_cache_ts = 0
+        src_mod._sources_cache.clear()
 
         # Add a new source file
         sources_dir = tmp_path / "queue" / "sources"
@@ -122,7 +122,8 @@ class TestSourcesCaching:
         client.get("/api/sources")
 
         assert "sources_10" in src_mod._sources_cache
-        assert src_mod._sources_cache_ts > 0
+        ts, _ = src_mod._sources_cache["sources_10"]
+        assert ts > 0
 
 
 class TestSourcesStats:

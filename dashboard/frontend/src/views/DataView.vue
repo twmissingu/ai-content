@@ -26,6 +26,7 @@ async function fetchCost() {
   loading.value = true
   try {
     const res = await fetch(`${API_BASE}/api/data/cost`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     costData.value = data.daily || []
     monthlyTotal.value = data.monthly_total || 0

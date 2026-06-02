@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import subprocess
+import threading
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 
 # Rate limiter for trigger endpoint
 _trigger_timestamps: dict[str, list[float]] = defaultdict(list)
+_trigger_lock = threading.Lock()
 _TRIGGER_RATE_LIMIT = 5
 _TRIGGER_RATE_WINDOW = 60
 _TRIGGER_MAX_CLIENTS = 1000
@@ -98,19 +100,20 @@ def trigger_agent(req: TriggerRequest, request: Request):
     import time as _time
     now = _time.time()
 
-    # Evict stale clients when map grows too large
-    if len(_trigger_timestamps) > _TRIGGER_MAX_CLIENTS:
-        cutoff = now - _TRIGGER_RATE_WINDOW
-        stale = [ip for ip, ts in _trigger_timestamps.items()
-                 if not ts or ts[-1] < cutoff]
-        for ip in stale:
-            del _trigger_timestamps[ip]
+    with _trigger_lock:
+        # Evict stale clients when map grows too large
+        if len(_trigger_timestamps) > _TRIGGER_MAX_CLIENTS:
+            cutoff = now - _TRIGGER_RATE_WINDOW
+            stale = [ip for ip, ts in _trigger_timestamps.items()
+                     if not ts or ts[-1] < cutoff]
+            for ip in stale:
+                del _trigger_timestamps[ip]
 
-    timestamps = _trigger_timestamps[client_ip]
-    _trigger_timestamps[client_ip] = [t for t in timestamps if now - t < _TRIGGER_RATE_WINDOW]
-    if len(_trigger_timestamps[client_ip]) >= _TRIGGER_RATE_LIMIT:
-        raise HTTPException(429, "触发频率过高，请稍后再试")
-    _trigger_timestamps[client_ip].append(now)
+        timestamps = _trigger_timestamps[client_ip]
+        _trigger_timestamps[client_ip] = [t for t in timestamps if now - t < _TRIGGER_RATE_WINDOW]
+        if len(_trigger_timestamps[client_ip]) >= _TRIGGER_RATE_LIMIT:
+            raise HTTPException(429, "触发频率过高，请稍后再试")
+        _trigger_timestamps[client_ip].append(now)
 
     if req.topic_id and not _TOPIC_ID_RE.match(req.topic_id):
         raise HTTPException(400, f"Invalid topic_id format: {req.topic_id}")
@@ -135,9 +138,10 @@ def trigger_agent(req: TriggerRequest, request: Request):
     try:
         process = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             cwd=str(PROJECT_ROOT),
+            start_new_session=True,
         )
         logger.info(f"Triggered {req.agent} (PID: {process.pid})")
         return {

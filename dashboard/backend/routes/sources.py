@@ -14,9 +14,8 @@ logger = logging.getLogger("gaoding.dashboard")
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
 
-# Module-level cache for source files
-_sources_cache: dict = {}
-_sources_cache_ts: float = 0
+# Module-level cache for source files (keyed by limit_files, stores (ts, result))
+_sources_cache: dict[str, tuple[float, tuple[list[dict], int]]] = {}
 _SOURCES_CACHE_TTL = 30.0  # seconds
 
 
@@ -25,26 +24,40 @@ def _load_all_sources(limit_files: int = 10) -> tuple[list[dict], int]:
 
     Returns (items, file_count) tuple.
     """
-    global _sources_cache, _sources_cache_ts
+    global _sources_cache
     cache_key = f"sources_{limit_files}"
     now = time.time()
-    if cache_key in _sources_cache and (now - _sources_cache_ts) < _SOURCES_CACHE_TTL:
-        return _sources_cache[cache_key]
+    if cache_key in _sources_cache:
+        ts, cached_result = _sources_cache[cache_key]
+        if (now - ts) < _SOURCES_CACHE_TTL:
+            return cached_result
 
     files = sorted(SOURCES_DIR.glob("*.json"), key=os.path.getmtime, reverse=True)
     file_count = len(files)
-    all_items = []
+    seen_urls: dict[str, int] = {}  # url -> index in all_items
+    all_items: list[dict] = []
     for f in files[:limit_files]:
         try:
             items = json.loads(f.read_text(encoding="utf-8"))
             if isinstance(items, list):
-                all_items.extend(items)
+                for item in items:
+                    url = item.get("url", "")
+                    if url and url in seen_urls:
+                        # Keep the entry with higher stars
+                        idx = seen_urls[url]
+                        existing = all_items[idx]
+                        if (item.get("stars") or 0) > (existing.get("stars") or 0):
+                            all_items[idx] = item
+                    elif url:
+                        seen_urls[url] = len(all_items)
+                        all_items.append(item)
+                    else:
+                        all_items.append(item)
         except (json.JSONDecodeError, OSError) as e:
             logger.warning(f"Failed to read {f.name}: {e}")
 
     result = (all_items, file_count)
-    _sources_cache[cache_key] = result
-    _sources_cache_ts = now
+    _sources_cache[cache_key] = (now, result)
     return result
 
 

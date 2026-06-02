@@ -12,7 +12,7 @@ import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from config.settings import KB_DIR, REVIEW_DIR
 from skills.common import AgentBase, agent_main
@@ -78,17 +78,16 @@ class KnowledgeAgent(AgentBase):
 
     def _save_meta(self, dest: Path, meta: dict, analysis: dict):
         """Save .meta.json alongside the archived article."""
+        from skills.common import atomic_write_json
         merged = {
             "archived_at": datetime.now().isoformat(),
             "original_meta": meta,
             "analysis": analysis,
         }
         meta_path = dest.with_suffix(".meta.json")
-        tmp_path = meta_path.with_suffix(".tmp")
-        tmp_path.write_text(json.dumps(merged, ensure_ascii=False, indent=2))
-        tmp_path.rename(meta_path)
+        atomic_write_json(meta_path, merged)
 
-    def run(self, target_id: str = None):
+    def run(self, target_id: Optional[str] = None):
         """Main knowledge archival logic."""
         if target_id is None:
             target_id = sys.argv[1] if len(sys.argv) > 1 else None

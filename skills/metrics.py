@@ -160,7 +160,9 @@ class AgentMetrics:
             path = metrics_dir / f"{self.agent_name}_{timestamp}.json"
         
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(self.summary(), ensure_ascii=False, indent=2))
+        tmp_path = path.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(self.summary(), ensure_ascii=False, indent=2))
+        tmp_path.replace(path)
         return path
     
     def __repr__(self) -> str:

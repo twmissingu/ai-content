@@ -69,11 +69,12 @@ function handleKeydown(e: KeyboardEvent) {
         @keydown="handleKeydown"
         tabindex="0"
       >
-        <button class="lightbox-close" @click="closeLightbox">✕</button>
+        <button class="lightbox-close" @click="closeLightbox" aria-label="关闭">✕</button>
         <button
           v-if="lightboxIndex > 0"
           class="lightbox-nav lightbox-prev"
           @click="prevImage"
+          aria-label="上一张"
         >
           ‹
         </button>
@@ -86,6 +87,7 @@ function handleKeydown(e: KeyboardEvent) {
           v-if="lightboxIndex < imageUrls.length - 1"
           class="lightbox-nav lightbox-next"
           @click="nextImage"
+          aria-label="下一张"
         >
           ›
         </button>

@@ -7,6 +7,7 @@ Three-layer dedup:
 """
 
 import json
+from datetime import datetime, timedelta, timezone
 import re
 from pathlib import Path
 from typing import Optional
@@ -63,17 +64,26 @@ def _recent_topics(days: int = SAME_TOPIC_BLOCK_DAYS) -> set[str]:
     """Return set of topic titles written in the past N days."""
     recent = set()
     if HISTORY_DIR.exists():
-        for d in list(HISTORY_DIR.iterdir()):
-            if d.is_dir():
-                for f in d.glob("*.md"):
-                    try:
-                        with open(f, encoding="utf-8", errors="ignore") as fh:
-                            first_line = fh.readline(200)  # read only first 200 bytes
-                        title = first_line.removeprefix("# ").strip()
-                        if title:
-                            recent.add(title)
-                    except OSError:
-                        pass
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        for d in sorted(HISTORY_DIR.iterdir(), reverse=True):
+            if not d.is_dir():
+                continue
+            # Parse date from directory name (YYYY-MM-DD format)
+            try:
+                dir_date = datetime.strptime(d.name, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                if dir_date < cutoff:
+                    continue
+            except ValueError:
+                continue  # skip non-date directories
+            for f in d.glob("*.md"):
+                try:
+                    with open(f, encoding="utf-8", errors="ignore") as fh:
+                        first_line = fh.readline(200)  # read only first 200 bytes
+                    title = first_line.removeprefix("# ").strip()
+                    if title:
+                        recent.add(title)
+                except OSError:
+                    pass
     # Also check pending
     for f in PENDING_DIR.glob("*.json"):
         try:

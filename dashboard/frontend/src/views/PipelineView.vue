@@ -131,9 +131,8 @@ function getAgentLabel(name: string): string {
 
 function getProgressColor(pct: number): string {
   if (pct >= 100) return 'success'
-  if (pct >= 80) return 'danger'
-  if (pct >= 60) return 'warning'
-  return 'primary'
+  if (pct >= 60) return 'primary'
+  return 'warning'
 }
 
 // Manual agent trigger

@@ -26,6 +26,17 @@ def pytest_configure(config):
 
 
 @pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Reset rate limiter between tests to prevent cross-test 429 errors."""
+    yield
+    try:
+        from dashboard.backend.main import rate_limiter
+        rate_limiter.requests.clear()
+    except Exception:
+        pass
+
+
+@pytest.fixture(autouse=True)
 def _close_db_connections():
     """Close thread-local DB connections after each test to prevent ResourceWarning."""
     yield

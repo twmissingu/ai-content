@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onErrorCaptured, onUnmounted } from 'vue'
+import { ref, onErrorCaptured, onUnmounted, watch } from 'vue'
 
 const error = ref<Error | null>(null)
 const errorInfo = ref('')
@@ -66,7 +66,6 @@ async function copyError() {
 }
 
 // Start auto-retry countdown when error appears
-import { watch } from 'vue'
 watch(error, (newError) => {
   if (newError && retryCount.value < MAX_AUTO_RETRIES) {
     autoRetry()

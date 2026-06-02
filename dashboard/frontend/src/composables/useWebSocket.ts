@@ -119,6 +119,9 @@ export function useWebSocket(options: WebSocketOptions) {
     }
   }, 30000)
 
+  // Auto-connect on creation
+  connect()
+
   onUnmounted(() => {
     disconnect()
     if (pingTimer) {

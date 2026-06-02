@@ -30,7 +30,7 @@ class ConnectionManager:
 
     def __init__(self):
         self._connections: list[WebSocket] = []
-        self._lock = asyncio.Lock()
+        self._lock = threading.Lock()
         self._last_status_hash: str = ""
         self._watcher_task: asyncio.Task | None = None
 
@@ -41,7 +41,7 @@ class ConnectionManager:
 
     async def register(self, websocket: WebSocket):
         """Register an already-accepted WebSocket connection."""
-        async with self._lock:
+        with self._lock:
             if len(self._connections) >= MAX_CONNECTIONS:
                 logger.warning(
                     f"Connection limit reached ({MAX_CONNECTIONS}), rejecting"
@@ -52,25 +52,30 @@ class ConnectionManager:
         logger.info(f"WebSocket connected ({len(self._connections)} total)")
 
     async def disconnect(self, websocket: WebSocket):
-        async with self._lock:
+        with self._lock:
             if websocket in self._connections:
                 self._connections.remove(websocket)
         logger.info(f"WebSocket disconnected ({len(self._connections)} total)")
 
     async def broadcast(self, data: dict):
         """Send data to all connected clients."""
-        if not self._connections:
-            return
+        with self._lock:
+            if not self._connections:
+                return
+            # Snapshot the list under lock, then send outside lock
+            clients = list(self._connections)
         message = json.dumps(data, ensure_ascii=False)
         dead: list[WebSocket] = []
-        async with self._lock:
-            for ws in self._connections:
-                try:
-                    await ws.send_text(message)
-                except Exception:
-                    dead.append(ws)
-            for ws in dead:
-                self._connections.remove(ws)
+        for ws in clients:
+            try:
+                await ws.send_text(message)
+            except Exception:
+                dead.append(ws)
+        if dead:
+            with self._lock:
+                for ws in dead:
+                    if ws in self._connections:
+                        self._connections.remove(ws)
 
     def _build_status(self) -> dict:
         """Read current pipeline status from disk."""

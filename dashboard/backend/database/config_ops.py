@@ -3,7 +3,7 @@
 import json
 from typing import Any
 
-from .core import get_db
+from .core import get_db, _invalidate_cache
 
 
 def set_config_value(key: str, value: Any, status: str = 'current',
@@ -23,6 +23,7 @@ def set_config_value(key: str, value: Any, status: str = 'current',
             INSERT INTO config_entries (key, value, status, effective_from)
             VALUES (?, ?, ?, ?)
         """, (key, value_json, status, effective_from))
+    _invalidate_cache()
 
 
 def get_config_value(key: str, default: Any = None) -> Any:

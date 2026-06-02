@@ -73,29 +73,6 @@ def get_config():
         return load_schedule()
 
 
-@router.get("/{section}")
-def get_config_section(section: str):
-    """Read specific configuration section."""
-    section_map = {
-        "schedule": get_schedule_config,
-        "styles": get_writing_styles,
-        "gates": get_quality_gates,
-        "sources": get_source_config,
-        "model": get_model_config,
-        "budget": get_budget_config,
-    }
-
-    getter = section_map.get(section)
-    if not getter:
-        raise HTTPException(404, f"Unknown config section: {section}")
-
-    try:
-        return getter()
-    except Exception as e:
-        logger.error(f"Error reading {section}: {e}")
-        raise HTTPException(500, f"读取配置失败: {section}")
-
-
 @router.post("/schedule")
 def update_schedule_config(update: ConfigUpdate):
     """Update schedule configuration."""
@@ -192,3 +169,30 @@ def get_quality_flywheel():
     except Exception as e:
         logger.error(f"Error getting flywheel data: {e}")
         raise HTTPException(500, "获取质量飞轮数据失败")
+
+
+
+# Catch-all dynamic route MUST be defined last, after all specific routes.
+# FastAPI matches routes in definition order; placing this earlier causes
+# paths like /quality-flywheel to be captured by the dynamic parameter.
+@router.get("/{section}")
+def get_config_section(section: str):
+    """Read specific configuration section."""
+    section_map = {
+        "schedule": get_schedule_config,
+        "styles": get_writing_styles,
+        "gates": get_quality_gates,
+        "sources": get_source_config,
+        "model": get_model_config,
+        "budget": get_budget_config,
+    }
+
+    getter = section_map.get(section)
+    if not getter:
+        raise HTTPException(404, f"Unknown config section: {section}")
+
+    try:
+        return getter()
+    except Exception as e:
+        logger.error(f"Error reading {section}: {e}")
+        raise HTTPException(500, f"读取配置失败: {section}")

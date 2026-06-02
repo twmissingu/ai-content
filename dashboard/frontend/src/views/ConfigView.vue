@@ -36,6 +36,7 @@ async function fetchPrompts() {
   loading.value = true
   try {
     const res = await fetch(`${API_BASE}/api/prompts`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     prompts.value = data.prompts || []
   } catch (e) {
@@ -54,6 +55,7 @@ async function selectPrompt(prompt: PromptTemplate) {
   // Fetch version history
   try {
     const res = await fetch(`${API_BASE}/api/prompts/${prompt.name}/versions`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     versions.value = data.versions || []
   } catch (e) {

@@ -15,6 +15,7 @@ from dashboard.backend.search import (
     search_kb as search_kb_fts,
 )
 
+import threading
 import time
 
 logger = logging.getLogger("gaoding.dashboard")
@@ -24,6 +25,7 @@ router = APIRouter(prefix="/api/kb", tags=["kb"])
 _section_cache: dict = {}
 _section_cache_ts: float = 0
 _SECTION_CACHE_TTL = 30.0  # seconds
+_section_cache_lock = threading.Lock()
 
 MAX_TREE_DEPTH = 3
 
@@ -87,8 +89,9 @@ def get_kb_sections():
     """List knowledge base sections and their article counts."""
     global _section_cache, _section_cache_ts
     now = time.time()
-    if _section_cache and (now - _section_cache_ts) < _SECTION_CACHE_TTL:
-        return {"sections": _section_cache}
+    with _section_cache_lock:
+        if _section_cache and (now - _section_cache_ts) < _SECTION_CACHE_TTL:
+            return {"sections": _section_cache}
 
     sections = []
 
@@ -131,8 +134,9 @@ def get_kb_sections():
                 "path": str(KB_DIR / "history"),
             })
 
-    _section_cache = sections
-    _section_cache_ts = now
+    with _section_cache_lock:
+        _section_cache = sections
+        _section_cache_ts = now
     return {"sections": sections}
 
 

@@ -44,15 +44,21 @@ def get_cost_data():
         cost_path = PROJECT_ROOT / "data/logs/cost.csv"
         if not cost_path.exists():
             return {"daily": [], "monthly_total": 0, "error": str(e)}
+        import csv
+        import io
         lines = cost_path.read_text().strip().split("\n")[1:]
         daily: dict[str, float] = {}
         for line in lines:
-            parts = line.split(",")
-            if len(parts) >= 4:
-                date = parts[0][:10]
-                total_tokens = int(parts[3])
-                cost = total_tokens * 0.003 / 1000
-                daily[date] = daily.get(date, 0) + cost
+            try:
+                reader = csv.reader(io.StringIO(line))
+                parts = next(reader)
+                if len(parts) >= 4:
+                    date = parts[0][:10]
+                    total_tokens = int(parts[3])
+                    cost = total_tokens * 0.003 / 1000
+                    daily[date] = daily.get(date, 0) + cost
+            except (ValueError, StopIteration):
+                continue
         daily_list = [{"date": d, "cost": round(c, 4)} for d, c in sorted(daily.items())]
         monthly = round(sum(daily.values()), 4)
         return {"daily": daily_list, "monthly_total": monthly, "source": "csv_fallback"}

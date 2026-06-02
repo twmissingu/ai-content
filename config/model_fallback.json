@@ -6,7 +6,7 @@
   "fallbacks": [
     {
       "model": "gpt-4o-mini",
-      "provider": "openrouter"
+      "provider": "openai"
     }
   ],
   "current": "mimo-v2.5"

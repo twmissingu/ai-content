@@ -10,6 +10,7 @@ Implements PRD 9.1-9.5:
 """
 
 import json
+import threading
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -386,20 +387,23 @@ def generate_style_prompt(style_name: str) -> str:
 _config_summary_cache: dict = {}
 _config_summary_ts: float = 0
 _CONFIG_SUMMARY_TTL = 30.0  # seconds
+_config_summary_lock = threading.Lock()
 
 
 def _invalidate_config_cache() -> None:
     """Invalidate config summary cache (call after any config write)."""
     global _config_summary_cache
-    _config_summary_cache = {}
+    with _config_summary_lock:
+        _config_summary_cache = {}
 
 
 def get_all_config_summary() -> dict:
     """Get summary of all configuration (cached for 30s)."""
     global _config_summary_cache, _config_summary_ts
     now = time.time()
-    if _config_summary_cache and (now - _config_summary_ts) < _CONFIG_SUMMARY_TTL:
-        return _config_summary_cache
+    with _config_summary_lock:
+        if _config_summary_cache and (now - _config_summary_ts) < _CONFIG_SUMMARY_TTL:
+            return _config_summary_cache
 
     result = {
         "schedule": get_schedule_config(),
@@ -415,8 +419,9 @@ def get_all_config_summary() -> dict:
         "budget": get_budget_config(),
         "model": get_model_config(),
     }
-    _config_summary_cache = result
-    _config_summary_ts = now
+    with _config_summary_lock:
+        _config_summary_cache = result
+        _config_summary_ts = now
     return result
 
 

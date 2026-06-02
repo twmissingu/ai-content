@@ -13,10 +13,11 @@ import re
 import subprocess
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from config.settings import FAILED_DIR, PROJECT_ROOT, TOKENS_DIR, TRAIL_DIR
-from dashboard.backend.database import check_budget_limit, log_token_usage, create_trace, complete_trace, update_trace_duration, create_pipeline_session
+from dashboard.backend.database import check_budget_limit, log_token_usage, create_trace, complete_trace, update_trace_duration, create_pipeline_session, update_pipeline_session
 from dashboard.backend.feishu import alert_budget_warning
 from skills.action import mark_processed, scan_actions
 
@@ -172,6 +173,17 @@ def trail_import_loop():
                         )
                         if end_data.get("duration_ms"):
                             update_trace_duration(trace_id, end_data["duration_ms"])
+                        # Mark session as completed (or failed based on trail status)
+                        trail_status = end_data.get("status", "completed")
+                        session_status = "completed" if trail_status == "completed" else "failed"
+                        try:
+                            update_pipeline_session(
+                                _sid,
+                                status=session_status,
+                                completed_at=datetime.now(timezone.utc).isoformat(),
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to update session {_sid} status: {e}")
                         f.unlink()
                         end_file.unlink()
                         processed.add(trail_id)

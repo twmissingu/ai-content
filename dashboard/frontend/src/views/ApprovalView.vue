@@ -154,9 +154,7 @@ async function batchApprove() {
   if (selectedIds.value.size === 0) return
   batchProcessing.value = true
   try {
-    for (const id of selectedIds.value) {
-      await store.approve(id)
-    }
+    await Promise.allSettled([...selectedIds.value].map(id => store.approve(id)))
     selectedIds.value = new Set()
     isBatchMode.value = false
   } finally {

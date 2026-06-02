@@ -14,7 +14,7 @@ class ApproveRequest(BaseModel):
 
 class ConfirmRequest(BaseModel):
     target_id: str
-    action: str = "confirm"
+    action: Literal["confirm"] = "confirm"
 
 
 class ConfigUpdate(BaseModel):

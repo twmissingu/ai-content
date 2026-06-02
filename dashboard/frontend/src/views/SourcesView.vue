@@ -204,7 +204,7 @@ onMounted(() => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(item, i) in items" :key="i">
+          <tr v-for="(item, i) in items" :key="(item.url || '') + '-' + i">
             <td class="col-title">
               <a v-if="item.url" :href="item.url" target="_blank" rel="noopener" class="item-link">
                 {{ truncate(item.title, 60) }}

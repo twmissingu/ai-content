@@ -155,6 +155,8 @@ export interface FlywheelData {
   }
   message: string
   sample_size: number
+  approved_scores?: number[]
+  rejected_scores?: number[]
 }
 
 interface WsPipelineStatus {

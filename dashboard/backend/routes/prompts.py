@@ -27,15 +27,6 @@ def get_all_prompts():
     return {"prompts": prompts, "count": len(prompts)}
 
 
-@router.get("/{name}")
-def get_prompt_detail(name: str, version: int | None = None):
-    """Get a specific prompt template, optionally at a specific version."""
-    prompt = get_prompt(name, version=version)
-    if not prompt:
-        raise HTTPException(404, f"Prompt '{name}' not found")
-    return prompt
-
-
 @router.get("/{name}/versions")
 def get_prompt_version_history(name: str):
     """List all versions of a prompt template."""
@@ -43,6 +34,15 @@ def get_prompt_version_history(name: str):
     if not versions:
         raise HTTPException(404, f"Prompt '{name}' not found")
     return {"name": name, "versions": versions, "count": len(versions)}
+
+
+@router.get("/{name}")
+def get_prompt_detail(name: str, version: int | None = None):
+    """Get a specific prompt template, optionally at a specific version."""
+    prompt = get_prompt(name, version=version)
+    if not prompt:
+        raise HTTPException(404, f"Prompt '{name}' not found")
+    return prompt
 
 
 @router.post("")

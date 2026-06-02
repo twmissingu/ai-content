@@ -378,9 +378,11 @@ class TestRecentTopics:
     def test_reads_from_history(self, tmp_path):
         """Should read topics from history directory."""
         from unittest.mock import patch
+        from datetime import datetime, timezone
         from skills.scout_dedup import _recent_topics
 
-        history_dir = tmp_path / "history" / "2025-01-01"
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        history_dir = tmp_path / "history" / today
         history_dir.mkdir(parents=True)
         (history_dir / "article.md").write_text("# History Topic\n\nContent")
 

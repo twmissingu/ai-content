@@ -247,6 +247,9 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_prompt_versions_name ON prompt_versions(name);
             CREATE INDEX IF NOT EXISTS idx_prompt_versions_active ON prompt_versions(name, is_active);
             CREATE INDEX IF NOT EXISTS idx_manual_reviews_session ON manual_reviews(session_id);
+            CREATE INDEX IF NOT EXISTS idx_manual_reviews_version ON manual_reviews(version_id);
+            CREATE INDEX IF NOT EXISTS idx_config_entries_key_status ON config_entries(key, status);
+            CREATE INDEX IF NOT EXISTS idx_pipeline_traces_session_created ON pipeline_traces(session_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_manual_reviews_status ON manual_reviews(status);
             CREATE INDEX IF NOT EXISTS idx_manual_reviews_created ON manual_reviews(created_at);
 
@@ -268,5 +271,21 @@ def init_db():
                 tokenize='trigram'
             )
         """)
+
+    # Auto-cleanup stale "running" sessions older than 1 hour on startup
+    try:
+        with get_db() as conn:
+            cur = conn.execute("""
+                UPDATE pipeline_sessions
+                SET status = 'completed',
+                    completed_at = COALESCE(completed_at, updated_at),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE status = 'running'
+                AND started_at < datetime('now', '-1 hour')
+            """)
+            if cur.rowcount > 0:
+                logger.info(f"Auto-cleaned {cur.rowcount} stale running sessions on startup")
+    except Exception as e:
+        logger.warning(f"Failed to cleanup stale sessions: {e}")
 
     logger.info(f"Initialized at {DATABASE_PATH}")

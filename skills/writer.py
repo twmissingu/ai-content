@@ -182,8 +182,8 @@ class WriterAgent(AgentBase):
                             return "[原文抓取失败：禁止访问内网地址]"
                 except _socket.gaierror:
                     pass
-        except Exception:
-            pass  # URL parsing failure, let the fetch proceed
+        except Exception as e:
+            self.logger.debug(f"SSRF check failed for {url}: {e}")
 
         try:
             result = subprocess.run(
@@ -632,6 +632,8 @@ class WriterAgent(AgentBase):
             proofread_score = meta.get("proofread_score", 70)
             critique_scores = meta.get("critique_scores", [])
             title_candidates = meta.get("title_candidates", [])
+            videos: list[str] = []
+            video_prompts: list[str] = []
             final_title = meta.get("topic", "Unknown")
             images = meta.get("images", [])
 

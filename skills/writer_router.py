@@ -7,6 +7,7 @@ then Aggregator merges results into a single meta file.
 
 import asyncio
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -14,6 +15,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from config.settings import (
     PENDING_DIR,
@@ -205,9 +208,7 @@ async def _aggregate(results: list[dict], topic: dict):
         "status": "completed" if articles else "failed",
     }
     agg_path = REVIEW_DIR / f"{RUN_TIMESTAMP}-aggregated.json"
-    tmp = REVIEW_DIR / f".{RUN_TIMESTAMP}-aggregated.json.tmp"
-    tmp.write_text(json.dumps(aggregated, ensure_ascii=False, indent=2))
-    os.rename(tmp, agg_path)
+    atomic_write_json(agg_path, aggregated)
     return aggregated
 
 

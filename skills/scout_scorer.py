@@ -223,9 +223,9 @@ def score_candidate(candidate: dict, cold_start: bool) -> dict | None:
     else:
         self_repeat = calculate_self_repeat(candidate['title'])
 
-    # PRD formula
+    # PRD formula (source_weight scaled to 0-100 to match viral/freshness)
     attention = min(100,
-        (source_weight ** 1.3) * 0.35
+        ((source_weight * 100) ** 1.3) * 0.35
         + viral * 0.30
         + freshness_score * 0.35
     )

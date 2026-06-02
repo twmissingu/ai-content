@@ -50,8 +50,8 @@ def get_approval_queue(limit: int = Query(50, ge=1, le=200), offset: int = Query
         content_preview = ""
         if md_path.exists():
             try:
-                with md_path.open(encoding="utf-8") as f:
-                    content_preview = f.read(500)
+                with md_path.open(encoding="utf-8") as fh:
+                    content_preview = fh.read(500)
             except OSError:
                 pass
         articles.append({
@@ -100,15 +100,17 @@ def approval_act(req: ApproveRequest):
     if req.target_id.startswith("db_"):
         try:
             version_id = int(req.target_id.replace("db_", ""))
+            # Update DB first, then write action file (reverse of old order)
+            # to ensure DB is consistent before background scanner picks up the action
+            update_platform_version(
+                version_id=version_id,
+                status="approved" if req.action == "approve" else "rejected",
+            )
             action_map = {"approve": "pass", "reject": "reject", "rewrite": "rewrite"}
             create_approval_record(
                 version_id=version_id,
                 action=action_map.get(req.action, req.action),
                 reason=req.reason,
-            )
-            update_platform_version(
-                version_id=version_id,
-                status="approved" if req.action == "approve" else "rejected",
             )
         except Exception as e:
             logger.exception("Database recording failed for approval action")
@@ -137,6 +139,7 @@ def get_session_versions(session_id: int):
 def approve_version(version_id: int):
     """Approve a specific platform version."""
     try:
+        # Update status first, then create audit record
         update_platform_version(version_id, status="approved")
         create_approval_record(version_id, action="pass")
         logger.info(f"Version {version_id} approved")
@@ -150,6 +153,7 @@ def approve_version(version_id: int):
 def reject_version(version_id: int):
     """Reject a specific platform version."""
     try:
+        # Update status first, then create audit record
         update_platform_version(version_id, status="rejected")
         create_approval_record(version_id, action="reject")
         logger.info(f"Version {version_id} rejected")

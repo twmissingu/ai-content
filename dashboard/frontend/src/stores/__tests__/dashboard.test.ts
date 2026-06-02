@@ -82,7 +82,7 @@ describe('useDashboardStore', () => {
       budget: { current_cost: 5, budget: 15, percentage: 33, is_warning: false, is_exceeded: false, remaining: 10 },
       timestamp: '2026-05-28T12:00:00Z',
     }
-    vi.spyOn(global, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(mockData), { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(mockData), { status: 200 }))
 
     await store.fetchPipeline()
     expect(store.agents.scout.progress_pct).toBe(100)
@@ -105,7 +105,7 @@ describe('useDashboardStore', () => {
       articles: [{ id: '1', meta: { topic: 'AI' }, content_preview: 'test', source: 'filesystem' }],
       count: 1,
     }
-    vi.spyOn(global, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(mockData), { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(mockData), { status: 200 }))
 
     await store.fetchApprovalQueue()
     expect(store.approvalQueue).toHaveLength(1)
@@ -117,7 +117,7 @@ describe('useDashboardStore', () => {
       topics: [{ id: 't1', title: 'Test Topic', source: 'weibo' }],
       count: 1,
     }
-    vi.spyOn(global, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(mockData), { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(mockData), { status: 200 }))
 
     await store.fetchTopics()
     expect(store.topics).toHaveLength(1)
@@ -127,7 +127,7 @@ describe('useDashboardStore', () => {
   it('fetchConfig updates config', async () => {
     const store = useDashboardStore()
     const mockData = { schedule: { morning_scout: '09:00' } }
-    vi.spyOn(global, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(mockData), { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(mockData), { status: 200 }))
 
     await store.fetchConfig()
     expect(store.config.schedule?.morning_scout).toBe('09:00')
@@ -138,7 +138,7 @@ describe('useDashboardStore', () => {
     const approveResp = { status: 'ok', action: 'approve', target_id: 'art-1' }
     const queueResp = { articles: [], count: 0 }
 
-    vi.spyOn(global, 'fetch')
+    vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify(approveResp), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(queueResp), { status: 200 }))
 
@@ -151,7 +151,7 @@ describe('useDashboardStore', () => {
     const rejectResp = { status: 'ok', action: 'reject', target_id: 'art-1' }
     const queueResp = { articles: [], count: 0 }
 
-    vi.spyOn(global, 'fetch')
+    vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify(rejectResp), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(queueResp), { status: 200 }))
 
@@ -164,7 +164,7 @@ describe('useDashboardStore', () => {
     const confirmResp = { status: 'ok', action: 'confirm', target_id: 't1' }
     const topicsResp = { topics: [], count: 0 }
 
-    vi.spyOn(global, 'fetch')
+    vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify(confirmResp), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(topicsResp), { status: 200 }))
 
@@ -174,7 +174,7 @@ describe('useDashboardStore', () => {
 
   it('approve throws on API error', async () => {
     const store = useDashboardStore()
-    vi.spyOn(global, 'fetch').mockResolvedValueOnce(
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response('Server error', { status: 500 })
     )
 
@@ -184,7 +184,7 @@ describe('useDashboardStore', () => {
 
   it('connectionStatus tracks failures', async () => {
     const store = useDashboardStore()
-    vi.spyOn(global, 'fetch').mockRejectedValue(new Error('fail'))
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('fail'))
 
     await store.fetchPipeline()
     expect(store.connectionStatus).toBe('reconnecting')
@@ -201,7 +201,7 @@ describe('useDashboardStore', () => {
     store.connectionStatus = 'disconnected'
 
     const mockData = { agents: {}, budget: null, timestamp: '' }
-    vi.spyOn(global, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(mockData), { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(mockData), { status: 200 }))
 
     await store.fetchPipeline()
     expect(store.connectionStatus).toBe('connected')

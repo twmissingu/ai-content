@@ -34,17 +34,11 @@ async function fetchContent(url: string) {
   }
 }
 
-watch(() => props.url, (newUrl) => {
-  if (newUrl && props.visible) {
+watch(() => [props.url, props.visible] as const, ([newUrl, vis]) => {
+  if (newUrl && vis) {
     fetchContent(newUrl)
   }
 }, { immediate: true })
-
-watch(() => props.visible, (vis) => {
-  if (vis && props.url) {
-    fetchContent(props.url)
-  }
-})
 </script>
 
 <template>

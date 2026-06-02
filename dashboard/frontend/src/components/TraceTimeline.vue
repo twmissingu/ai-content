@@ -69,7 +69,7 @@ function agentIcon(agent: string): string {
 
 const maxWidthPx = 120
 function durationBarWidth(ms: number | null): number {
-  if (!ms || !totalDuration.value) return 0
+  if (ms === null || ms === undefined || !totalDuration.value) return 0
   return Math.min((ms / totalDuration.value) * maxWidthPx, maxWidthPx)
 }
 </script>

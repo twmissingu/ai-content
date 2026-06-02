@@ -2,6 +2,7 @@
 
 import json as _json
 import logging
+import threading
 import time
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from .core import get_db
 _budget_cache: dict = {}
 _budget_cache_ts: float = 0
 _BUDGET_CACHE_TTL = 30.0  # seconds
+_budget_cache_lock = threading.Lock()
 
 logger = logging.getLogger("gaoding.database")
 
@@ -109,8 +111,9 @@ def check_budget_limit(budget_usd: float = None) -> dict:
 
     # Use cache if no explicit budget and cache is fresh
     now = time.time()
-    if budget_usd is None and _budget_cache and (now - _budget_cache_ts) < _BUDGET_CACHE_TTL:
-        return _budget_cache
+    with _budget_cache_lock:
+        if budget_usd is None and _budget_cache and (now - _budget_cache_ts) < _BUDGET_CACHE_TTL:
+            return _budget_cache
 
     if budget_usd is None:
         try:
@@ -135,6 +138,7 @@ def check_budget_limit(budget_usd: float = None) -> dict:
         'remaining': round(max(0, budget_usd - current_cost), 4),
     }
 
-    _budget_cache = result
-    _budget_cache_ts = now
+    with _budget_cache_lock:
+        _budget_cache = result
+        _budget_cache_ts = now
     return result

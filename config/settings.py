@@ -12,6 +12,19 @@ from typing import Optional
 # ── .env auto-loader ──────────────────────────────────────────────
 def _load_env_dotfile() -> None:
     """Load .env from project root into os.environ (won't overwrite existing env vars)."""
+    # Load Hermes global config first (project .env takes precedence)
+    hermes_env = Path.home() / ".hermes" / ".env"
+    if hermes_env.exists():
+        with open(hermes_env) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, val = line.partition("=")
+                key = key.strip()
+                val = val.strip().strip("\"'")
+                if key and key not in os.environ:
+                    os.environ[key] = val
     env_path = Path(__file__).resolve().parent.parent / ".env"
     if not env_path.exists():
         return
@@ -61,7 +74,7 @@ for _d in [ACTIONS_DIR, PROCESSED_DIR, FAILED_ACTIONS_DIR, STATUS_DIR, REVIEW_DI
 # ── LLM Provider ───────────────────────────────────────────────────
 LLM_BASE_URL: str = os.getenv(
     "LLM_BASE_URL",
-    "https://api.xiaomimimo.com/v1",
+    os.getenv("XIAOMI_BASE_URL", "https://api.xiaomimimo.com/v1"),
 )
 LLM_API_KEY: Optional[str] = os.getenv("XIAOMI_API_KEY")
 LLM_MODEL: str = os.getenv("LLM_MODEL", "mimo-v2.5")

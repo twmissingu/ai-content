@@ -65,7 +65,7 @@ def submit_review(review: ManualReviewCreate):
         return result
     except Exception as e:
         logger.error(f"Error creating manual review: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="操作失败")
 
 
 @router.get("")
@@ -79,12 +79,15 @@ def list_reviews(
         limit: Max results (default 50)
         status: Filter by status (normal/warning/critical)
     """
+    allowed_statuses = {"normal", "warning", "critical"}
+    if status and status not in allowed_statuses:
+        raise HTTPException(400, f"Invalid status: {status}. Allowed: {allowed_statuses}")
     try:
         reviews = get_manual_reviews(limit=limit, status=status)
         return {"reviews": reviews, "total": len(reviews)}
     except Exception as e:
         logger.error(f"Error listing reviews: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="操作失败")
 
 
 @router.get("/stats")

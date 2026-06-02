@@ -1,7 +1,7 @@
 """Platform version and approval record operations."""
 
 import logging
-from .core import get_db
+from .core import get_db, _invalidate_cache
 
 logger = logging.getLogger("gaoding.database")
 
@@ -28,11 +28,14 @@ def update_platform_version(version_id: int, **kwargs):
     values = list(updates.values()) + [version_id]
 
     with get_db() as conn:
+        # Invalidate cached queries so status changes propagate immediately
+        conn.execute("SELECT 1")  # ensure connection is active
         conn.execute(f"""
             UPDATE platform_versions
             SET {set_clause}, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         """, values)
+    _invalidate_cache()
 
 
 def get_platform_versions(session_id: int) -> list[dict]:
