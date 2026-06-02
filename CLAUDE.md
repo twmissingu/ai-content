@@ -45,8 +45,10 @@ docker compose logs -f dashboard           # View logs
 - `skills/llm.py` — Shared LLM utility with fallback chain and retry logic
 - `skills/action.py` — JSON action file protocol (atomic `.tmp` + rename pattern)
 - `skills/common.py` — Shared utilities (AgentBase, metrics, status writing, load_prompt) across all agents
+- `skills/writer_illustration.py` — Agnes AI image generation with LLM prompt engineering
+- `skills/writer_video.py` — Agnes AI video generation (async polling, up to 15 min)
 - `config/prompts/*.txt` — Agent 提示词模板（7 个，启动时自动导入数据库）
-- `config/prompts/*.md` — 写作提示词模板（8 类型 × 2 平台 + persona_bible），详见 [docs/content_type_system.md](docs/content_type_system.md)
+- `config/prompts/*.md` — 写作提示词模板（8 类型 × 2 平台 + persona_bible + image_prompt_gen + video_prompt_gen），详见 [docs/content_type_system.md](docs/content_type_system.md)
 - `config/prompts/persona_bible.md` — 统一人设圣经，所有模板引用此文件
 - `config/writing_styles.json` — 风格配置（8 类型 + 3 默认）
 - `config/quality_gates.json` — 质量门禁阈值（proofread: 60, critique: 70, title: 75, max_rewrite: 3）
@@ -55,7 +57,7 @@ docker compose logs -f dashboard           # View logs
 
 ## Dashboard Backend Modules
 
-- `dashboard/backend/main.py` — FastAPI entry point (middleware + router mounting, v0.7.0)
+- `dashboard/backend/main.py` — FastAPI entry point (middleware + router mounting, v0.8.0)
 - `dashboard/backend/routes/` — Route modules:
   - `pipeline.py` — Pipeline status, trigger, timeline
   - `approval.py` — Approval queue, approve/reject actions, version management

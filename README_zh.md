@@ -99,7 +99,7 @@ bash scripts/init_directories.sh
 pip install playwright && python3 -m playwright install chromium
 ```
 
-> 配置也可通过 `.env` 文件自动加载（参考 `config/.env.example`）。
+> 配置也可通过 `.env` 文件自动加载（参考 `.env.docker.example`）。
 > 环境变量优先级高于 `.env` 文件。
 
 ### 运行

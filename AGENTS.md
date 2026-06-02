@@ -1,8 +1,8 @@
 # AGENTS.md
 
 仓库：`ai-content` — AI 内容生产系统「稿定」的源代码与规格文档库。
-状态：**v0.7.0**（架构重构 + 提示词优化 + 前端 UX 升级 + 测试补全 + 安全加固）。
-版本：[v0.7.0](CHANGELOG.md) — 2026-05-31
+状态：**v0.8.0**（AI 配图 + 视频生成 + 统一发布 + Scout 增强 + 安全加固）。
+版本：[v0.8.0](CHANGELOG.md) — 2026-06-02
 
 ---
 
@@ -76,25 +76,34 @@ docs/
 
 skills/                            Agent 实现代码（Python）
   ├── __init__.py
-  ├── common.py                    共享工具（AgentBase, metrics, load_prompt）
+  ├── common.py                    共享工具（AgentBase, load_prompt, 原子写入, 日志）
+  ├── agent_schemas.py             Pydantic 结构化输出模型
   ├── scout.py                     选题 Agent
-  ├── writer.py                    写手 Agent（7 阶段管线）
-  ├── writer_router.py              并行 Writer 路由器
-  ├── writer_xhs.py                 小红书 Worker
-  ├── writer_douyin.py              抖音 Worker
-  ├── publisher.py                  分发 Agent
-  ├── publisher_toutiao.py          头条号 Playwright 分发
-  ├── feedback.py                   数据反馈 Agent
-  ├── knowledge.py                  知识沉淀 Agent
-  ├── screenshot.py                 HTML→PNG 截图工具
-  ├── action.py                     action 文件协议
-  ├── llm.py                       LLM 调用工具
-  └── metrics.py                   性能指标收集
+  ├── scout_collectors.py          信源采集器模块
+  ├── scout_scorer.py              选题评分模块
+  ├── scout_dedup.py               选题去重模块
+  ├── rss_collector.py             RSS 预采集系统
+  ├── topic_analyzer.py            选题分析工具
+  ├── writer.py                    写手 Agent（7 阶段管线 + 可选视频）
+  ├── writer_router.py             并行 Writer 路由器
+  ├── writer_illustration.py       Agnes AI 配图生成
+  ├── writer_video.py              Agnes AI 视频生成
+  ├── writer_xhs.py                小红书 Worker [DEPRECATED]
+  ├── writer_douyin.py             抖音 Worker [DEPRECATED]
+  ├── publisher.py                 统一分发 Agent
+  ├── publisher_webbridge.py       Kimi WebBridge 浏览器自动化分发
+  ├── publisher_toutiao.py         头条号 Playwright 分发 [DEPRECATED]
+  ├── platform_adapters.py         平台内容适配器
+  ├── feedback.py                  数据反馈 Agent
+  ├── knowledge.py                 知识沉淀 Agent
+  ├── screenshot.py                HTML→PNG 截图工具
+  ├── action.py                    action 文件协议
+  ├── llm.py                      LLM 调用工具（fallback + 重试）
+  └── metrics.py                  性能指标收集
 
 dashboard/                         Web Dashboard
   ├── backend/
-  │   ├── main.py                  FastAPI 入口（中间件 + 路由挂载，版本 0.7.0）
-  │   ├── routes/                  路由模块
+  │   ├── main.py                  FastAPI 入口（中间件 + 路由挂载，版本 0.8.0）
   │   ├── routes/                  路由模块（11 个）
   │   │   ├── pipeline.py          管线状态、触发
   │   │   ├── approval.py          审批队列和操作
@@ -128,23 +137,28 @@ dashboard/                         Web Dashboard
 config/                            运行态配置
   ├── settings.py                  所有运行时配置（路径、LLM、调度）
   ├── models.json                  模型价格配置
+  ├── model_fallback.json          模型 fallback 链配置
   ├── quality_gates.json           质量门禁阈值（proofread: 60, critique: 70, title: 75）
   ├── proofread_patterns.json      AI-slop 检测模式（23 个 regex）
-  ├── prompts/                     Agent 提示词模板（24 个文件）
-  │   ├── *.txt                    数据库导入的提示词（7 个，启动时自动导入）
-  │   │   ├── scout_scoring.txt    Scout 评分提示词
-  │   │   ├── writer_draft.txt     Writer 初稿提示词
-  │   │   ├── writer_proofread.txt Writer 审校提示词
-  │   │   ├── writer_critique_*.txt  批评修订（scorer + critic）
-  │   │   ├── writer_title.txt     标题优化提示词
-  │   │   └── feedback_strategy.txt  策略分析提示词
-  │   └── *.md                     内容模板（17 个，8 类型 × 2 平台 + persona_bible）
-  │       ├── persona_bible.md     统一人设圣经（所有模板引用）
-  │       ├── {type}_{platform}.md 8 类型 × 2 平台 = 16 个写作模板
-  │       └── types: news, opinion, insight, roundup, sharing,
-  │                   tech_science, tool_update, tutorial
+  ├── image_styles.json            AI 配图风格配置（8 类型 × 视觉风格）
+  ├── sources.json                 信源配置
   ├── schedule.json                调度配置
-  └── writing_styles.json          写作风格预设（8 类型 + 3 默认）
+  ├── writing_styles.json          写作风格预设（8 类型 + 3 默认 + videos 字段）
+  └── prompts/                     Agent 提示词模板（26 个文件）
+      ├── *.txt                    数据库导入的提示词（7 个，启动时自动导入）
+      │   ├── scout_scoring.txt    Scout 评分提示词
+      │   ├── writer_draft.txt     Writer 初稿提示词
+      │   ├── writer_proofread.txt Writer 审校提示词
+      │   ├── writer_critique_*.txt  批评修订（scorer + critic）
+      │   ├── writer_title.txt     标题优化提示词
+      │   └── feedback_strategy.txt  策略分析提示词
+      └── *.md                     内容模板（19 个，8 类型 × 2 平台 + persona_bible + 2 生成模板）
+          ├── persona_bible.md     统一人设圣经（所有模板引用）
+          ├── {type}_{platform}.md 8 类型 × 2 平台 = 16 个写作模板
+          ├── image_prompt_gen.md  配图 prompt 生成模板
+          ├── video_prompt_gen.md  视频 prompt 生成模板
+          └── types: news, opinion, insight, roundup, sharing,
+                      tech_science, tool_update, tutorial
 
 pyproject.toml                     Python 包声明（pip install -e .）
 pytest.ini                         测试配置

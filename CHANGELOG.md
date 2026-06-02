@@ -1,5 +1,92 @@
 # Changelog
 
+## [0.8.0] - 2026-06-02
+
+### AI Image Generation (Agnes)
+
+- Replace HTML card screenshots with Agnes AI image generation (`skills/writer_illustration.py`)
+- LLM-powered image prompt generation stage with `config/prompts/image_prompt_gen.md`
+- `config/image_styles.json` — 8 content types × visual style presets
+- Parallel Agnes subprocess calls via `ThreadPoolExecutor`
+- Illustration count controlled by `writing_styles.json` per platform/content-type
+
+### Phase 4: Video Generation
+
+- New `skills/writer_video.py` — LLM prompt → Agnes async video generation (up to 15 min polling)
+- New `config/prompts/video_prompt_gen.md` — video prompt template
+- `config/settings.py` adds `VIDEOS_DIR`
+- `writing_styles.json` adds `videos` field (enabled for `douyin_default`)
+- `agent_schemas.py` `ArticleDraft` adds `videos`/`video_prompts`/`video_generation_method`
+- Writer pipeline Stage 7b: optional video generation after illustration
+- 15 new tests in `tests/test_writer_video.py`
+
+### Publishing Overhaul
+
+- New `skills/publisher_webbridge.py` — Kimi WebBridge browser automation for Xiaohongshu/Douyin
+- WeChat publishing passes `--cover` and `--image` to baoyu-post-to-wechat
+- Parallel multi-platform publishing via `ThreadPoolExecutor`
+- AiToEarn MCP kept as fallback for kuaishou/shipinhao
+- New `skills/platform_adapters.py` — platform-specific content adaptation
+- New `POST /api/approval/publish` endpoint
+- New `ImageGallery.vue` component with lightbox in ApprovalView
+
+### Scout Enhancements
+
+- New `skills/scout_collectors.py` — modular source collectors
+- New `skills/scout_scorer.py` — extracted scoring logic
+- New `skills/scout_dedup.py` — deduplication module
+- New `skills/rss_collector.py` — RSS pre-collection system
+- New `skills/topic_analyzer.py` — topic analysis
+- Source collection parallelized (3.5 min → ~30 s)
+
+### Security Fixes (8)
+
+- WebSocket auth moved from URL query param to first message
+- Production/staging env forces `API_KEY` requirement
+- FTS5 query escaping strips boolean operators
+- `target_id` validation in background dispatcher
+- Prompt sanitization adds NFKD unicode normalization
+- WebBridge action parameter validation
+- Subprocess prompt sanitization (null bytes, control chars, truncation)
+- Static file serving with `check_dir=True`
+
+### Performance Fixes (13)
+
+- Critique LLM calls parallelized (scorer + critic concurrent)
+- Approval queue reads only 500 chars instead of full file
+- Topics pagination applied before JSON parsing
+- `image_styles.json` loaded once instead of twice
+- RSS cache uses hash index file instead of scanning all files
+- Playwright browser reused across batch_convert files
+- Scout scorer early exit on cold start check
+- KB fallback search capped at 100 files
+- Health endpoint uses generator instead of list materialization
+- WebBridge replaces fixed sleep with adaptive polling
+- `Cache-Control` headers on static image serving
+- `RateLimiter` and WebSocket connection limit documented
+- Dashboard `/api/images` static file serving for generated images
+
+### Architecture Fixes (9)
+
+- `load_prompt()` tries `.md` then `.txt` extensions
+- Hardcoded paths configurable via env vars (`AGNES_SCRIPT_PATH`, `WEBBRIDGE_URL`)
+- Unused imports removed from 5 files
+- Orphaned modules marked DEPRECATED
+- Exception catches narrowed in `writer_illustration`
+- Logging standardized to `get_agent_logger()`
+- Schedule config deduplication
+- `sys.path` manipulation removed from `rss_collector`
+- `WriterAgent` god class documented with TODO
+
+### Test Improvements
+
+- New `tests/test_writer_video.py` (15 tests)
+- New `tests/test_rss_collector.py`, `tests/test_topic_analyzer.py`, `tests/test_platform_adapters.py`
+- New `tests/test_publisher_webbridge.py`, `tests/test_publisher_toutiao.py`
+- New `tests/test_screenshot.py`, `tests/test_writer_xhs.py`, `tests/test_writer_douyin.py`
+- New `tests/test_api_sources.py`, `tests/test_api_prompts.py`, `tests/test_api_traces.py`
+- Total: 721 tests passing
+
 ## [0.7.0] - 2026-05-28
 
 ### Frontend UX Upgrade

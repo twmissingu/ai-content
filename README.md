@@ -62,7 +62,7 @@ Hermes Cron ─→ Scout Agent ─→ queue/pending/ ─→ You confirm
                      Feedback Agent (22:00) ─→ kb/viral/ + kb/strategy/
 
                      Web Dashboard (FastAPI + Vue 3)
-                       ├── REST API (9 route modules)
+                       ├── REST API (11 route modules)
                        ├── WebSocket /ws/pipeline (real-time status)
                        ├── SQLite (7 domain modules, WAL mode)
                        └── Background threads (action scanner + budget monitor)
@@ -107,7 +107,7 @@ bash scripts/init_directories.sh
 pip install playwright && python3 -m playwright install chromium
 ```
 
-> Configuration is also auto-loaded from `.env` (see `config/.env.example`).
+> Configuration is also auto-loaded from `.env` (see `.env.docker.example`).
 > Environment variables always take precedence over `.env`.
 
 ### Run
@@ -190,7 +190,7 @@ python3 dashboard/backend/main.py
 ├── dashboard/                 # Web Dashboard
 │   ├── backend/
 │   │   ├── main.py            FastAPI (port 8710, middleware + routers)
-│   │   ├── routes/            9 route modules (pipeline, approval, topics, data, kb, config, health, traces, prompts)
+│   │   ├── routes/            11 route modules (pipeline, approval, topics, data, kb, config, health, traces, prompts, reader, sources)
 │   │   ├── database/          SQLite data layer (7 modules: core, sessions, versions, tokens, config_ops, traces, prompts)
 │   │   ├── ws.py              WebSocket real-time push
 │   │   ├── auth.py            API Key authentication
@@ -200,7 +200,7 @@ python3 dashboard/backend/main.py
 │   ├── product/               # Product specs (PRD, dev plan)
 │   └── manual/                # User manuals, setup guides
 ├── config/                    # Runtime configuration
-│   ├── prompts/               24 prompt templates (7 .txt + 17 .md)
+│   ├── prompts/               26 prompt templates (7 .txt + 19 .md)
 │   ├── quality_gates.json     Quality gate thresholds
 │   └── ...                    settings, models, styles, patterns, schedule
 ├── scripts/                   # Operational scripts

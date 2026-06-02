@@ -10,7 +10,7 @@
 ### 1. 配置环境变量
 
 ```bash
-cp .env.example .env
+cp .env.docker.example .env
 # 编辑 .env 填入必要配置
 ```
 

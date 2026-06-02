@@ -343,50 +343,82 @@ while True:
 
 ```
 project-root/
-├── skills/                     ← Hermes Skills（各 Agent 的实现代码）
-│   ├── scout.py
-│   ├── writer.py
-│   ├── publisher.py
-│   ├── feedback.py
-│   └── knowledge.py
+├── skills/                     ← Agent 实现代码（Python）
+│   ├── common.py               ← 共享工具（AgentBase, load_prompt, 原子写入）
+│   ├── agent_schemas.py        ← Pydantic 结构化输出模型
+│   ├── scout.py                ← 选题 Agent
+│   ├── scout_collectors.py     ← 信源采集器
+│   ├── scout_scorer.py         ← 选题评分
+│   ├── scout_dedup.py          ← 选题去重
+│   ├── rss_collector.py        ← RSS 预采集
+│   ├── topic_analyzer.py       ← 选题分析
+│   ├── writer.py               ← 写手 Agent（7 阶段管线 + 可选视频）
+│   ├── writer_router.py        ← 并行 Writer 路由器
+│   ├── writer_illustration.py  ← Agnes AI 配图
+│   ├── writer_video.py         ← Agnes AI 视频生成
+│   ├── publisher.py            ← 统一分发 Agent
+│   ├── publisher_webbridge.py  ← Kimi WebBridge 浏览器自动化
+│   ├── platform_adapters.py    ← 平台内容适配器
+│   ├── feedback.py             ← 数据反馈 Agent
+│   ├── knowledge.py            ← 知识沉淀 Agent
+│   ├── llm.py                  ← LLM 调用工具（fallback + 重试）
+│   ├── action.py               ← action 文件协议
+│   ├── metrics.py              ← 性能指标收集
+│   └── screenshot.py           ← HTML→PNG 截图
 ├── dashboard/                  ← Web Dashboard
 │   ├── backend/                ← FastAPI (Python)
-│   │   ├── main.py
-│   │   ├── models/             ← SQLite ORM 模型
-│   │   ├── routes/             ← API 路由
-│   │   └── services/           ← 业务逻辑
+│   │   ├── main.py             ← 入口（中间件 + 路由挂载）
+│   │   ├── routes/             ← 11 个路由模块
+│   │   ├── database/           ← SQLite 数据层（7 个领域模块）
+│   │   ├── auth.py             ← API Key 认证
+│   │   ├── background.py       ← 后台任务
+│   │   ├── ws.py               ← WebSocket 实时推送
+│   │   ├── config_service.py   ← 配置管理服务
+│   │   ├── search.py           ← FTS5 全文搜索
+│   │   ├── feishu.py           ← 飞书通知
+│   │   ├── helpers.py          ← 共享工具函数
+│   │   └── models.py           ← Pydantic 请求模型
 │   └── frontend/               ← Vue 3 + Vite
 │       ├── src/
 │       │   ├── components/
 │       │   ├── views/
 │       │   └── stores/         ← Pinia 状态管理
 │       └── ...
+├── config/                     ← 运行态配置
+│   ├── settings.py             ← 所有运行时配置（路径、LLM、调度）
+│   ├── prompts/                ← 26 个提示词模板（7 .txt + 19 .md）
+│   ├── writing_styles.json     ← 写作风格预设（含 videos 字段）
+│   ├── image_styles.json       ← AI 配图风格配置
+│   ├── quality_gates.json      ← 质量门禁阈值
+│   ├── proofread_patterns.json ← AI-slop 检测模式
+│   ├── sources.json            ← 信源配置
+│   ├── models.json             ← 模型价格配置
+│   ├── model_fallback.json     ← 模型 fallback 链
+│   └── schedule.json           ← 调度配置
 ├── scripts/                    ← 运维脚本
-│   ├── watchdog.sh
-│   ├── cleanup_images.py
-│   ├── scan_actions.py         ← queue/actions/ 轮询扫描脚本
-│   └── init_directories.sh     ← 项目初始化脚本（创建运行态目录）
-├── config/                     ← 运行态配置（由 Dashboard 写入）
-│   ├── schedule.json
-│   ├── writing_styles.json
-│   ├── model_fallback.json
-│   └── playwright_state.json
+│   ├── setup.sh                ← 交互式配置脚本
+│   └── init_directories.sh     ← 项目初始化脚本
 ├── data/                       ← 运行态数据
 │   ├── analytics.db            ← SQLite
-│   └── logs/                   ← Dashboard 日志
-├── queue/                      ← 运行态消息队列
+│   └── logs/                   ← Agent 日志
+├── queue/                      ← Agent 间通信（JSON 文件系统）
 │   ├── actions/                ← 操作触发文件
-│   │   └── processed/          ← 已处理的 action 文件
+│   │   ├── processed/          ← 已处理
+│   │   └── failed/             ← 失败
 │   ├── status/                 ← Agent 状态文件
 │   ├── review/                 ← 待审批内容
 │   ├── pending/                ← 待确认选题
 │   ├── failed/                 ← 分发失败记录
-│   ├── images/                 ← 运行时配图文件
-│   ├── topics/                 ← 选题确认状态
-│   └── tmp/                    ← Writer 并行 Worker 临时目录
-└── kb/                         ← 知识库（Markdown + wikilink）
-    ├── topics/
-    ├── viral/
+│   ├── images/                 ← 运行时配图
+│   ├── videos/                 ← 运行时视频
+│   ├── sources/                ← 信源文章
+│   ├── tokens/                 ← Token 用量记录
+│   ├── trails/                 ← 管线执行追踪
+│   ├── rss_cache/              ← RSS 缓存
+│   └── tmp/                    ← 临时目录
+├── kb/                         ← 知识库（Markdown + wikilink）
+│   ├── topics/
+│   ├── viral/
     ├── history/
     ├── strategy/
     ├── materials/

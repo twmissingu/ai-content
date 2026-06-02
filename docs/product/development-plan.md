@@ -1,8 +1,8 @@
 # 开发计划书 — 稿定（AI 内容生产系统）
 
-> 基于 PRD v1.4  
-> **当前状态：v0.7.0（Phase 1-3 已完成，详见 [CHANGELOG.md](../../CHANGELOG.md)）**  
-> 环境状态：Hermes v0.14.0 已安装，Python 3.14.5/Node v26 就绪  
+> 基于 PRD v1.4
+> **当前状态：v0.8.0（Phase 1-3 已完成，Phase 4 进行中，详见 [CHANGELOG.md](../../CHANGELOG.md)）**
+> 环境状态：Hermes v0.14.0 已安装，Python 3.14.5/Node v26 就绪
 
 ---
 
@@ -19,7 +19,7 @@ Phase 0 ─→ Phase 1 ─→ Phase 2 ─→ Phase 3 ─→ Phase 4
 | 1 | 核心管线（Scout + Writer + Publisher 基础） | ✅ 已完成 |
 | 2 | Web Dashboard（FastAPI + Vue 3，7 视图） | ✅ 已完成 |
 | 3 | 增强完善（Feedback + 头条号 + 并行 Writer + 信源优化） | ✅ 已完成 |
-| 4 | 视频阶段（抖音标准 + 视频分发） | ⏳ 待定 |
+| 4 | 视频阶段（抖音标准 + 视频分发） | 🔄 进行中 |
 
 ---
 
@@ -106,13 +106,15 @@ Knowledge Agent（Python）→ 归档到 kb/history/
 
 ---
 
-## 五、Phase 4：视频阶段（待定）
+## 五、Phase 4：视频阶段（进行中）
 
-| 任务 | 说明 |
-|------|------|
-| 抖音标准内容管线 | 15-60 秒脚本生成 + TTS + 画面描述 |
-| 视频分发 | AiToEarn 视频分发（抖音/视频号/快手/B站） |
-| 图文转视频 | 将公众号/小红书内容转为视频 |
+| 任务 | 说明 | 状态 |
+|------|------|------|
+| Agnes 视频生成 | LLM prompt → Agnes 异步视频生成（`skills/writer_video.py`） | ✅ 已完成 |
+| Writer 管线集成 | Stage 7b 可选视频生成，`writing_styles.json` 控制开关 | ✅ 已完成 |
+| 抖音标准内容管线 | 15-60 秒脚本生成 + TTS + 画面描述 | ⏳ 待定 |
+| 视频分发 | AiToEarn 视频分发（抖音/视频号/快手/B站） | ⏳ 待定 |
+| 图文转视频 | 将公众号/小红书内容转为视频 | ⏳ 待定 |
 
 ---
 
