@@ -1,8 +1,8 @@
 # AI 内容生产工作流与管理系统 — 产品需求文档
 
-> 版本：v1.4  
-> 日期：2026-05-31  
-> 状态：开发者独立技术审核版（全栈工程师视角，聚焦工程依赖与实现盲区）  
+> 版本：v1.5
+> 日期：2026-06-02
+> 状态：四角色交叉审查修订版（PM/架构师/开发/UI-UX，12 项修订）  
 > 基于 Hermes Agent + FastAPI + Vue 3 + SQLite 技术栈
 >
 > **实现说明（v0.7.0）：** PRD 中描述的"飞书审批"已由 Web Dashboard 替代为主要操作界面。
@@ -62,6 +62,26 @@
 - 单篇文章平均阅读量月环比增长
   - 数据来源：Feedback Agent（Phase 3 就绪前不可用，初期需手动在各平台后台查看后录入 Dashboard）
 - 单篇内容综合成本（Token + API 调用 + 图片生成）递减趋势
+
+**SMART 目标（#8）：**
+- 上线 30 天内：单篇平均阅读量 ≥ 500（新账号基线 0），管线成功率 > 95%
+- 上线 60 天内：单篇平均阅读量 ≥ 1000，审批通过率稳定在 60-80%
+- 上线 90 天内：单篇成本 ≤ $0.30，月总成本 ≤ $25
+
+**Phase 1-2 替代指标（Feedback Agent 就绪前）：**
+| 指标 | 说明 | 采集方式 |
+|------|------|---------|
+| 管线成功率 | 按时完成的时段 / 总时段 | SQLite pipeline_sessions 自动统计 |
+| 审批通过率 | 通过篇数 / 总审批篇数 | SQLite approval_records 自动统计 |
+| 单篇 Token 消耗 | 平均每篇消耗 | SQLite token_usage 自动统计 |
+| 平均重写轮数 | 批评修订平均轮数 | SQLite platform_versions 自动统计 |
+
+**成功标准与止损（#16）：**
+| 检查点 | Go 条件 | No-Go 行动 |
+|--------|---------|-----------|
+| 30 天 | 管线成功率 > 90%，至少发布 20 篇 | 暂停，排查失败原因 |
+| 60 天 | 平均阅读量 > 500，审批通过率 60-80% | 调整质量门阈值和写作 prompt |
+| 90 天 | 单篇成本 ≤ $0.30，无账号封禁 | 考虑切换领域或暂停项目 |
 
 **过程指标：**
 | 指标 | 说明 | 健康值参考 |
@@ -333,6 +353,13 @@ while True:
 3. POSIX 系统上同一文件系统的 `rename()` 是原子操作
 4. 读取方永远只会看到完整的文件，绝不会读到半截写入的内容
 5. 建议 write + fsync 显式刷新到磁盘再 rename
+
+**⚠️ Action 文件幂等检查（#12）：**
+扫描端在处理 action 文件前须做去重检查：
+1. 解析 action 文件的 `{action}_{target_id}` 组合
+2. 检查 `queue/actions/processed/` 目录中是否已有同组合的文件（60 秒窗口内）
+3. 如已存在，跳过处理并记录日志 "duplicate action skipped"
+4. 防止用户快速双击或网络重试导致的重复分发
 
 **配置变更同步策略：**
 - 出稿时间、信息源开关、写作风格等业务配置 → 存 `config/` 目录 + SQLite
@@ -838,6 +865,17 @@ queue/review/ 写入文章 + meta.json
   └── ⏰ 超时（2小时）→ 自动跳过该时段
 ```
 
+**审批操作状态机（#9）：**
+```
+idle → submitting → submitted → processing → completed/failed
+```
+- **submitting**：按钮 disabled + spinner，正在写入 action 文件
+- **submitted**：toast "已提交，等待系统处理"
+- **processing**：Hermes cron 已扫描到 action 文件，正在执行
+- **completed**：toast "操作成功"
+- **failed**：toast "操作失败，请重试" + 错误详情折叠面板
+- 竞态防护：action 文件名包含时间戳，重复点击生成新文件，扫描端做幂等检查（见 2.6 节）
+
 **飞书 vs Dashboard 审批边界划分：**
 
 | 操作 | 飞书卡片 | Dashboard |
@@ -854,13 +892,11 @@ queue/review/ 写入文章 + meta.json
 > 飞书卡片目前仅作通知用途，"🖥️ 打开面板"跳转到 Dashboard 执行操作。
 > 后续如需在飞书卡片上直接操作，需 Dashboard 暴露公网端口 + 配置飞书事件订阅回调。
 
-### 5.3 飞书审批卡片设计
+### 5.3 飞书通知卡片设计
 
-**重要前提：** 需要先确认 Hermes Agent 是否原生支持飞书消息卡片及交互事件回调。
-- 如 Hermes 不支持飞书 → 需自建 `feishu-notify` Hermes Skill 或由 Dashboard 后端集成飞书 SDK
-- 如不支持回调 → 飞书卡片仅作通知，所有审批操作在 Dashboard 完成
+> 飞书卡片仅作通知用途，所有审批操作在 Dashboard 完成（见 5.5 节决策）。
 
-**卡片布局（快速操作版）：**
+**卡片布局（通知版）：**
 ```
 ┌─────────────────────────────────────┐
 │ 📝 新文章待审批                      │
@@ -872,18 +908,9 @@ queue/review/ 写入文章 + meta.json
 │ 摘要：前100字预览...                 │
 │ 全文请在 Dashboard 查看              │
 │─────────────────────────────────────│
-│ 驳回原因（选填）：                   │
-│ ┌─────────────────────────────────┐ │
-│ │                                 │ │
-│ └─────────────────────────────────┘ │
-│                                      │
-│ [✅ 通过] [❌ 驳回] [🖥️ 打开面板]   │
+│ [🖥️ 打开面板]                       │
 └─────────────────────────────────────┘
 ```
-
-**交互回调协议（如飞书支持）：**
-- 用户点击"通过" → 飞书发送回调到 webhook 服务
-- webhook 处理 → 写 `queue/actions/approve_{id}.json`
 - 用户填写驳回原因 → 原因包含在回调 payload 中
 - 不依赖飞书的情况下：通知卡片仅做 "🖥️ 打开面板" 跳转，所有操作在 Dashboard 执行
 
@@ -943,6 +970,12 @@ Hermes Agent 是否原生支持飞书通知和交互卡片回调**尚未验证**
 
 **安全：** Dashboard 仅监听 `127.0.0.1`（localhost），不暴露公网接口。所有操作仅本机可执行，无需 JWT 等额外认证。如需远程访问，通过 SSH 隧道转发。
 
+**可访问性（#11）：** 当前阶段的基本约束：
+- 所有状态指示必须同时使用颜色 + 文字标签（不能仅靠颜色区分状态）
+- 所有交互元素支持 Tab 键导航
+- Toast 通知使用 `aria-live` 区域
+- iframe 预览提供 fallback 文本链接
+
 **SQLite 核心表结构（`data/analytics.db`）：**
 
 ```sql
@@ -996,10 +1029,11 @@ config_entries:           -- 配置变更记录（支持双版本预览）
 - 空状态：展示"暂无待审内容" + 当前时段管线进度链接
 
 **数据 Tab 细节：**
-- Phase 2 上线时数据为空，展示："暂无数据，开始发布内容后 24 小时自动更新"
-- 展示：阅读量趋势折线图、按平台对比柱状图、爆款词云
+- **Phase 2 上线时用过程指标填充（#17）：** 管线成功率、审批通过率、Token 消耗趋势、平均重写轮数分布
+- Phase 3 Feedback Agent 就绪后补充：阅读量趋势折线图、按平台对比柱状图、爆款词云
 - 成本消耗趋势图（按日累计 Token/费用）
-- Feedback Agent 启用后（Phase 3）数据自动填充
+- 数据量极少时（< 3 篇）显示"数据量较少，趋势仅供参考"提示
+- Feedback Agent 回收失败时显示黄色 banner "数据回收异常，最后更新时间：xxx"
 
 **今日选题 Tab 细节：**
 - Scout 推送的候选列表，每项显示评分、来源、新鲜度标签
@@ -1407,7 +1441,7 @@ Hermes 内置 Firecrawl 作为默认 Web 后端，月 500 credits 免费。
 
 ## 十二、实施路线图
 
-### Phase 0 — 基础设施与 PoC 验证（2-3天）
+### Phase 0 — 基础设施与 PoC 验证（1周）
 
 - [ ] **Hermes Agent PoC：** 安装 Hermes，验证以下能力——
   - [ ] `hermes gateway` 命令可用
@@ -1417,7 +1451,8 @@ Hermes 内置 Firecrawl 作为默认 Web 后端，月 500 credits 免费。
   - [ ] 验证 `/llm-wiki` 的搜索能力（是否支持中文？是关键词还是语义？）
   - [ ] 验证 `deliver_to` 是否支持飞书
   - [ ] 验证 baoyu skills 的安装和加载方式
-  - [ ] **以上任一项不通过需要重新评估架构依赖**
+  - [ ] **PoC 验收标准：以上 8 项中至少 6 项通过方可进入 Phase 1**
+  - [ ] **PoC 失败降级方案：** 不使用 Hermes，改用 APScheduler + Python 脚本替代 cron 调度，用 subprocess 调用替代 Skill 引擎，FastAPI 后端已有 scan_loop 雏形（`background.py`），扩展为完整调度引擎工作量可控
 - [ ] 调研 AiToEarn MCP 工具集（确认数据回收接口可用性）
 - [ ] systemd/crontab watchdog 脚本
 - [ ] 项目目录结构初始化（skills/ dashboard/ scripts/ config/ data/ queue/ kb/）
@@ -1490,6 +1525,9 @@ Hermes 内置 Firecrawl 作为默认 Web 后端，月 500 credits 免费。
 ```bash
 #!/bin/bash
 # 每分钟由系统 crontab 调用
+# 幂等保护（#14）：检查 PID 文件防止重复启动
+GRACE_PERIOD=30  # 启动后 30 秒内不重复检查
+
 # 检查 Hermes gateway 进程
 if ! pgrep -f "hermes gateway"; then
   hermes gateway start
@@ -1516,11 +1554,31 @@ fi
 - Agent 状态文件：`queue/status/*.json`（Dashboard 管线监控来源）
 - 分发失败记录：`queue/failed/*.json`
 
-### 13.4 数据备份
+### 13.4 测试策略（#5）
 
-- SQLite 数据库：`data/analytics.db`（定 cron 自动备份到空 role备份目录）
-- 知识库 kb/：本身就是 Markdown 文件，git 或 Obsidian 同步即可
-- queue/ 目录：不需要备份（运行态数据，重启后重新生成）
+测试已在代码中实现，详见 `pytest.ini` + `tests/` 目录（721 个测试，覆盖全部 API 路由、Agent 模块、数据层）。
+
+- **单元测试**：每个 Agent 的核心函数（mock LLM API + mock 文件系统）
+- **集成测试**：Agent 间文件通信、Dashboard ↔ Agent 集成
+- **测试覆盖率**：80%+（`pytest --cov=skills --cov-report=term`）
+- **测试环境**：本地 SQLite + mock LLM API（`@pytest.mark.integration`）
+- **人工抽检机制（#6）**：每周随机抽取 3 篇已发布文章，人工评分后与 LLM 评分对比，偏差 > 15% 时调整审校 prompt
+
+### 13.5 数据备份（#3）
+
+**SQLite 备份策略：**
+- 每小时自动备份：`sqlite3 data/analytics.db ".backup data/backups/analytics-$(date +%Y%m%d%H%M).db"`
+- 保留最近 72 小时的备份文件，超期自动清理
+- 每周执行一次恢复验证（备份到临时文件，检查表完整性）
+- 备份目录：`data/backups/`（需在 init_directories.sh 中创建）
+
+**知识库 kb/ 备份：**
+- kb/ 目录使用 Obsidian 同步或 git 管理
+- Knowledge Agent 每次写入后可选自动 `git add + commit`
+
+**queue/ 目录：**
+- queue/review/ 中待审批的文章在审批通过前不删除原始文件
+- queue/status/ 和 queue/actions/ 为运行态数据，不需要备份
 
 ---
 
