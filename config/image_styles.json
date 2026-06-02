@@ -1,50 +1,50 @@
 {
   "news": {
-    "style": "photorealistic, cinematic lighting, DSLR, high detail, sharp focus",
+    "style": "editorial photography, cinematic depth of field, shot on Canon EOS R5, cool ambient lighting, muted tones, film grain",
     "aspect_ratio": "16:9",
     "size": "1024x576",
-    "description": "新闻 — 摄影写实风格"
+    "description": "新闻 — 杂志级摄影风格"
   },
   "tutorial": {
-    "style": "flat illustration, minimal, vector art, clean lines, soft pastel colors, modern",
+    "style": "flat illustration, minimal vector art, clean lines, soft pastel colors, negative space composition, risograph print texture",
     "aspect_ratio": "16:9",
     "size": "1024x576",
     "description": "教程 — 扁平插画风格"
   },
   "tool_update": {
-    "style": "3D render, isometric, soft lighting, blender style, modern UI, clean background",
+    "style": "3D render, isometric perspective, soft studio lighting, matte finish, clean white background, modern UI mockup",
     "aspect_ratio": "1:1",
     "size": "1024x1024",
     "description": "工具更新 — 3D 渲染风格"
   },
   "tech_science": {
-    "style": "cyberpunk, neon glow, futuristic, dark background, high tech, holographic",
+    "style": "cyberpunk aesthetic, neon rim lighting, volumetric fog, dark moody atmosphere, shot on 35mm lens, desaturated with neon accent",
     "aspect_ratio": "16:9",
     "size": "1024x576",
     "description": "技术科普 — 赛博未来风格"
   },
   "insight": {
-    "style": "cyberpunk, neon glow, futuristic, abstract, conceptual, atmospheric",
+    "style": "fine art photography, chiaroscuro lighting, moody and atmospheric, shot on medium format camera, muted earth tones, film grain",
     "aspect_ratio": "16:9",
     "size": "1024x576",
-    "description": "洞察 — 赛博未来风格"
+    "description": "洞察 — 深度艺术风格"
   },
   "opinion": {
-    "style": "hand drawn, watercolor, sketch style, warm tones, artistic, expressive",
+    "style": "editorial illustration, watercolor and ink texture, warm natural tones, hand-drawn feel, soft morning light, visible brush strokes",
     "aspect_ratio": "4:3",
     "size": "1024x768",
     "description": "观点 — 手绘水彩风格"
   },
   "sharing": {
-    "style": "hand drawn, watercolor, sketch style, cozy, lifestyle, warm lighting",
+    "style": "lifestyle photography, golden hour light, Kodak Portra 400 film, shallow depth of field, soft bokeh, warm and inviting",
     "aspect_ratio": "4:3",
     "size": "1024x768",
-    "description": "分享 — 手绘水彩风格"
+    "description": "分享 — 生活摄影风格"
   },
   "roundup": {
-    "style": "flat illustration, minimal, organized layout, infographic feel, clean design",
+    "style": "flat illustration, organized infographic layout, clean design, soft pastel palette, minimal vector art, modern editorial",
     "aspect_ratio": "16:9",
     "size": "1024x576",
-    "description": "合集 — 扁平插画风格"
+    "description": "合集 — 信息图风格"
   }
 }

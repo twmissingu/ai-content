@@ -18,40 +18,71 @@
 
 {text_summary}
 
-## Prompt 写作规范
+## Prompt 写作公式
 
-视频 prompt 必须包含以下要素（英文）：
+视频 prompt 按以下顺序组织（顺序即权重）：
 
-1. **主体描述** — 视频的核心对象/场景是什么
-2. **动态效果** — 元素如何运动、变化、过渡
-3. **艺术风格** — 必须包含: {style}
-4. **镜头运动** — 推拉摇移、跟拍、固定、航拍等
-5. **光线氛围** — 自然光、霓虹灯、背光、暖光等
-6. **质量修饰词** — cinematic, high quality, 4K, smooth motion 等
+```
+[场景主体] + [动态变化] + [镜头运动] + [光线氛围] + [风格/质感] + [情绪/节奏]
+```
 
-### 优秀 Prompt 示例
+### 1. 场景主体 — 描述视频中"在发生什么"
 
-**扁平动画（教程类）**:
-`A smooth flat animation showing a developer's workflow: code appearing on a laptop screen, floating UI elements assembling into a complete app interface, pastel blue and white color scheme, gentle camera zoom out, soft ambient lighting, modern vector art style, 4K smooth motion`
+- 用具体的动作和变化描述，而非静态画面
+- **正确**: `A developer's hands typing on a keyboard, code appearing line by line on a dark screen`
+- **错误**: `A beautiful coding workspace`
+- 描述 1-2 个核心动态元素，不要塞入过多场景
 
-**写实镜头（新闻类）**:
-`A cinematic shot of a modern AI research lab at night, scientists reviewing holographic data displays, camera slowly tracking across the workspace, cool blue ambient lighting with warm desk lamps, photorealistic, shallow depth of field, 4K`
+### 2. 动态变化 — 视频的灵魂
 
-**3D 渲染（工具更新类）**:
-`A 3D isometric render of a software interface transforming from old to new version, glowing particles and connection nodes animating in sequence, camera slowly rotating around the object, soft studio lighting, blender style, smooth motion`
+描述元素如何随时间变化（即使只有 5 秒也要有起承转合）：
+- `elements assembling into...`, `particles flowing from...`
+- `camera slowly revealing...`, `light gradually shifting from...`
+- `objects transforming from old to new...`
+- `data streams connecting and forming...`
 
-**赛博未来（技术科普类）**:
-`A cyberpunk cityscape transitioning from day to night, neon holographic data streams flowing between buildings, camera drone shot descending through the city layers, purple and blue neon glow, atmospheric fog, cinematic 4K`
+### 3. 镜头运动 — 用摄影语言描述
 
-**手绘动画（观点/分享类）**:
-`A warm watercolor animation of hands turning pages of a book, ideas and thoughts floating up as gentle illustrations, soft morning light, camera slowly pulling back to reveal the full scene, artistic sketch style, smooth motion`
+**镜头运动关键词（选 1 个）：**
+- `slow dolly in` — 缓慢推近，聚焦
+- `slow tracking shot` — 横移跟拍，巡视
+- `gentle camera pull back` — 缓慢拉远，揭示全景
+- `static tripod shot` — 固定机位，稳定
+- `aerial drone shot descending` — 航拍下降
+- `orbiting around the subject` — 环绕主体
+- `subtle parallax movement` — 微妙视差，适合静态场景
 
-### 禁忌
+### 4. 光线与氛围 — 与图片相同原则
 
-- 不要生成包含文字、字母、数字的视频（AI 渲染文字效果差）
+- 优先使用具体光线描述：`soft morning light`, `cool ambient glow`, `golden hour reflections`
+- 避免 `HDR`, `bright neon`（无目的）
+- 光线变化可以是动态元素：`light gradually shifting from warm to cool`
+
+### 5. 风格与质感 — 锚定真实感
+
+- 包含胶片/相机参考：`shot on 35mm film`, `cinematic 4K`, `analog film grain`
+- 控制色调：`muted earth tones`, `desaturated palette`, `warm neutral tones`
+- 避免堆砌：不要 `ultra-detailed masterpiece 8K`，要 `cinematic, natural motion blur`
+
+### 6. 情绪与节奏 — 视频独有
+
+- `calm and meditative pace` — 缓慢、沉思
+- `energetic and dynamic` — 活力、快节奏
+- `smooth and fluid motion` — 流畅、丝滑
+- `subtle and understated` — 克制、内敛
+
+## 长度控制
+
+- 最佳长度：**5-8 个描述短语**
+- 过长会导致画面混乱，过短缺乏细节
+
+## 禁忌
+
+- 不要生成包含文字、字母、数字的视频
 - 不要生成过于血腥、暴力、政治敏感的内容
 - 不要使用过于抽象或与文章内容无关的描述
 - 不要使用中文，全部用英文
+- 不要堆砌质量修饰词
 - 不要描述超过 {duration} 秒的内容
 
 ## 输出格式
