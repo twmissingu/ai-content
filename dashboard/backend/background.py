@@ -67,8 +67,8 @@ def _dispatch_action_async(action: dict) -> int:
     try:
         proc = subprocess.Popen(
             full_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             cwd=PROJECT_ROOT,
         )
         logger.info(f"Dispatched {action_type}/{target_id} (PID: {proc.pid})")

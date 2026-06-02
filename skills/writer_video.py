@@ -105,7 +105,6 @@ def split_article_into_segments(
         result = chat_structured(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            json_mode=True,
             temperature=0.5,
         )
         segments = result.get("segments", [])
@@ -245,7 +244,7 @@ def _combine_segments_ffmpeg(
 
     # Concat all clips
     concat_file = temp_dir / "concat.txt"
-    concat_content = "".join(f"file '{p}'\n" for p in clip_paths)
+    concat_content = "".join(f"file {p}\n" for p in clip_paths)
     concat_file.write_text(concat_content)
 
     cmd = [
@@ -434,7 +433,6 @@ def generate_video_prompt(
         result = chat_structured(
             system_prompt=system_prompt,
             user_prompt=prompt_template,
-            json_mode=True,
             temperature=0.7,
         )
         return result.get("video_prompt", "")

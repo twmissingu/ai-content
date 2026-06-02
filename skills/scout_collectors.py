@@ -199,11 +199,17 @@ def collect_all() -> list[dict]:
             pool.submit(_call_firecrawl_search, q): q for q in firecrawl_queries
         }
 
-        for item in github_fut.result():
-            candidates.append(item)
+        try:
+            for item in github_fut.result():
+                candidates.append(item)
+        except Exception:
+            logger.debug("GitHub trending collector failed")
 
-        for item in materials_fut.result():
-            candidates.append(item)
+        try:
+            for item in materials_fut.result():
+                candidates.append(item)
+        except Exception:
+            logger.debug("Materials collector failed")
 
         for future in concurrent.futures.as_completed(firecrawl_futures):
             try:

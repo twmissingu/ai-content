@@ -148,8 +148,12 @@ def load_prompt(template_name: str, **kwargs) -> str:
             template = _prompt_loader(template_name)
             if template:
                 return template.format(**kwargs)
-        except Exception:
-            pass  # Loader unavailable, fall back to file
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "Prompt loader failed for '%s', falling back to file: %s",
+                template_name,
+                exc,
+            )
 
     # Fall back to file (try .md first, then .txt)
     from config.settings import CONFIG_DIR
@@ -613,10 +617,10 @@ def safe_subprocess_args(args: list[str], allowed_binaries: Optional[set[str]] =
     
     # Check for shell metacharacters in arguments
     dangerous_chars = set(';&|`$(){}[]!#~')
-    for arg in args[1:]:
+    for i, arg in enumerate(args[1:], start=1):
         if any(c in arg for c in dangerous_chars):
             # Allow JSON in --params arguments
-            if args[args.index(arg) - 1] == '--params':
+            if args[i - 1] == '--params':
                 try:
                     json.loads(arg)
                     continue

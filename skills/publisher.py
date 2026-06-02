@@ -57,7 +57,11 @@ class PublisherAgent(AgentBase):
         if not meta_path.exists():
             return None, None
 
-        meta = json.loads(meta_path.read_text())
+        try:
+            meta = json.loads(meta_path.read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            self.logger.error(f"Failed to read meta file {meta_path}: {e}")
+            return None, None
         if not article_path.exists():
             article_path = REVIEW_DIR / f"{meta_path.stem.replace('.meta', '')}.md"
 
@@ -276,7 +280,12 @@ class PublisherAgent(AgentBase):
         with ThreadPoolExecutor(max_workers=len(platforms)) as executor:
             futures = {executor.submit(_publish_one, p): p for p in platforms}
             for future in as_completed(futures):
-                platform, ok = future.result()
+                try:
+                    platform, ok = future.result()
+                except Exception as e:
+                    platform = futures[future]
+                    ok = False
+                    self.logger.error(f"{PLATFORM_DISPLAY.get(platform, platform)}: unhandled exception: {e}")
                 display = PLATFORM_DISPLAY.get(platform, platform)
                 results[platform] = ok
 

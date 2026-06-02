@@ -74,7 +74,11 @@ def _find_topic(topic_id: Optional[str] = None) -> tuple[Optional[Path], Optiona
     """Find a confirmed topic."""
     if topic_id:
         for f in PENDING_DIR.glob(f"topic_*{topic_id}*.json"):
-            return f, json.loads(f.read_text())
+            try:
+                return f, json.loads(f.read_text())
+            except (OSError, json.JSONDecodeError) as e:
+                logger.warning(f"Failed to read topic file {f}: {e}")
+                continue
 
     # Find latest confirmed topic (stored in queue/topics/ by dashboard scanner)
     topics_dir = QUEUE_DIR / "topics"
@@ -83,11 +87,18 @@ def _find_topic(topic_id: Optional[str] = None) -> tuple[Optional[Path], Optiona
         topic_name = cf.stem.replace(".confirmed", "")
         for f in PENDING_DIR.glob(f"*{topic_name}*"):
             if f.exists():
-                return f, json.loads(f.read_text())
+                try:
+                    return f, json.loads(f.read_text())
+                except (OSError, json.JSONDecodeError) as e:
+                    logger.warning(f"Failed to read topic file {f}: {e}")
+                    continue
         # Also try the raw topic name
         topic_path = PENDING_DIR / f"{topic_name}.json"
         if topic_path.exists():
-            return topic_path, json.loads(topic_path.read_text())
+            try:
+                return topic_path, json.loads(topic_path.read_text())
+            except (OSError, json.JSONDecodeError) as e:
+                logger.warning(f"Failed to read topic file {topic_path}: {e}")
     return None, None
 
 

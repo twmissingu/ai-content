@@ -557,7 +557,11 @@ class WriterAgent(AgentBase):
         article_path = REVIEW_DIR / f"{self._run_timestamp}-{self.worker_type}.md"
         meta_path = REVIEW_DIR / f"{self._run_timestamp}-{self.worker_type}.meta.json"
 
-        article_path.write_text(f"# {final_title}\n\n{text}", encoding="utf-8")
+        try:
+            article_path.write_text(f"# {final_title}\n\n{text}", encoding="utf-8")
+        except OSError as e:
+            self.logger.error(f"Failed to write article {article_path}: {e}")
+            raise
 
         title_score = title_candidates[0]["score"] if title_candidates else 0
         meta = {
@@ -579,7 +583,11 @@ class WriterAgent(AgentBase):
         }
         if extra_meta:
             meta.update(extra_meta)
-        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
+        try:
+            meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
+        except OSError as e:
+            self.logger.error(f"Failed to write meta {meta_path}: {e}")
+            raise
 
         self._validate_article_draft(
             final_title, text, topic, source_url,

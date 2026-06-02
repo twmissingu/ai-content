@@ -131,8 +131,11 @@ class KnowledgeAgent(AgentBase):
         except Exception as e:
             self.logger.warning(f"AI analysis failed (article still archived): {e}")
 
-        # Update topics index
-        self._update_topics_index(topic, meta.get("platform_standard", "wechat"))
+        # Update topics index (non-blocking: failure doesn't stop archival)
+        try:
+            self._update_topics_index(topic, meta.get("platform_standard", "wechat"))
+        except Exception as e:
+            self.logger.warning(f"Topics index update failed (article still archived): {e}")
 
         self.write_completed(f"归档完成: {topic}")
         self.logger.info("Done")

@@ -180,7 +180,9 @@ def _build_tree(path: Path, depth: int = 0) -> list[dict]:
 def get_kb_tree(subpath: str = Query("", alias="path")):
     """Return directory tree of KB, optionally starting from subpath."""
     target = (KB_DIR / subpath).resolve() if subpath else KB_DIR.resolve()
-    if not str(target).startswith(str(KB_DIR.resolve())):
+    try:
+        target.relative_to(KB_DIR.resolve())
+    except ValueError:
         raise HTTPException(403, "禁止访问知识库以外的路径")
     if not target.exists() or not target.is_dir():
         raise HTTPException(404, f"目录不存在: {subpath}")
@@ -191,7 +193,9 @@ def get_kb_tree(subpath: str = Query("", alias="path")):
 def get_kb_file(path: str = Query(..., min_length=1)):
     """Return content of a single file in KB. Path traversal protected."""
     target = (KB_DIR / path).resolve()
-    if not str(target).startswith(str(KB_DIR.resolve())):
+    try:
+        target.relative_to(KB_DIR.resolve())
+    except ValueError:
         raise HTTPException(403, "禁止访问知识库以外的路径")
     if not target.exists() or not target.is_file():
         raise HTTPException(404, f"文件不存在: {path}")

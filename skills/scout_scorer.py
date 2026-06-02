@@ -194,6 +194,7 @@ def score_candidate(candidate: dict, cold_start: bool) -> dict | None:
             temperature=0.3,
         )
     except Exception as e:
+        logger.warning(f"LLM scoring failed for '{candidate.get('title', 'unknown')[:50]}': {e}")
         return None
 
     # Extract scores

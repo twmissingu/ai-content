@@ -113,7 +113,6 @@ def generate_image_prompts(
         result = chat_structured(
             system_prompt=system_prompt,
             user_prompt=prompt_template,
-            json_mode=True,
             temperature=0.7,
         )
         cover_prompt = result.get("cover_prompt", "")
@@ -186,6 +185,8 @@ def generate_images_agnes(
         return None
 
     tasks = [(i, p) for i, p in enumerate(prompts) if p]
+    if not tasks:
+        return []
     paths: list[str] = []
     with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
         futures = {

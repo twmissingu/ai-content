@@ -75,7 +75,12 @@ def write_action(
     if platform_versions:
         for platform in platform_versions:
             validate_platform(platform)
-    
+
+    # Guard against path traversal in target_id
+    import re
+    if not re.fullmatch(r'[a-zA-Z0-9._-]+', target_id):
+        raise ValueError(f"Invalid target_id (contains disallowed characters): {target_id}")
+
     stamp = time.strftime("%Y%m%d_%H%M%S")
     filename = f"{action}_{target_id}_{stamp}.json"
     final_path = ACTIONS_DIR / filename
