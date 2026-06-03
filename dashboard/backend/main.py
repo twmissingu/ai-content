@@ -18,16 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from dashboard.backend.auth import AuthMiddleware
-from dashboard.backend.background import (
-    budget_monitor_loop,
-    budget_stop_event,
-    scan_loop,
-    scanner_stop_event,
-    token_import_loop,
-    token_import_stop_event,
-    trail_import_loop,
-    trail_import_stop_event,
-)
+from dashboard.backend.background import start_all_pollers, stop_all_pollers
 from dashboard.backend.database import init_db, import_prompts_from_files, shutdown_db_connections
 from dashboard.backend.search import auto_index_if_needed
 from dashboard.backend.ws import ws_manager
@@ -182,31 +173,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error importing prompts: {e}")
 
-    thread = threading.Thread(target=scan_loop, daemon=True, name="action-scanner")
-    thread.start()
-    logger.info("Background action scanner started (10s interval)")
-
-    budget_thread = threading.Thread(target=budget_monitor_loop, daemon=True, name="budget-monitor")
-    budget_thread.start()
-    logger.info("Budget monitor started")
-
-    token_thread = threading.Thread(target=token_import_loop, daemon=True, name="token-importer")
-    token_thread.start()
-    logger.info("Token importer started (15s interval)")
-
-    trail_thread = threading.Thread(target=trail_import_loop, daemon=True, name="trail-importer")
-    trail_thread.start()
-    logger.info("Trail importer started (15s interval)")
+    start_all_pollers()
 
     ws_manager.start_watcher()
 
     yield
 
     ws_manager.stop_watcher()
-    scanner_stop_event.set()
-    budget_stop_event.set()
-    token_import_stop_event.set()
-    trail_import_stop_event.set()
+    stop_all_pollers()
     shutdown_db_connections()
     logger.info("Background tasks stopped")
 

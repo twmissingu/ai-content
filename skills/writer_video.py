@@ -244,7 +244,7 @@ def _combine_segments_ffmpeg(
 
     # Concat all clips
     concat_file = temp_dir / "concat.txt"
-    concat_content = "".join(f"file {p}\n" for p in clip_paths)
+    concat_content = "".join(f"file '{p}'\n" for p in clip_paths)
     concat_file.write_text(concat_content)
 
     cmd = [

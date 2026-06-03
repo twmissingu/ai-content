@@ -366,56 +366,6 @@ a:focus-visible {
   color: var(--text-disabled);
 }
 
-/* ── 标签 ───────────────────────────────────────────────────────── */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  padding: var(--space-xs) var(--space-md);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  border-radius: var(--radius-full);
-  white-space: nowrap;
-  transition: all var(--transition-fast);
-}
-
-.badge:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-sm);
-}
-
-.badge-primary {
-  background: var(--primary-light);
-  color: var(--primary);
-}
-
-.badge-success {
-  background: var(--success-light);
-  color: var(--success);
-}
-
-.badge-danger {
-  background: var(--danger-light);
-  color: var(--danger);
-}
-
-.badge-warning {
-  background: var(--warning-light);
-  color: var(--warning);
-}
-
-.badge-neutral {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-}
-
-/* ── 分隔线 ─────────────────────────────────────────────────────── */
-.divider {
-  height: 1px;
-  background: var(--divider);
-  margin: var(--space-lg) 0;
-}
-
 /* ── 空状态 ─────────────────────────────────────────────────────── */
 .empty-state {
   display: flex;
@@ -487,34 +437,6 @@ a:focus-visible {
 
 .progress-bar-fill.warning {
   background: var(--warning);
-}
-
-/* ── 分数条 ─────────────────────────────────────────────────────── */
-.score-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
-.score-bar-label {
-  font-size: var(--text-sm);
-  color: var(--text-tertiary);
-  min-width: 32px;
-}
-
-.score-bar-track {
-  flex: 1;
-  height: 4px;
-  background: var(--bg-hover);
-  border-radius: var(--radius-full);
-  overflow: hidden;
-}
-
-.score-bar-fill {
-  height: 100%;
-  border-radius: var(--radius-full);
-  background: var(--primary);
-  transition: width var(--transition-slow);
 }
 
 /* ── 加载状态 ───────────────────────────────────────────────────── */
@@ -682,54 +604,8 @@ a:focus-visible {
   height: 120px;
 }
 
-/* ── 涟漪效果 ─────────────────────────────────────────────────── */
-.ripple {
-  position: relative;
-  overflow: hidden;
-}
-
-.ripple::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle, rgba(255,255,255,0.3) 10%, transparent 10.01%);
-  transform: scale(10);
-  opacity: 0;
-  transition: transform 0.5s, opacity 1s;
-}
-
-.ripple:active::after {
-  transform: scale(0);
-  opacity: 0.3;
-  transition: 0s;
-}
-
 /* ── 脉冲动画 ─────────────────────────────────────────────────── */
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
-}
-
-.pulse {
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* ── 淡入动画 ─────────────────────────────────────────────────── */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.fade-in {
-  animation: fadeIn 0.3s ease-out;
-}
-
-/* ── 数字滚动 ─────────────────────────────────────────────────── */
-@keyframes countUp {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.count-up {
-  animation: countUp 0.5s ease-out;
 }

@@ -23,17 +23,54 @@ from skills.action import mark_processed, scan_actions
 
 logger = logging.getLogger("gaoding.dashboard")
 
-# Stop events for graceful shutdown
-scanner_stop_event = threading.Event()
-budget_stop_event = threading.Event()
-token_import_stop_event = threading.Event()
-trail_import_stop_event = threading.Event()
+
+class Poller:
+    """Unified polling loop with configurable interval, stop event, and error handling.
+
+    Wraps the common pattern of:
+        while not stop_event.is_set():
+            try:
+                target()
+            except Exception as e:
+                logger.error(...)
+            stop_event.wait(interval)
+    """
+
+    def __init__(self, name: str, interval: float, target, stop_event: threading.Event | None = None):
+        self.name = name
+        self.interval = interval
+        self.target = target
+        self._stop = stop_event or threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self):
+        self._thread = threading.Thread(target=self._run, name=f"poller-{self.name}", daemon=True)
+        self._thread.start()
+        logger.info(f"Poller[{self.name}] started ({self.interval}s interval)")
+
+    def stop(self):
+        self._stop.set()
+
+    @property
+    def running(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def _run(self):
+        while not self._stop.is_set():
+            try:
+                self.target()
+            except Exception as e:
+                logger.error(f"Poller[{self.name}] error: {e}")
+            self._stop.wait(self.interval)
+
+
+_VENV_PYTHON = PROJECT_ROOT / ".venv" / "bin" / "python"
 
 DISPATCH_MAP = {
-    "confirm": ["python3", str(PROJECT_ROOT / "skills/writer_router.py")],
-    "approve": ["python3", str(PROJECT_ROOT / "skills/publisher.py")],
-    "reject": ["python3", str(PROJECT_ROOT / "skills/writer.py"), "--rewrite"],
-    "rewrite": ["python3", str(PROJECT_ROOT / "skills/writer.py"), "--rewrite"],
+    "confirm": [str(_VENV_PYTHON), str(PROJECT_ROOT / "skills/writer_router.py")],
+    "approve": [str(_VENV_PYTHON), str(PROJECT_ROOT / "skills/publisher.py")],
+    "reject": [str(_VENV_PYTHON), str(PROJECT_ROOT / "skills/writer.py"), "--rewrite"],
+    "rewrite": [str(_VENV_PYTHON), str(PROJECT_ROOT / "skills/writer.py"), "--rewrite"],
 }
 
 
@@ -79,162 +116,155 @@ def _dispatch_action_async(action: dict) -> int:
         return -1
 
 
-def scan_loop():
-    """Background thread: poll queue/actions/ every 10s (non-blocking dispatch)."""
-    while not scanner_stop_event.is_set():
-        try:
-            actions = scan_actions()
-            for action in actions:
-                source_path = Path(action.get("_source_path", ""))
-                if not source_path.exists():
-                    continue
-                pid = _dispatch_action_async(action)
-                if pid >= 0:
-                    mark_processed(source_path)
-                else:
-                    FAILED_DIR.mkdir(parents=True, exist_ok=True)
-                    source_path.rename(FAILED_DIR / source_path.name)
-        except Exception as e:
-            logger.error(f"Scanner loop error: {e}")
-        scanner_stop_event.wait(10)
+def scan_actions_target():
+    """Polling target: scan queue/actions/ for new action files."""
+    actions = scan_actions()
+    for action in actions:
+        source_path = Path(action.get("_source_path", ""))
+        if not source_path.exists():
+            continue
+        pid = _dispatch_action_async(action)
+        if pid >= 0:
+            mark_processed(source_path)
+        else:
+            FAILED_DIR.mkdir(parents=True, exist_ok=True)
+            source_path.rename(FAILED_DIR / source_path.name)
 
 
-def token_import_loop():
-    """Background thread: poll queue/tokens/ every 15s, import into SQLite."""
+def import_tokens_target():
+    """Polling target: import token usage JSON files into SQLite."""
     failed_dir = TOKENS_DIR / "failed"
-    while not token_import_stop_event.is_set():
+    TOKENS_DIR.mkdir(parents=True, exist_ok=True)
+    failed_dir.mkdir(parents=True, exist_ok=True)
+    files = sorted(TOKENS_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime)
+    for f in files:
         try:
-            TOKENS_DIR.mkdir(parents=True, exist_ok=True)
-            failed_dir.mkdir(parents=True, exist_ok=True)
-            files = sorted(TOKENS_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime)
-            for f in files:
-                try:
-                    data = json.loads(f.read_text())
-                    log_token_usage(
-                        agent=data.get("agent", "unknown"),
-                        model=data.get("model", "unknown"),
-                        input_tokens=data.get("input_tokens", 0),
-                        output_tokens=data.get("output_tokens", 0),
-                        session_id=data.get("session_id"),
-                    )
-                    f.unlink()
-                except Exception as e:
-                    logger.warning(f"Token import failed for {f.name}, moving to failed/: {e}")
-                    f.rename(failed_dir / f.name)
+            data = json.loads(f.read_text())
+            log_token_usage(
+                agent=data.get("agent", "unknown"),
+                model=data.get("model", "unknown"),
+                input_tokens=data.get("input_tokens", 0),
+                output_tokens=data.get("output_tokens", 0),
+                session_id=data.get("session_id"),
+            )
+            f.unlink()
         except Exception as e:
-            logger.error(f"Token import loop error: {e}")
-        token_import_stop_event.wait(15)
+            logger.warning(f"Token import failed for {f.name}, moving to failed/: {e}")
+            f.rename(failed_dir / f.name)
 
 
-def trail_import_loop():
-    """Background thread: poll queue/trails/ every 15s, import into SQLite pipeline_traces.
+def import_trails_target():
+    """Polling target: import trail JSON files into SQLite pipeline_traces.
 
     Expects paired files: {id}.start.json and {id}.end.json.
     On .start.json: create_trace()
     On .end.json: complete_trace() + update_trace_duration()
     """
-    while not trail_import_stop_event.is_set():
+    TRAIL_DIR.mkdir(parents=True, exist_ok=True)
+    start_files = list(TRAIL_DIR.glob("*.start.json"))
+
+    processed = set()
+    for f in sorted(start_files, key=lambda x: x.stat().st_mtime):
+        trail_id = f.stem.replace(".start", "")
+        if trail_id in processed:
+            continue
+        end_file = TRAIL_DIR / f"{trail_id}.end.json"
+
         try:
-            TRAIL_DIR.mkdir(parents=True, exist_ok=True)
-            # Collect all start files
-            start_files = list(TRAIL_DIR.glob("*.start.json"))
+            start_data = json.loads(f.read_text())
 
-            # Process .start.json, check for matching .end.json
-            processed = set()
-            for f in sorted(start_files, key=lambda x: x.stat().st_mtime):
-                trail_id = f.stem.replace(".start", "")
-                if trail_id in processed:
-                    continue
-                end_file = TRAIL_DIR / f"{trail_id}.end.json"
-
+            if end_file.exists():
+                _sid = start_data.get("session_id")
+                if _sid is None:
+                    _sid = create_pipeline_session(
+                        date=trail_id.split("-")[-1][:8] if any(c.isdigit() for c in trail_id) else "unknown",
+                        period="manual",
+                        topic=f"{start_data.get('agent', '?')}:{start_data.get('stage_name', start_data.get('stage', '?'))}",
+                    )
+                end_data = json.loads(end_file.read_text())
+                trace_id = create_trace(
+                    session_id=_sid,
+                    agent=start_data.get("agent", "unknown"),
+                    stage=start_data.get("stage", "unknown"),
+                    stage_name=start_data.get("stage_name"),
+                )
+                complete_trace(
+                    trace_id,
+                    status=end_data.get("status", "completed"),
+                )
+                if end_data.get("duration_ms"):
+                    update_trace_duration(trace_id, end_data["duration_ms"])
+                trail_status = end_data.get("status", "completed")
+                session_status = "completed" if trail_status == "completed" else "failed"
                 try:
-                    start_data = json.loads(f.read_text())
-
-                    if end_file.exists():
-                        # Complete trail — generate synthetic session_id if none
-                        _sid = start_data.get("session_id")
-                        if _sid is None:
-                            # Lazy-create a pipeline session from trail metadata
-                            _sid = create_pipeline_session(
-                                date=trail_id.split("-")[-1][:8] if any(c.isdigit() for c in trail_id) else "unknown",
-                                period="manual",
-                                topic=f"{start_data.get('agent', '?')}:{start_data.get('stage_name', start_data.get('stage', '?'))}",
-                            )
-                        end_data = json.loads(end_file.read_text())
-                        trace_id = create_trace(
-                            session_id=_sid,
-                            agent=start_data.get("agent", "unknown"),
-                            stage=start_data.get("stage", "unknown"),
-                            stage_name=start_data.get("stage_name"),
-                        )
-                        complete_trace(
-                            trace_id,
-                            status=end_data.get("status", "completed"),
-                        )
-                        if end_data.get("duration_ms"):
-                            update_trace_duration(trace_id, end_data["duration_ms"])
-                        # Mark session as completed (or failed based on trail status)
-                        trail_status = end_data.get("status", "completed")
-                        session_status = "completed" if trail_status == "completed" else "failed"
-                        try:
-                            update_pipeline_session(
-                                _sid,
-                                status=session_status,
-                                completed_at=datetime.now(timezone.utc).isoformat(),
-                            )
-                        except Exception as e:
-                            logger.warning(f"Failed to update session {_sid} status: {e}")
-                        f.unlink()
-                        end_file.unlink()
-                        processed.add(trail_id)
-                    # else: keep waiting for the .end.json
+                    update_pipeline_session(
+                        _sid,
+                        status=session_status,
+                        completed_at=datetime.now(timezone.utc).isoformat(),
+                    )
                 except Exception as e:
-                    logger.debug(f"Trail import failed for {trail_id}: {e}")
-
-            # Cleanup stale .start.json files older than 2 hours with no matching .end.json
-            now = time.time()
-            for f in TRAIL_DIR.glob("*.start.json"):
-                if now - f.stat().st_mtime > 7200:
-                    trail_id = f.stem.replace(".start", "")
-                    end_file = TRAIL_DIR / f"{trail_id}.end.json"
-                    if not end_file.exists():
-                        logger.warning(f"Removing stale trail start file: {f.name}")
-                        f.unlink()
-
+                    logger.warning(f"Failed to update session {_sid} status: {e}")
+                f.unlink()
+                end_file.unlink()
+                processed.add(trail_id)
         except Exception as e:
-            logger.error(f"Trail import loop error: {e}")
-        trail_import_stop_event.wait(15)
+            logger.debug(f"Trail import failed for {trail_id}: {e}")
+
+    # Cleanup stale .start.json files older than 2 hours with no matching .end.json
+    now = time.time()
+    for f in TRAIL_DIR.glob("*.start.json"):
+        if now - f.stat().st_mtime > 7200:
+            trail_id = f.stem.replace(".start", "")
+            end_file = TRAIL_DIR / f"{trail_id}.end.json"
+            if not end_file.exists():
+                logger.warning(f"Removing stale trail start file: {f.name}")
+                f.unlink()
 
 
 _last_budget_alert_time = 0
 
 
-def budget_monitor_loop():
-    """Background thread: monitor budget usage every 5 minutes."""
+def budget_monitor_target():
+    """Polling target: check budget usage and alert if needed."""
     global _last_budget_alert_time
 
-    while not budget_stop_event.is_set():
-        try:
-            budget_status = check_budget_limit()
-            current_time = time.time()
+    budget_status = check_budget_limit()
+    current_time = time.time()
 
-            if budget_status['is_warning'] and current_time - _last_budget_alert_time > 3600:
-                alert_budget_warning(
-                    budget_status['current_cost'],
-                    budget_status['budget'],
-                    budget_status['percentage'],
-                )
-                _last_budget_alert_time = current_time
+    if budget_status['is_warning'] and current_time - _last_budget_alert_time > 3600:
+        alert_budget_warning(
+            budget_status['current_cost'],
+            budget_status['budget'],
+            budget_status['percentage'],
+        )
+        _last_budget_alert_time = current_time
 
-            if budget_status['is_exceeded'] and current_time - _last_budget_alert_time > 1800:
-                alert_budget_warning(
-                    budget_status['current_cost'],
-                    budget_status['budget'],
-                    budget_status['percentage'],
-                )
-                _last_budget_alert_time = current_time
+    if budget_status['is_exceeded'] and current_time - _last_budget_alert_time > 1800:
+        alert_budget_warning(
+            budget_status['current_cost'],
+            budget_status['budget'],
+            budget_status['percentage'],
+        )
+        _last_budget_alert_time = current_time
 
-        except Exception as e:
-            logger.error(f"Budget monitor error: {e}")
 
-        budget_stop_event.wait(300)
+# Register all pollers
+_pollers = [
+    Poller(name="action-scanner", interval=10, target=scan_actions_target),
+    Poller(name="token-importer", interval=15, target=import_tokens_target),
+    Poller(name="trail-importer", interval=15, target=import_trails_target),
+    Poller(name="budget-monitor", interval=300, target=budget_monitor_target),
+]
+
+
+def start_all_pollers() -> list[Poller]:
+    """Start all registered pollers."""
+    for p in _pollers:
+        p.start()
+    return _pollers
+
+
+def stop_all_pollers():
+    """Signal all pollers to stop."""
+    for p in _pollers:
+        p.stop()

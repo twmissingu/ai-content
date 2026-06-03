@@ -54,9 +54,9 @@ MIN_CANDIDATES = 5
 MAX_SUB_DIRECTIONS = 3  # diversity: at least 3 different sub-directions
 
 # Phase 1: only morning/afternoon session
-SESSION = sys.argv[1] if len(sys.argv) > 1 else "morning"
-RUN_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-RUN_DATE = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+_SESSION = None  # set at call time via main()
+_RUN_TIMESTAMP = None  # set at call time via main()
+_RUN_DATE = None  # set at call time via main()
 
 # Stage name mapping for trace files
 _STAGE_NAMES = {
@@ -69,7 +69,7 @@ _STAGE_NAMES = {
 
 def _write_status(stage: str, progress_pct: int, detail: str, error: Optional[str] = None) -> None:
     """Write scout agent status using the standalone write_status function."""
-    _write_status_fn("scout", stage, progress_pct, detail, error, started_at=RUN_TIMESTAMP)
+    _write_status_fn("scout", stage, progress_pct, detail, error, started_at=_RUN_TIMESTAMP)
 
 
 class ScoutAgent(AgentBase):
@@ -133,10 +133,15 @@ def main(agent: Optional[ScoutAgent] = None):
         agent: Optional ScoutAgent instance for stage tracking.
                If None, falls back to standalone _write_status.
     """
+    global _SESSION, _RUN_TIMESTAMP, _RUN_DATE
+    _SESSION = sys.argv[1] if len(sys.argv) > 1 else "morning"
+    _RUN_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    _RUN_DATE = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
     # No session created here — dashboard background imports trail files
     session_id = None
-    _write_status("collecting", 5, f"Starting scout {SESSION} session")
-    logger.info(f"{SESSION} session started at {RUN_TIMESTAMP}")
+    _write_status("collecting", 5, f"Starting scout {_SESSION} session")
+    logger.info(f"{_SESSION} session started at {_RUN_TIMESTAMP}")
 
     cold_start = _is_cold_start()
     logger.info(f"Cold start mode: {cold_start}")
@@ -223,7 +228,7 @@ def main(agent: Optional[ScoutAgent] = None):
     for c in final:
         try:
             validated = TopicCandidate.model_validate(c)
-            validated_final.append(c)
+            validated_final.append(validated)
         except Exception as e:
             logger.warning(f"Schema validation failed for '{c.get('title', '?')[:30]}': {e}")
 
@@ -241,7 +246,7 @@ def main(agent: Optional[ScoutAgent] = None):
     # Step 8: Validate full output and write summary status
     try:
         ScoutOutput(
-            session=SESSION,
+            session=_SESSION,
             topics=[TopicCandidate.model_validate(c) for c in validated_final],
             total_collected=len(candidates),
             total_selected=len(validated_final),
@@ -254,12 +259,12 @@ def main(agent: Optional[ScoutAgent] = None):
         "agent": "scout",
         "stage": "completed",
         "progress_pct": 100,
-        "detail": f"{SESSION} session: {len(validated_final)} candidates pushed (from {len(candidates)} raw)",
-        "started_at": RUN_TIMESTAMP,
+        "detail": f"{_SESSION} session: {len(validated_final)} candidates pushed (from {len(candidates)} raw)",
+        "started_at": _RUN_TIMESTAMP,
         "completed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "candidate_count": len(validated_final),
         "cold_start": cold_start,
-        "session": SESSION,
+        "session": _SESSION,
         "error": None,
     }
 

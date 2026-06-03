@@ -131,22 +131,19 @@ def save_prompt(template_name: str, template: str, variables: list[str] | None =
         ).fetchone()
         new_version = (row["max_ver"] or 0) + 1
 
-        # Deactivate previous versions
+        # Atomically deactivate previous versions and insert new version
         conn.execute(
             "UPDATE prompt_versions SET is_active = 0 WHERE name = ?",
             (template_name,),
         )
-
-        # Insert new version
         conn.execute(
             "INSERT INTO prompt_versions (name, version, template, variables, is_active, created_at) "
-            "VALUES (?, ?, ?, ?, 1, ?)",
+            "VALUES (?, ?, ?, ?, 1, datetime('now'))",
             (
                 template_name,
                 new_version,
                 template,
                 json.dumps(variables or []),
-                time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             ),
         )
         _invalidate_prompt_cache(template_name)
@@ -227,7 +224,7 @@ def import_prompts_from_files() -> int:
 
         template = f.read_text(encoding="utf-8")
         # Extract variable names from {variable} patterns
-        variables = list(set(re.findall(r'\{(\w+)\)', template)))
+        variables = list(set(re.findall(r'\{(\w+)\}', template)))
         save_prompt(name, template, variables)
         imported += 1
 

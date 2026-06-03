@@ -64,13 +64,9 @@ def index_kb_file(file_path: Path, section: str = None) -> bool:
         path_str = str(file_path.relative_to(KB_DIR))
         
         with get_db() as conn:
-            # Upsert: delete-then-insert pattern for FTS5
-            conn.execute(
-                "DELETE FROM kb_search WHERE path = ?",
-                (path_str,)
-            )
+            # FTS5: use INSERT OR REPLACE for atomic upsert
             conn.execute("""
-                INSERT INTO kb_search (path, title, content, section)
+                INSERT OR REPLACE INTO kb_search (path, title, content, section)
                 VALUES (?, ?, ?, ?)
             """, (path_str, title, cleaned, section))
         
@@ -226,7 +222,7 @@ def search_kb(query: str, section: str = None, limit: int = 20) -> list[dict]:
                     'title': row['title'],
                     'section': row['section'],
                     'match': row['match_snippet'],
-                    'score': abs(row['rank']),
+                    'score': round(-row['rank'], 4),
                 }
                 results.append(result)
     

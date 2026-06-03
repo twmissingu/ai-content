@@ -1,138 +1,31 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+/**
+ * ApprovalView.vue — slim layout coordinator for the approval page.
+ * Extracted sub-components:
+ *   - ApprovalQueueTable (article list, inline editing, reject forms, version panel, publish)
+ *   - ApprovalVersionPanel (platform version management)
+ *   - ApprovalPublishPanel (publish button)
+ */
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
-import { useToast } from '../composables/useToast'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
-import SkeletonLoader from '../components/SkeletonLoader.vue'
 import PaginationBar from '../components/PaginationBar.vue'
-import ImageGallery from '../components/ImageGallery.vue'
+import ApprovalQueueTable from '../components/ApprovalQueueTable.vue'
 
 const store = useDashboardStore()
-const toast = useToast()
-const selectedId = ref<string | null>(null)
-const rejectReason = ref('')
-const showRejectInput = ref<string | null>(null)
-const showApproveConfirm = ref<string | null>(null)
 
-// Inline editing
-const isEditing = ref(false)
-const editContent = ref('')
-const editSaving = ref(false)
-const editPreview = computed(() => {
-  if (!editContent.value) return ''
-  return DOMPurify.sanitize(marked(editContent.value) as string)
-})
-
-// Version-level operations
-interface PlatformVersion {
-  id: number
-  session_id: number
-  platform: string
-  status: string
-  score: number | null
-  content_path: string | null
-}
-
-const sessionVersions = ref<PlatformVersion[]>([])
-const versionsLoading = ref(false)
-const versionProcessingIds = ref<Set<number>>(new Set())
-
-// Batch operations
-const selectedIds = ref<Set<string>>(new Set())
+// ── Batch mode (page-level state shared with ApprovalQueueTable) ────
 const isBatchMode = ref(false)
+const selectedIds = ref<Set<string>>(new Set())
 const batchProcessing = ref(false)
 
-// Track loading state per article
-const processingIds = ref<Set<string>>(new Set())
-
-// Markdown rendering
-const renderedContent = computed(() => {
-  const article = store.approvalQueue.find(a => a.id === selectedId.value)
-  if (!article?.content_preview) return ''
-  return DOMPurify.sanitize(marked(article.content_preview) as string)
-})
-
-async function fetchVersions(sessionId: number) {
-  versionsLoading.value = true
-  try {
-    const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
-    const res = await fetch(`${API_BASE}/api/approval/versions/${sessionId}`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json()
-    sessionVersions.value = data.versions || []
-  } catch (e) {
-    toast.error(`获取版本列表失败: ${e instanceof Error ? e.message : '未知错误'}`)
-    sessionVersions.value = []
-  } finally {
-    versionsLoading.value = false
-  }
-}
-
-async function approveVersion(versionId: number) {
-  versionProcessingIds.value.add(versionId)
-  try {
-    const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
-    const res = await fetch(`${API_BASE}/api/approval/version/${versionId}/approve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    toast.success('版本已批准')
-    // Refresh versions list
-    const version = sessionVersions.value.find(v => v.id === versionId)
-    if (version) {
-      version.status = 'approved'
-    }
-  } catch (e) {
-    toast.error(`批准失败: ${e instanceof Error ? e.message : '未知错误'}`)
-  } finally {
-    versionProcessingIds.value.delete(versionId)
-  }
-}
-
-async function rejectVersion(versionId: number) {
-  versionProcessingIds.value.add(versionId)
-  try {
-    const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
-    const res = await fetch(`${API_BASE}/api/approval/version/${versionId}/reject`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    toast.success('版本已驳回')
-    const version = sessionVersions.value.find(v => v.id === versionId)
-    if (version) {
-      version.status = 'rejected'
-    }
-  } catch (e) {
-    toast.error(`驳回失败: ${e instanceof Error ? e.message : '未知错误'}`)
-  } finally {
-    versionProcessingIds.value.delete(versionId)
-  }
-}
-
-const selectedCount = computed(() => selectedIds.value.size)
 const allSelected = computed(() =>
   store.approvalQueue.length > 0 && selectedIds.value.size === store.approvalQueue.length
 )
+const selectedCount = computed(() => selectedIds.value.size)
 
-function select(id: string) {
-  if (isBatchMode.value) {
-    toggleSelection(id)
-  } else {
-    selectedId.value = selectedId.value === id ? null : id
-  }
-}
-
-function toggleSelection(id: string) {
-  const newSet = new Set(selectedIds.value)
-  if (newSet.has(id)) {
-    newSet.delete(id)
-  } else {
-    newSet.add(id)
-  }
-  selectedIds.value = newSet
+function toggleBatchMode() {
+  isBatchMode.value = !isBatchMode.value
+  if (!isBatchMode.value) selectedIds.value = new Set()
 }
 
 function toggleSelectAll() {
@@ -143,11 +36,10 @@ function toggleSelectAll() {
   }
 }
 
-function toggleBatchMode() {
-  isBatchMode.value = !isBatchMode.value
-  if (!isBatchMode.value) {
-    selectedIds.value = new Set()
-  }
+function handleToggleSelection(id: string) {
+  const s = new Set(selectedIds.value)
+  if (s.has(id)) { s.delete(id) } else { s.add(id) }
+  selectedIds.value = s
 }
 
 async function batchApprove() {
@@ -162,167 +54,7 @@ async function batchApprove() {
   }
 }
 
-async function doReject(id: string) {
-  if (!rejectReason.value.trim()) return
-  processingIds.value.add(id)
-  try {
-    await store.reject(id, rejectReason.value)
-    showRejectInput.value = null
-    rejectReason.value = ''
-  } finally {
-    processingIds.value.delete(id)
-  }
-}
-
-function cancelReject() {
-  showRejectInput.value = null
-  rejectReason.value = ''
-}
-
-async function confirmApprove(id: string) {
-  processingIds.value.add(id)
-  try {
-    await store.approve(id)
-    showApproveConfirm.value = null
-  } finally {
-    processingIds.value.delete(id)
-  }
-}
-
-function cancelApprove() {
-  showApproveConfirm.value = null
-}
-
-// Publish to platforms
-async function publishArticle(articleId: string) {
-  processingIds.value.add(articleId)
-  try {
-    const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
-    const res = await fetch(`${API_BASE}/api/approval/publish`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        article_id: articleId,
-        platforms: ['wechat', 'xiaohongshu', 'douyin'],
-      }),
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json()
-    toast.success(`发布已触发: ${data.platforms?.join(', ')}`)
-  } catch (e) {
-    toast.error(`发布失败: ${e instanceof Error ? e.message : '未知错误'}`)
-  } finally {
-    processingIds.value.delete(articleId)
-  }
-}
-
-// Inline editing
-async function startEditing(articleId: string) {
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
-  try {
-    const res = await fetch(`${API_BASE}/api/approval/article/${articleId}/content`)
-    if (!res.ok) throw new Error('Failed to fetch content')
-    const data = await res.json()
-    editContent.value = data.content
-    isEditing.value = true
-  } catch (e) {
-    toast.error('加载文章内容失败')
-  }
-}
-
-function cancelEditing() {
-  isEditing.value = false
-  editContent.value = ''
-}
-
-async function saveEditing(articleId: string) {
-  editSaving.value = true
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
-  try {
-    const res = await fetch(`${API_BASE}/api/approval/article/${articleId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: editContent.value }),
-    })
-    if (!res.ok) throw new Error('Failed to save')
-    isEditing.value = false
-    editContent.value = ''
-    toast.success('文章已保存')
-    await store.fetchApprovalQueue()
-  } catch (e) {
-    toast.error('保存失败')
-  } finally {
-    editSaving.value = false
-  }
-}
-
-const pendingCount = computed(() => store.approvalQueue.length)
-
-// Preset rejection reasons
-const rejectPresets = [
-  'AI腔太重，需要重写',
-  '论据不足，缺乏数据支撑',
-  '标题不够吸引人',
-  '内容与选题不符',
-  '需要补充案例',
-]
-
-function isInputElement(el: EventTarget | null): boolean {
-  if (!el || !(el instanceof HTMLElement)) return false
-  const tag = el.tagName.toLowerCase()
-  return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable
-}
-
-// Keyboard shortcuts
-function handleKeydown(e: KeyboardEvent) {
-  // Skip shortcuts when user is typing in an input
-  if (isInputElement(e.target)) return
-
-  // Escape: cancel all
-  if (e.key === 'Escape') {
-    selectedId.value = null
-    showRejectInput.value = null
-    showApproveConfirm.value = null
-    rejectReason.value = ''
-    if (isBatchMode.value) toggleBatchMode()
-  }
-  // Ctrl+A: select all in batch mode (only when not in input)
-  if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
-    e.preventDefault()
-    if (!isBatchMode.value) toggleBatchMode()
-    toggleSelectAll()
-  }
-  // Enter: show approve confirmation for selected article
-  if (e.key === 'Enter' && selectedId.value && !showRejectInput.value && !showApproveConfirm.value) {
-    e.preventDefault()
-    showApproveConfirm.value = selectedId.value
-  }
-  // R: start reject on selected article
-  if (e.key === 'r' && selectedId.value && !showRejectInput.value && !showApproveConfirm.value) {
-    e.preventDefault()
-    showRejectInput.value = selectedId.value
-  }
-}
-
-// Focus management: move focus to reject input when it appears
-watch(showRejectInput, async (id) => {
-  if (id) {
-    await nextTick()
-    const input = document.querySelector(`.reject-input`) as HTMLInputElement
-    input?.focus()
-  }
-})
-
-// Focus management: move focus to approve confirm button when it appears
-watch(showApproveConfirm, async (id) => {
-  if (id) {
-    await nextTick()
-    const btn = document.querySelector('.article-actions .btn-success') as HTMLButtonElement
-    btn?.focus()
-  }
-})
-
-// Pagination
+// ── Pagination ──────────────────────────────────────────────────────
 const currentPage = ref(1)
 const pageSize = 10
 const paginatedArticles = computed(() => {
@@ -330,11 +62,46 @@ const paginatedArticles = computed(() => {
   return store.approvalQueue.slice(start, start + pageSize)
 })
 
-// Register keyboard handler
-import { onMounted, onUnmounted } from 'vue'
+// ── Keyboard shortcuts ──────────────────────────────────────────────
+const tableRef = ref<InstanceType<typeof ApprovalQueueTable> | null>(null)
+
+function isInputElement(el: EventTarget | null): boolean {
+  if (!el || !(el instanceof HTMLElement)) return false
+  const tag = el.tagName.toLowerCase()
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable
+}
+
+function handleKeydown(e: KeyboardEvent) {
+  if (isInputElement(e.target)) return
+
+  // Escape: clear batch mode or delegate to table
+  if (e.key === 'Escape') {
+    if (isBatchMode.value) {
+      toggleBatchMode()
+      return
+    }
+    tableRef.value?.handleEscape()
+    return
+  }
+
+  // Ctrl+A: select all (page-level)
+  if ((e.key === 'a' || e.key === 'A') && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault()
+    if (!isBatchMode.value) toggleBatchMode()
+    toggleSelectAll()
+    return
+  }
+
+  // Delegate Enter/R to table (article-level shortcuts)
+  if (e.key === 'Enter' || e.key === 'r' || e.key === 'R') {
+    tableRef.value?.handleKeyAction(e)
+  }
+}
+
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown)
 })
+
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
 })
@@ -345,32 +112,35 @@ onUnmounted(() => {
     <!-- Page Header -->
     <div class="page-header">
       <div>
-        <h2 class="page-title">审批队列</h2>
+        <h2 class="page-title" id="approval-title">审批队列</h2>
         <p class="page-subtitle">审核并发布内容到各平台</p>
       </div>
       <div class="page-actions">
         <button
-          v-if="pendingCount > 0"
+          v-if="store.pendingCount > 0"
           class="btn btn-ghost btn-sm"
-          :class="{ 'active': isBatchMode }"
+          :class="{ active: isBatchMode }"
+          :aria-label="isBatchMode ? '取消批量操作' : '批量操作'"
+          :aria-pressed="isBatchMode"
           @click="toggleBatchMode"
         >
           {{ isBatchMode ? '取消批量' : '批量操作' }}
         </button>
-        <span class="stat-badge" :class="{ 'has-items': pendingCount > 0 }">
-          {{ pendingCount }} 篇待审
+        <span class="stat-badge" :class="{ 'has-items': store.pendingCount > 0 }" role="status" aria-live="polite">
+          {{ store.pendingCount }} 篇待审
         </span>
       </div>
     </div>
 
     <!-- Batch Actions Bar -->
     <transition name="slide">
-      <div v-if="isBatchMode && pendingCount > 0" class="batch-bar">
+      <div v-if="isBatchMode && store.pendingCount > 0" class="batch-bar" role="region" aria-label="批量操作">
         <div class="batch-left">
           <label class="batch-checkbox">
             <input
               type="checkbox"
               :checked="allSelected"
+              aria-label="全选所有文章"
               @change="toggleSelectAll"
             >
             <span>全选</span>
@@ -381,6 +151,7 @@ onUnmounted(() => {
           <button
             class="btn btn-success btn-sm"
             :disabled="selectedCount === 0 || batchProcessing"
+            :aria-label="`批量通过 ${selectedCount} 篇文章`"
             @click="batchApprove"
           >
             <span v-if="batchProcessing" class="loading-spinner-sm"></span>
@@ -390,278 +161,19 @@ onUnmounted(() => {
       </div>
     </transition>
 
-    <!-- Loading Skeletons -->
-    <div v-if="store.isLoading('approval') && store.approvalQueue.length === 0" class="articles-skeleton">
-      <div v-for="i in 3" :key="i" class="card article-card-skeleton" style="padding: 20px;">
-        <SkeletonLoader type="title" width="70%" />
-        <SkeletonLoader type="text" :count="3" />
-        <div style="display: flex; gap: 8px; margin-top: 12px;">
-          <SkeletonLoader type="button" />
-          <SkeletonLoader type="button" />
-        </div>
-      </div>
-    </div>
-
-    <!-- Empty State -->
-    <div v-else-if="store.approvalQueue.length === 0" class="card empty-state">
-      <div class="empty-state-icon">✅</div>
-      <div class="empty-state-title">暂无待审批文章</div>
-      <div class="empty-state-description">
-        所有文章已审批完毕，等待下一轮 Writer 生产
-      </div>
-      <router-link to="/pipeline" class="btn btn-primary">
-        📊 查看管线状态
-      </router-link>
-    </div>
-
-    <!-- Article List -->
-    <div
-      v-for="article in paginatedArticles"
-      :key="article.id"
-      class="card article-card"
-      :class="{ 'selected': isBatchMode && selectedIds.has(article.id) }"
-    >
-      <!-- Batch Checkbox -->
-      <div v-if="isBatchMode" class="batch-select" @click.stop="toggleSelection(article.id)">
-        <input
-          type="checkbox"
-          :checked="selectedIds.has(article.id)"
-          :aria-label="`选择 ${article.meta.topic || '未知选题'}`"
-          @click.stop
-          @change="toggleSelection(article.id)"
-        >
-      </div>
-
-      <!-- Article Header -->
-      <div class="article-header" role="button" tabindex="0" @click="select(article.id)" @keydown.enter="select(article.id)" @keydown.space.prevent="select(article.id)">
-        <div class="article-info">
-          <h3 class="article-title">{{ article.meta.topic || '未知选题' }}</h3>
-          <div class="article-meta">
-            <span class="meta-item">
-              <span class="meta-icon">📊</span>
-              评分 {{ article.meta.proofread_score || '-' }}
-            </span>
-            <span class="meta-divider">·</span>
-            <span class="meta-item">
-              <span class="meta-icon">🔄</span>
-              修订 {{ article.meta.revised_rounds || 0 }} 轮
-            </span>
-            <span class="meta-divider">·</span>
-            <span class="meta-item">
-              <span class="meta-icon">📝</span>
-              {{ article.meta.word_count || 0 }} 字
-            </span>
-            <span v-if="article.meta.platform" class="meta-divider">·</span>
-            <span v-if="article.meta.platform" class="meta-item platform-tag">
-              <span class="meta-icon">📱</span>
-              {{ article.meta.platform }}
-            </span>
-          </div>
-        </div>
-        <div class="article-actions">
-          <template v-if="showApproveConfirm === article.id">
-            <button 
-              class="btn btn-success btn-sm" 
-              :disabled="processingIds.has(article.id)"
-              @click.stop="confirmApprove(article.id)"
-            >
-              <span v-if="processingIds.has(article.id)" class="loading-spinner-sm"></span>
-              {{ processingIds.has(article.id) ? '处理中...' : '确认通过' }}
-            </button>
-            <button 
-              class="btn btn-ghost btn-sm" 
-              :disabled="processingIds.has(article.id)"
-              @click.stop="cancelApprove"
-            >
-              取消
-            </button>
-          </template>
-          <button 
-            v-else
-            class="btn btn-success btn-sm" 
-            :disabled="processingIds.has(article.id)"
-            @click.stop="showApproveConfirm = article.id"
-          >
-            ✅ 通过
-          </button>
-          <button
-            v-if="showRejectInput !== article.id"
-            class="btn btn-danger btn-sm"
-            :disabled="processingIds.has(article.id)"
-            @click.stop="showRejectInput = article.id"
-          >
-            ❌ 驳回
-          </button>
-          <button
-            v-if="showRejectInput !== article.id && !isEditing"
-            class="btn btn-ghost btn-sm"
-            @click.stop="startEditing(article.id)"
-          >
-            ✏️ 编辑
-          </button>
-        </div>
-      </div>
-
-      <!-- Reject Input -->
-      <transition name="slide">
-        <div v-if="showRejectInput === article.id" class="reject-form">
-          <div class="reject-presets">
-            <button
-              v-for="preset in rejectPresets"
-              :key="preset"
-              class="btn btn-ghost btn-xs preset-btn"
-              @click.stop="rejectReason = preset"
-            >
-              {{ preset }}
-            </button>
-          </div>
-          <div class="reject-input-group">
-            <input
-              v-model="rejectReason"
-              class="input reject-input"
-              placeholder="请输入驳回原因..."
-              :disabled="processingIds.has(article.id)"
-              :aria-label="`驳回原因 - ${article.meta.topic || article.id}`"
-              @keyup.enter="doReject(article.id)"
-            >
-            <button 
-              class="btn btn-danger" 
-              :disabled="!rejectReason.trim() || processingIds.has(article.id)"
-              @click="doReject(article.id)"
-            >
-              <span v-if="processingIds.has(article.id)" class="loading-spinner-sm"></span>
-              {{ processingIds.has(article.id) ? '处理中...' : '确认驳回' }}
-            </button>
-            <button 
-              class="btn btn-ghost" 
-              :disabled="processingIds.has(article.id)"
-              @click="cancelReject"
-            >
-              取消
-            </button>
-          </div>
-        </div>
-      </transition>
-
-      <!-- Content Preview (expandable) -->
-      <transition name="slide">
-        <div v-if="selectedId === article.id" class="article-preview">
-          <!-- Editor Mode -->
-          <div v-if="isEditing" class="editor-section">
-            <div class="editor-header">
-              <span class="preview-label">编辑文章</span>
-              <div class="editor-actions">
-                <button class="btn btn-ghost btn-sm" @click="cancelEditing">取消</button>
-                <button
-                  class="btn btn-primary btn-sm"
-                  :disabled="editSaving"
-                  @click="saveEditing(article.id)"
-                >
-                  {{ editSaving ? '保存中...' : '保存' }}
-                </button>
-              </div>
-            </div>
-            <div class="editor-body">
-              <textarea
-                v-model="editContent"
-                class="editor-textarea"
-                spellcheck="false"
-              ></textarea>
-              <div class="editor-preview markdown-body" v-html="editPreview"></div>
-            </div>
-          </div>
-
-          <!-- Read-only Preview -->
-          <template v-else>
-            <div class="preview-header">
-              <span class="preview-label">文章预览</span>
-              <span class="preview-hint">点击收起</span>
-            </div>
-            <div class="preview-content">
-              <div v-if="article.meta.topic" class="preview-title">
-                # {{ article.meta.topic }}
-              </div>
-              <div class="preview-text markdown-body" v-html="renderedContent"></div>
-            </div>
-
-            <!-- Image Gallery -->
-            <div class="preview-images">
-              <span class="preview-label">配图</span>
-              <ImageGallery :images="article.meta.images || []" />
-            </div>
-
-            <!-- Publish Button -->
-            <div class="publish-section">
-              <button
-                class="btn btn-primary btn-sm"
-                :disabled="processingIds.has(article.id)"
-                @click.stop="publishArticle(article.id)"
-              >
-                🚀 发布到平台
-              </button>
-            </div>
-          </template>
-
-          <!-- Version-level operations for database-tracked articles -->
-          <div v-if="article.source === 'database' && article.db_version_id" class="versions-section">
-            <div class="versions-header">
-              <span class="versions-title">平台版本管理</span>
-              <button
-                class="btn btn-ghost btn-sm"
-                :disabled="versionsLoading"
-                @click.stop="fetchVersions(article.db_version_id)"
-              >
-                {{ versionsLoading ? '加载中...' : '刷新版本' }}
-              </button>
-            </div>
-            <div v-if="versionsLoading" class="versions-loading">
-              <SkeletonLoader type="text" :count="2" />
-            </div>
-            <div v-else-if="sessionVersions.length > 0" class="versions-list">
-              <div
-                v-for="version in sessionVersions"
-                :key="version.id"
-                class="version-item"
-                :class="`version-${version.status}`"
-              >
-                <div class="version-info">
-                  <span class="version-platform">{{ version.platform }}</span>
-                  <span class="version-status">{{ version.status }}</span>
-                  <span v-if="version.score" class="version-score">评分: {{ version.score }}</span>
-                </div>
-                <div class="version-actions">
-                  <button
-                    v-if="version.status === 'pending'"
-                    class="btn btn-success btn-sm"
-                    :disabled="versionProcessingIds.has(version.id)"
-                    @click.stop="approveVersion(version.id)"
-                  >
-                    {{ versionProcessingIds.has(version.id) ? '处理中...' : '批准' }}
-                  </button>
-                  <button
-                    v-if="version.status === 'pending'"
-                    class="btn btn-danger btn-sm"
-                    :disabled="versionProcessingIds.has(version.id)"
-                    @click.stop="rejectVersion(version.id)"
-                  >
-                    {{ versionProcessingIds.has(version.id) ? '处理中...' : '驳回' }}
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div v-else class="versions-empty">
-              暂无版本信息
-            </div>
-          </div>
-        </div>
-      </transition>
-
-      <!-- Expand Hint -->
-      <div v-if="selectedId !== article.id" class="expand-hint" @click="select(article.id)" role="button" tabindex="0" :aria-label="`预览文章 - ${article.meta.topic || article.id}`" @keydown.enter="select(article.id)" @keydown.space.prevent="select(article.id)">
-        <span class="expand-icon">👁️</span>
-        <span>点击预览文章内容</span>
-      </div>
-    </div>
+    <!-- Article List (via ApprovalQueueTable) -->
+    <ApprovalQueueTable
+      ref="tableRef"
+      :articles="paginatedArticles"
+      :is-batch-mode="isBatchMode"
+      :selected-ids="selectedIds"
+      :all-selected="allSelected"
+      :selected-count="selectedCount"
+      @toggle-selection="handleToggleSelection"
+      @toggle-select-all="toggleSelectAll"
+      @escape-batch-mode="toggleBatchMode"
+      @refresh="store.fetchApprovalQueue()"
+    />
 
     <!-- Pagination -->
     <PaginationBar
@@ -673,657 +185,52 @@ onUnmounted(() => {
     />
 
     <!-- Keyboard Shortcuts Hint -->
-    <div v-if="store.approvalQueue.length > 0" class="keyboard-hints">
-      <div class="hint-item">
-        <kbd>Enter</kbd>
-        <span>通过</span>
-      </div>
-      <div class="hint-item">
-        <kbd>R</kbd>
-        <span>驳回</span>
-      </div>
-      <div class="hint-item">
-        <kbd>Esc</kbd>
-        <span>取消</span>
-      </div>
-      <div class="hint-item">
-        <kbd>Ctrl+A</kbd>
-        <span>全选</span>
-      </div>
+    <div v-if="store.approvalQueue.length > 0" class="keyboard-hints" role="region" aria-label="快捷键说明">
+      <div class="hint-item"><kbd>Enter</kbd><span>通过</span></div>
+      <div class="hint-item"><kbd>R</kbd><span>驳回</span></div>
+      <div class="hint-item"><kbd>Esc</kbd><span>取消</span></div>
+      <div class="hint-item"><kbd>Ctrl+A</kbd><span>全选</span></div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.approval-view {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xl);
-}
+.approval-view { display: flex; flex-direction: column; gap: var(--space-xl); }
 
-/* ── Page Actions ────────────────────────────────────────────── */
-.page-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-}
+/* ── Page Header ────────────────────────────────────────────── */
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.page-title { font-size: var(--text-3xl); font-weight: 600; color: var(--text-primary); margin: 0 0 var(--space-xs) 0; }
+.page-subtitle { font-size: var(--text-md); color: var(--text-tertiary); margin: 0; }
+.page-actions { display: flex; align-items: center; gap: var(--space-md); }
+.page-actions .btn.active { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
 
-.page-actions .btn.active {
-  background: var(--primary-light);
-  color: var(--primary);
-  border-color: var(--primary);
-}
+.stat-badge { padding: var(--space-sm) var(--space-lg); background: var(--bg-hover); color: var(--text-secondary); font-size: var(--text-md); font-weight: 500; border-radius: var(--radius-full); }
+.stat-badge.has-items { background: var(--primary-light); color: var(--primary); }
 
 /* ── Batch Bar ───────────────────────────────────────────────── */
-.batch-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--space-md) var(--space-lg);
-  background: var(--primary-light);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--primary);
-}
-
-.batch-left {
-  display: flex;
-  align-items: center;
-  gap: var(--space-lg);
-}
-
-.batch-checkbox {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  cursor: pointer;
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-}
-
-.batch-checkbox input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  cursor: pointer;
-}
-
-.batch-count {
-  font-size: var(--text-sm);
-  color: var(--primary);
-  font-weight: 500;
-}
-
-.batch-right {
-  display: flex;
-  gap: var(--space-sm);
-}
-
-/* ── Batch Select ────────────────────────────────────────────── */
-.batch-select {
-  position: absolute;
-  top: var(--space-md);
-  left: var(--space-md);
-  z-index: 10;
-  padding: var(--space-xs);
-}
-
-.batch-select input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  cursor: pointer;
-}
-
-.article-card.selected {
-  border-color: var(--primary);
-  background: var(--primary-light);
-}
-
-/* ── Page Header ─────────────────────────────────────────────── */
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-
-.page-title {
-  font-size: var(--text-3xl);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 var(--space-xs) 0;
-}
-
-.page-subtitle {
-  font-size: var(--text-md);
-  color: var(--text-tertiary);
-  margin: 0;
-}
-
-.page-stats {
-  display: flex;
-  align-items: center;
-}
-
-.stat-badge {
-  padding: var(--space-sm) var(--space-lg);
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  font-size: var(--text-md);
-  font-weight: 500;
-  border-radius: var(--radius-full);
-}
-
-.stat-badge.has-items {
-  background: var(--primary-light);
-  color: var(--primary);
-}
-
-/* ── Article Card ────────────────────────────────────────────── */
-.article-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-  transition: all var(--transition-normal);
-  position: relative;
-}
-
-.article-card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
-}
-
-.article-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  cursor: pointer;
-  gap: var(--space-lg);
-}
-
-.article-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.article-title {
-  font-size: var(--text-xl);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 var(--space-sm) 0;
-  line-height: 1.4;
-}
-
-.article-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  flex-wrap: wrap;
-}
-
-.meta-item {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-}
-
-.meta-icon {
-  font-size: var(--text-md);
-}
-
-.meta-divider {
-  color: var(--text-disabled);
-}
-
-.platform-tag {
-  background: var(--primary-light);
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-  color: var(--primary);
-}
-
-.platform-tag .meta-icon {
-  font-size: var(--text-sm);
-}
-
-.article-actions {
-  display: flex;
-  gap: var(--space-sm);
-  flex-shrink: 0;
-}
-
-/* ── Reject Form ─────────────────────────────────────────────── */
-.reject-form {
-  padding-top: var(--space-md);
-  border-top: 1px solid var(--divider);
-}
-
-.reject-presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs);
-  margin-bottom: var(--space-sm);
-}
-
-.preset-btn {
-  font-size: var(--text-xs);
-  padding: var(--space-xs) var(--space-sm);
-  min-height: 28px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-full);
-  white-space: nowrap;
-}
-
-.preset-btn:hover {
-  background: var(--danger-light);
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-.reject-input-group {
-  display: flex;
-  gap: var(--space-sm);
-}
-
-.reject-input {
-  flex: 1;
-}
-
-/* ── Article Preview ─────────────────────────────────────────── */
-.article-preview {
-  border-top: 1px solid var(--divider);
-  padding-top: var(--space-md);
-}
-
-.preview-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--space-md);
-}
-
-.preview-label {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.preview-hint {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-}
-
-.preview-content {
-  background: var(--bg-hover);
-  border-radius: var(--radius-lg);
-  padding: var(--space-lg);
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.preview-title {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: var(--space-md);
-  padding-bottom: var(--space-md);
-  border-bottom: 1px solid var(--divider);
-}
-
-.preview-text {
-  font-size: var(--text-md);
-  color: var(--text-secondary);
-  line-height: 1.8;
-  word-break: break-word;
-}
-
-/* ── Image Gallery ───────────────────────────────────────────── */
-.preview-images {
-  margin-top: var(--space-md);
-  padding-top: var(--space-md);
-  border-top: 1px solid var(--divider);
-}
-
-/* ── Publish Section ─────────────────────────────────────────── */
-.publish-section {
-  margin-top: var(--space-md);
-  padding-top: var(--space-md);
-  border-top: 1px solid var(--divider);
-  display: flex;
-  gap: var(--space-md);
-}
-
-/* Markdown styles */
-.markdown-body :deep(h1),
-.markdown-body :deep(h2),
-.markdown-body :deep(h3) {
-  margin-top: var(--space-lg);
-  margin-bottom: var(--space-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.markdown-body :deep(p) {
-  margin-bottom: var(--space-md);
-}
-
-.markdown-body :deep(ul),
-.markdown-body :deep(ol) {
-  margin-bottom: var(--space-md);
-  padding-left: var(--space-xl);
-}
-
-.markdown-body :deep(li) {
-  margin-bottom: var(--space-xs);
-}
-
-.markdown-body :deep(code) {
-  background: var(--bg-active);
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-size: 0.9em;
-}
-
-.markdown-body :deep(pre) {
-  background: var(--bg-active);
-  padding: var(--space-md);
-  border-radius: var(--radius-md);
-  overflow-x: auto;
-  margin-bottom: var(--space-md);
-}
-
-.markdown-body :deep(blockquote) {
-  border-left: 3px solid var(--primary);
-  padding-left: var(--space-md);
-  color: var(--text-tertiary);
-  margin-bottom: var(--space-md);
-}
-
-.markdown-body :deep(a) {
-  color: var(--primary);
-  text-decoration: none;
-}
-
-.markdown-body :deep(a:hover) {
-  text-decoration: underline;
-}
-
-.markdown-body :deep(strong) {
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.markdown-body :deep(em) {
-  font-style: italic;
-}
-
-/* ── Expand Hint ─────────────────────────────────────────────── */
-.expand-hint {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-sm);
-  padding: var(--space-sm) var(--space-md);
-  background: var(--bg-hover);
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.expand-hint:hover {
-  background: var(--primary-light);
-  color: var(--primary);
-}
-
-.expand-icon {
-  font-size: var(--text-md);
-}
-
-/* ── Versions Section ────────────────────────────────────────── */
-.versions-section {
-  margin-top: var(--space-lg);
-  border-top: 1px solid var(--divider);
-  padding-top: var(--space-lg);
-}
-
-.versions-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--space-md);
-}
-
-.versions-title {
-  font-size: var(--text-md);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.versions-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-}
-
-.version-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--space-md);
-  background: var(--bg-hover);
-  border-radius: var(--radius-md);
-  border-left: 3px solid var(--border-color);
-}
-
-.version-item.version-pending {
-  border-left-color: var(--warning);
-}
-
-.version-item.version-approved {
-  border-left-color: var(--success);
-}
-
-.version-item.version-rejected {
-  border-left-color: var(--danger);
-}
-
-.version-info {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-}
-
-.version-platform {
-  font-weight: 600;
-  color: var(--text-primary);
-  text-transform: capitalize;
-}
-
-.version-status {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  padding: var(--space-xs) var(--space-sm);
-  background: var(--bg-card);
-  border-radius: var(--radius-full);
-}
-
-.version-score {
-  font-size: var(--text-sm);
-  color: var(--text-tertiary);
-}
-
-.version-actions {
-  display: flex;
-  gap: var(--space-sm);
-}
-
-.versions-loading,
-.versions-empty {
-  padding: var(--space-md);
-  text-align: center;
-  color: var(--text-tertiary);
-  font-size: var(--text-sm);
-}
-
-/* ── Loading Spinner ─────────────────────────────────────────── */
-.loading-spinner-sm {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin-right: var(--space-xs);
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* ── Empty State ─────────────────────────────────────────────── */
-.empty-state {
-  padding: var(--space-4xl);
-  text-align: center;
-}
-
-.empty-state .btn {
-  margin-top: var(--space-lg);
-}
+.batch-bar { display: flex; justify-content: space-between; align-items: center; padding: var(--space-md) var(--space-lg); background: var(--primary-light); border-radius: var(--radius-lg); border: 1px solid var(--primary); }
+.batch-left { display: flex; align-items: center; gap: var(--space-lg); }
+.batch-checkbox { display: flex; align-items: center; gap: var(--space-sm); cursor: pointer; font-size: var(--text-sm); color: var(--text-primary); }
+.batch-checkbox input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; }
+.batch-count { font-size: var(--text-sm); color: var(--primary); font-weight: 500; }
+.batch-right { display: flex; gap: var(--space-sm); }
 
 /* ── Keyboard Hints ─────────────────────────────────────────── */
-.keyboard-hints {
-  display: flex;
-  justify-content: center;
-  gap: var(--space-xl);
-  padding: var(--space-md);
-  background: var(--bg-hover);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-light);
-}
+.keyboard-hints { display: flex; justify-content: center; gap: var(--space-xl); padding: var(--space-md); background: var(--bg-hover); border-radius: var(--radius-lg); border: 1px solid var(--border-light); flex-wrap: wrap; }
+.hint-item { display: flex; align-items: center; gap: var(--space-xs); font-size: var(--text-sm); color: var(--text-tertiary); }
+kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; padding: 0 var(--space-sm); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 600; color: var(--text-secondary); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); }
 
-.hint-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  font-size: var(--text-sm);
-  color: var(--text-tertiary);
-}
+/* ── Loading Spinner ─────────────────────────────────────────── */
+.loading-spinner-sm { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255, 255, 255, 0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: var(--space-xs); }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-kbd {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 var(--space-sm);
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--text-secondary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-/* ── Inline Editor ──────────────────────────────────────────── */
-.editor-section {
-  margin-top: var(--space-md);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.editor-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-sm) var(--space-md);
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
-}
-
-.editor-header-label {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-.editor-actions {
-  display: flex;
-  gap: var(--space-xs);
-}
-
-.editor-body {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  min-height: 400px;
-}
-
-.editor-textarea {
-  width: 100%;
-  height: 100%;
-  min-height: 400px;
-  padding: var(--space-md);
-  border: none;
-  border-right: 1px solid var(--border-color);
-  background: var(--bg-card);
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  line-height: 1.6;
-  resize: vertical;
-  outline: none;
-}
-
-.editor-textarea:focus {
-  background: var(--bg-primary);
-}
-
-.editor-preview {
-  padding: var(--space-md);
-  overflow-y: auto;
-  background: var(--bg-card);
-}
-
-.editor-preview-label {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: var(--space-sm);
-}
+/* ── Slide Transition ────────────────────────────────────────── */
+.slide-enter-active, .slide-leave-active { transition: all 0.3s ease; }
+.slide-enter-from, .slide-leave-to { opacity: 0; transform: translateY(-10px); }
 
 /* ── Responsive ──────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .article-header {
-    flex-direction: column;
-    gap: var(--space-md);
-  }
-  
-  .article-actions {
-    width: 100%;
-  }
-  
-  .article-actions .btn {
-    flex: 1;
-  }
-  
-  .reject-input-group {
-    flex-direction: column;
-  }
-
-  .editor-body {
-    grid-template-columns: 1fr;
-  }
-
-  .editor-textarea {
-    border-right: none;
-    border-bottom: 1px solid var(--border-color);
-    min-height: 200px;
-  }
+  .page-header { flex-direction: column; gap: var(--space-md); }
+  .page-actions { width: 100%; justify-content: flex-end; }
 }
 </style>

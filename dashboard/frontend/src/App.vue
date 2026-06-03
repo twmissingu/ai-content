@@ -1,85 +1,36 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+/**
+ * App.vue — slim layout shell assembling the header, nav, router-view, and toast layer.
+ * Tab/nav config extracted → composables/useAppTabs.ts
+ * Refresh/polling logic extracted → composables/useAppRefresh.ts
+ */
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useDashboardStore } from './stores/dashboard'
 import { useToast } from './composables/useToast'
-import { useWebSocket } from './composables/useWebSocket'
+import { useAppTabs } from './composables/useAppTabs'
+import { useAppRefresh } from './composables/useAppRefresh'
 import ErrorBoundary from './components/ErrorBoundary.vue'
 
 const route = useRoute()
 const store = useDashboardStore()
 const toast = useToast()
+const { tabs } = useAppTabs()
+const { isRefreshing, isConnected, isReconnecting, refreshAll } = useAppRefresh()
+
+const isDark = ref(false)
+const isThreeColumn = ref(false)
 
 const connectionStatusText = computed(() => {
-  if (wsConnected.value) return '在线'
-  if (wsReconnecting.value) return '重连中'
+  if (isConnected.value) return '在线'
+  if (isReconnecting.value) return '重连中'
   switch (store.connectionStatus) {
     case 'connected': return '在线'
     case 'reconnecting': return '重连中'
     case 'disconnected': return '离线'
+    default: return '离线'
   }
 })
-
-const tabs = [
-  { name: 'Pipeline', label: '管线', icon: '📊', path: '/pipeline' },
-  { name: 'Approval', label: '审批', icon: '📋', path: '/approval', badge: true },
-  { name: 'Topics', label: '选题', icon: '🔥', path: '/topics' },
-  { name: 'Data', label: '数据', icon: '📈', path: '/data' },
-  { name: 'Kb', label: '知识库', icon: '🗄️', path: '/kb' },
-  { name: 'Sources', label: '信源', icon: '📡', path: '/sources' },
-  { name: 'Config', label: '配置', icon: '⚙️', path: '/config' },
-]
-
-const isRefreshing = ref(false)
-const isDark = ref(false)
-const isThreeColumn = ref(false)
-let refreshInterval: ReturnType<typeof setInterval> | null = null
-
-// WebSocket for real-time pipeline updates
-const { isConnected: wsConnected, isReconnecting: wsReconnecting } = useWebSocket({
-  url: '/ws/pipeline',
-  apiKey: import.meta.env.VITE_API_KEY || '',
-  onMessage: (data) => {
-    store.handleWsMessage(data)
-  },
-  onConnect: () => {
-    // When WS connects, reduce polling frequency
-    if (refreshInterval) {
-      clearInterval(refreshInterval)
-      refreshInterval = null
-    }
-    // Only poll for non-WS data (approval, topics, config) at longer intervals
-    refreshInterval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        store.fetchApprovalQueue()
-        store.fetchTopics()
-      }
-    }, 30000)
-  },
-  onDisconnect: () => {
-    // When WS disconnects, restore fast polling
-    if (refreshInterval) {
-      clearInterval(refreshInterval)
-    }
-    refreshInterval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        store.fetchPipeline()
-        store.fetchApprovalQueue()
-      }
-    }, 10000)
-  },
-})
-
-async function refreshAll() {
-  isRefreshing.value = true
-  await Promise.all([
-    store.fetchPipeline(),
-    store.fetchApprovalQueue(),
-    store.fetchTopics(),
-    store.fetchConfig(),
-  ])
-  setTimeout(() => { isRefreshing.value = false }, 300)
-}
 
 function toggleDark() {
   isDark.value = !isDark.value
@@ -87,40 +38,18 @@ function toggleDark() {
   localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
 }
 
+// Restore theme preference on mount
+const savedTheme = localStorage.getItem('theme')
+if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+  isDark.value = true
+  document.documentElement.classList.add('dark')
+}
+
 // Forward store errors to toast
 watch(() => store.error, (newError) => {
   if (newError) {
     toast.error(newError)
     store.clearError()
-  }
-})
-
-onMounted(() => {
-  // Restore theme preference
-  const savedTheme = localStorage.getItem('theme')
-  if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-    isDark.value = true
-    document.documentElement.classList.add('dark')
-  }
-
-  // Initial data load (WS handles pipeline updates after connect)
-  store.fetchApprovalQueue()
-  store.fetchTopics()
-  store.fetchConfig()
-
-  // Fallback polling for non-WS data
-  refreshInterval = setInterval(() => {
-    if (document.visibilityState === 'visible') {
-      store.fetchApprovalQueue()
-      store.fetchTopics()
-    }
-  }, 30000)
-})
-
-onUnmounted(() => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
-    refreshInterval = null
   }
 })
 </script>
@@ -156,8 +85,11 @@ onUnmounted(() => {
         <!-- Connection Status Indicator -->
         <div
           class="connection-status"
-          :class="wsConnected ? 'connected' : wsReconnecting ? 'reconnecting' : store.connectionStatus"
+          :class="isConnected ? 'connected' : isReconnecting ? 'reconnecting' : store.connectionStatus"
           :title="connectionStatusText"
+          role="status"
+          aria-live="polite"
+          :aria-label="`连接状态: ${connectionStatusText}`"
         >
           <span class="status-dot"></span>
           <span class="status-text">{{ connectionStatusText }}</span>
@@ -169,6 +101,7 @@ onUnmounted(() => {
           class="notification-bell"
           :class="{ 'has-items': store.pendingCount > 0 }"
           title="待审批"
+          aria-label="审批队列"
         >
           <span class="bell-icon">🔔</span>
           <span v-if="store.pendingCount > 0" class="bell-badge">
@@ -203,7 +136,7 @@ onUnmounted(() => {
     </header>
 
     <!-- Navigation -->
-    <nav class="app-nav">
+    <nav class="app-nav" role="navigation" aria-label="主导航">
       <div class="nav-container">
         <router-link
           v-for="tab in tabs"
@@ -211,12 +144,15 @@ onUnmounted(() => {
           :to="tab.path"
           class="nav-item"
           :class="{ active: route.path === tab.path }"
+          :aria-label="`${tab.label}${route.path === tab.path ? ' (当前)' : ''}`"
+          :aria-current="route.path === tab.path ? 'page' : undefined"
         >
           <span class="nav-icon">{{ tab.icon }}</span>
           <span class="nav-label">{{ tab.label }}</span>
           <span 
             v-if="tab.badge && store.approvalQueue.length > 0" 
             class="nav-badge"
+            aria-live="polite"
           >
             {{ store.approvalQueue.length }}
           </span>
@@ -286,19 +222,22 @@ onUnmounted(() => {
     </main>
 
     <!-- Mobile Bottom Navigation -->
-    <nav class="mobile-nav">
+    <nav class="mobile-nav" role="navigation" aria-label="底部导航">
       <router-link
         v-for="tab in tabs"
         :key="tab.name"
         :to="tab.path"
         class="mobile-nav-item"
         :class="{ active: route.path === tab.path }"
+        :aria-label="`${tab.label}${route.path === tab.path ? ' (当前)' : ''}`"
+        :aria-current="route.path === tab.path ? 'page' : undefined"
       >
         <span class="mobile-nav-icon">{{ tab.icon }}</span>
         <span class="mobile-nav-label">{{ tab.label }}</span>
         <span
           v-if="tab.badge && store.approvalQueue.length > 0"
           class="mobile-nav-badge"
+          aria-live="polite"
         >
           {{ store.approvalQueue.length }}
         </span>

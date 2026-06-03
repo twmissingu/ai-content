@@ -57,8 +57,8 @@ class TestWriterIntegration:
     """Integration tests for Writer agent."""
     
     @patch('skills.writer_illustration.generate_image_prompts')
-    @patch('skills.writer.chat')
-    @patch('skills.writer.chat_structured')
+    @patch('skills.writer_stages.chat')
+    @patch('skills.writer_stages.chat_structured')
     def test_writer_creates_article(self, mock_structured, mock_chat, mock_img_prompts, temp_dirs, sample_topic, monkeypatch):
         """Test that Writer creates an article file."""
         # Mock LLM responses
@@ -111,8 +111,8 @@ class TestWriterIntegration:
         assert meta['word_count'] > 0
 
     @patch('skills.writer_illustration.generate_image_prompts')
-    @patch('skills.writer.chat')
-    @patch('skills.writer.chat_structured')
+    @patch('skills.writer_stages.chat')
+    @patch('skills.writer_stages.chat_structured')
     def test_writer_handles_low_quality(self, mock_structured, mock_chat, mock_img_prompts, temp_dirs, sample_topic, monkeypatch):
         """Test that Writer handles low quality scores with rewriting."""
         # Mock LLM responses - first draft is low quality

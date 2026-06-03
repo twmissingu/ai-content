@@ -142,7 +142,7 @@ class TestAISlopPatterns:
         """Test that proofread removes AI-slop patterns."""
         text = "值得注意的是，这个问题值得我们深入思考。综上所述，我们可以看到AI技术的发展。"
 
-        with patch('skills.writer.chat_structured') as mock_structured:
+        with patch('skills.writer_stages.chat_structured') as mock_structured:
             mock_structured.return_value = {"score": 80, "issues": []}
 
             cleaned, score = writer_agent._proofread(text)
@@ -154,7 +154,7 @@ class TestAISlopPatterns:
         """Test that proofread combines regex and LLM scores."""
         text = "这是一篇完全正常的没有任何AI腔的文章。"
 
-        with patch('skills.writer.chat_structured') as mock_structured:
+        with patch('skills.writer_stages.chat_structured') as mock_structured:
             mock_structured.return_value = {"score": 95, "issues": []}
 
             cleaned, score = writer_agent._proofread(text)
@@ -167,7 +167,8 @@ class TestLoadQualityGates:
     """Test _load_quality_gates function."""
 
     def test_defaults_when_no_file(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("skills.writer.CONFIG_DIR", tmp_path / "nonexistent")
+        import skills.writer_stages
+        monkeypatch.setattr(skills.writer_stages, "CONFIG_DIR", tmp_path / "nonexistent")
         from skills.writer import _load_quality_gates
         result = _load_quality_gates()
         assert "proofread_threshold" in result
@@ -176,7 +177,8 @@ class TestLoadQualityGates:
 
     def test_loads_from_file(self, tmp_path, monkeypatch):
         import json
-        monkeypatch.setattr("skills.writer.CONFIG_DIR", tmp_path)
+        import skills.writer_stages
+        monkeypatch.setattr(skills.writer_stages, "CONFIG_DIR", tmp_path)
         (tmp_path / "quality_gates.json").write_text(json.dumps({
             "proofread_threshold": 80,
             "critique_threshold": 85,
@@ -189,7 +191,8 @@ class TestLoadQualityGates:
         assert result["max_rewrite_rounds"] == 5
 
     def test_defaults_on_json_error(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("skills.writer.CONFIG_DIR", tmp_path)
+        import skills.writer_stages
+        monkeypatch.setattr(skills.writer_stages, "CONFIG_DIR", tmp_path)
         (tmp_path / "quality_gates.json").write_text("not json{")
         from skills.writer import _load_quality_gates
         result = _load_quality_gates()
@@ -311,15 +314,16 @@ class TestLoadAISlopPatterns:
     """Test _load_ai_slop_patterns method."""
 
     def test_returns_empty_when_no_file(self, writer_agent, tmp_path, monkeypatch):
-        import json
-        monkeypatch.setattr("config.settings.CONFIG_DIR", tmp_path / "nonexistent")
+        import skills.writer_stages
+        monkeypatch.setattr(skills.writer_stages, "CONFIG_DIR", tmp_path / "nonexistent")
         monkeypatch.setattr("skills.writer.WriterAgent._AI_SLOP_PATTERNS", None)
         result = writer_agent._load_ai_slop_patterns()
         assert result == []
 
     def test_loads_patterns(self, writer_agent, tmp_path, monkeypatch):
         import json
-        monkeypatch.setattr("config.settings.CONFIG_DIR", tmp_path)
+        import skills.writer_stages
+        monkeypatch.setattr(skills.writer_stages, "CONFIG_DIR", tmp_path)
         patterns = [{"pattern": r"test_pattern[，,]", "severity": 3}]
         (tmp_path / "proofread_patterns.json").write_text(json.dumps(patterns))
         result = writer_agent._load_ai_slop_patterns()
@@ -335,8 +339,8 @@ class TestProofreadExtended:
         """When score is below threshold, LLM suggestion triggers rewrite."""
         text = "值得注意的是，这个问题很复杂。综上所述，我们需要深入思考。"
 
-        with patch('skills.writer.chat_structured') as mock_structured, \
-             patch('skills.writer.chat') as mock_chat:
+        with patch('skills.writer_stages.chat_structured') as mock_structured, \
+             patch('skills.writer_stages.chat') as mock_chat:
             mock_structured.return_value = {"score": 40, "suggestion": "需要更自然"}
             mock_chat.return_value = "重写后的自然文本"
 

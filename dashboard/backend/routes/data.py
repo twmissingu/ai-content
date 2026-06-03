@@ -55,7 +55,11 @@ def get_cost_data():
                 if len(parts) >= 4:
                     date = parts[0][:10]
                     total_tokens = int(parts[3])
-                    cost = total_tokens * 0.003 / 1000
+                    # Use default cost from model config (0.003/1K fallback)
+                    from dashboard.backend.config_service import get_model_config
+                    model_cfg = get_model_config()
+                    rate = model_cfg.get("default_cost_per_1k", 0.003)
+                    cost = total_tokens * rate / 1000
                     daily[date] = daily.get(date, 0) + cost
             except (ValueError, StopIteration):
                 continue
@@ -73,8 +77,13 @@ def get_analytics():
 
     viral_dir = KB_DIR / "viral"
     if viral_dir.exists():
-        for f in viral_dir.glob("*.json"):
-            data.update(read_json(f))
+        for f in sorted(viral_dir.glob("*.json")):
+            file_data = read_json(f)
+            # Only merge list fields, don't overwrite with dict.update()
+            if isinstance(file_data, dict):
+                for key in ("topics", "keywords"):
+                    if key in file_data and isinstance(file_data[key], list):
+                        data.setdefault(key, []).extend(file_data[key])
 
     try:
         sessions_result = get_pipeline_sessions(limit=30)

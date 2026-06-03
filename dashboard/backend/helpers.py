@@ -32,16 +32,6 @@ def detect_timeout(status: dict, max_minutes: int = 30) -> bool:
 
 
 def load_schedule() -> dict:
-    """Load schedule config, falling back to defaults."""
-    path = CONFIG_DIR / "schedule.json"
-    if path.exists():
-        return read_json(path)
-    return {
-        "morning_scout": "09:00",
-        "morning_writer": "09:30",
-        "evening_scout": "14:00",
-        "evening_writer": "14:30",
-        "working_days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
-        "monthly_budget": 15.0,
-        "quality_threshold": 70,
-    }
+    """Load schedule config via config_service (single source of truth)."""
+    from dashboard.backend.config_service import get_schedule_config
+    return get_schedule_config()

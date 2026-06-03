@@ -61,6 +61,7 @@ class TestLoadSchedule:
         config_dir.mkdir()
         schedule = {"morning_scout": "10:00", "evening_scout": "15:00"}
         (config_dir / "schedule.json").write_text(json.dumps(schedule))
-        monkeypatch.setattr("dashboard.backend.helpers.CONFIG_DIR", config_dir)
+        # helpers.load_schedule() now delegates to config_service.get_schedule_config()
+        monkeypatch.setattr("dashboard.backend.config_service.CONFIG_DIR", config_dir)
         result = load_schedule()
         assert result["morning_scout"] == "10:00"

@@ -199,6 +199,14 @@ export const useDashboardStore = defineStore('dashboard', () => {
     )
   })
 
+  const pipelineStatus = computed(() => {
+    const all = Object.values(agents.value)
+    if (all.length === 0) return { status: 'idle', message: '空闲' }
+    const allDone = all.every(a => a.progress_pct === undefined || a.progress_pct >= 100 || a.error)
+    if (allDone) return { status: 'completed', message: '已完成' }
+    return { status: 'running', message: '运行中' }
+  })
+
   // ── Helper ────────────────────────────────────────────────────────
   async function fetchJson<T>(url: string, options?: RequestInit, retries = 2): Promise<T> {
     let lastError: Error | null = null
@@ -464,6 +472,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     // Computed
     pendingCount,
     isAgentRunning,
+    pipelineStatus,
 
     // Actions
     handleWsMessage,
