@@ -173,7 +173,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error importing prompts: {e}")
 
-    start_all_pollers()
+    if os.getenv("GAODING_DISABLE_POLLERS", "").lower() in ("1", "true", "yes"):
+        logger.info("Background pollers disabled by GAODING_DISABLE_POLLERS")
+    else:
+        start_all_pollers()
 
     ws_manager.start_watcher()
 

@@ -7,6 +7,7 @@ Designed to be called from WriterAgent (writer.py) or standalone.
 """
 
 import json
+import logging
 import os
 import re
 import subprocess
@@ -219,8 +220,7 @@ def stage_proofread(text: str, patterns: list, quality_gates: dict,
     start_time = time.monotonic()
     llm_result = chat_structured(
         system_prompt="你是一个专业的文字编辑，擅长识别AI生成内容的痕迹并使其更自然。你对AI腔零容忍。",
-        injection_safety=False,
-        user_prompt=load_prompt("writer_proofread", article=cleaned[:3000]),
+        user_prompt=load_prompt("writer_proofread", article=cleaned[:8000]),
         temperature=0.3,
     )
     duration = time.monotonic() - start_time
@@ -239,7 +239,6 @@ def stage_proofread(text: str, patterns: list, quality_gates: dict,
             start_time = time.monotonic()
             cleaned = chat(
                 system_prompt="你是一个文字编辑。请重写以下段落，去掉AI写作腔调，使其更自然口语化。",
-                injection_safety=False,
                 user_prompt=f"请重写这段文字，更自然、更像真人写的:\n\n{cleaned[:3000]}\n\n建议: {suggestion}",
                 temperature=0.7,
             )
@@ -278,11 +277,10 @@ def stage_critique(text: str, topic_title: str, round_num: int,
         start = time.monotonic()
         result = chat_structured(
             system_prompt="你是一个严格但建设性的写作评委。你给分很吝啬——好文章才给80+，平庸的文章给60以下。你从不给'还行'的文章高分。",
-            injection_safety=False,
             user_prompt=load_prompt(
                 "writer_critique_scorer",
                 topic_title=topic_title,
-                article=text[:4000],
+                article=text[:8000],
             ),
             temperature=0.4,
         )
@@ -292,11 +290,10 @@ def stage_critique(text: str, topic_title: str, round_num: int,
         start = time.monotonic()
         result = chat_structured(
             system_prompt="你是一个挑剔的读者和内容批评家。你的工作是找出文章中所有问题：逻辑漏洞、论据不足、表述模糊、读者可能的质疑。你只关注问题，不夸优点。",
-            injection_safety=False,
             user_prompt=load_prompt(
                 "writer_critique_critic",
                 topic_title=topic_title,
-                article=text[:4000],
+                article=text[:8000],
             ),
             temperature=0.6,
         )
@@ -334,7 +331,7 @@ def stage_critique(text: str, topic_title: str, round_num: int,
             suggestions=scorer_suggestions[:3],
         )
     except Exception:
-        pass  # validation best-effort
+        logging.getLogger("gaoding.writer_stages").warning("QualityGateResult validation failed")
 
     if score >= quality_gates["critique_threshold"] or \
        round_num >= quality_gates["max_rewrite_rounds"]:
@@ -358,7 +355,6 @@ def stage_critique(text: str, topic_title: str, round_num: int,
     start_time = time.monotonic()
     text = chat(
         system_prompt="你是一个精益求精的写手，能够根据反馈大幅提升文章质量。",
-        injection_safety=False,
         user_prompt=prompt,
         temperature=0.8,
     )
@@ -395,7 +391,6 @@ def stage_titles(text: str, topic_title: str, quality_gates: dict,
     start_time = time.monotonic()
     result = chat_structured(
         system_prompt="你是一个标题优化专家，深谙公众号读者心理。你生成的标题必须让人忍不住点开，但不能是标题党。好的标题=准确+好奇+差异化。",
-        injection_safety=False,
         user_prompt=load_prompt(
             "writer_title",
             topic_title=topic_title,

@@ -179,11 +179,11 @@ class TestHTTPClientManager:
     """Test HTTP client manager."""
 
     def test_reset_clears_client(self):
-        from skills.llm import _client_manager
+        import skills.llm
 
-        _client_manager.reset()
+        skills.llm._client_manager.reset()
         # After reset, internal state should be None
-        assert _client_manager._client is None
+        assert skills.llm._llm_client is None
 
 
 # ── reset_client ─────────────────────────────────────────────────────

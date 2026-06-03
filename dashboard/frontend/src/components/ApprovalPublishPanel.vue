@@ -5,6 +5,7 @@
  */
 import { ref } from 'vue'
 import { useToast } from '../composables/useToast'
+import { API_BASE } from '../utils/api'
 
 const props = defineProps<{
   articleId: string
@@ -21,7 +22,7 @@ const publishing = ref(false)
 async function publishArticle() {
   publishing.value = true
   try {
-    const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+    
     const res = await fetch(`${API_BASE}/api/approval/publish`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

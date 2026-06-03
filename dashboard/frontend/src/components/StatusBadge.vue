@@ -95,19 +95,19 @@ const config = statusConfig[props.status] || { label: props.status, icon: '❓',
 
 /* ── Hover Effects ───────────────────────────────────────────── */
 .status-badge.success:hover {
-  background: var(--success-hover-light);
+  filter: brightness(0.95);
 }
 
 .status-badge.primary:hover {
-  background: var(--primary-hover-light);
+  filter: brightness(0.95);
 }
 
 .status-badge.warning:hover {
-  background: var(--warning-hover-light);
+  filter: brightness(0.95);
 }
 
 .status-badge.danger:hover {
-  background: var(--danger-hover-light);
+  filter: brightness(0.95);
 }
 
 .status-badge.neutral:hover {

@@ -188,5 +188,35 @@
     "structure": "前三秒抓眼球 → 核心观点 → 行动引导",
     "illustrations": 0,
     "videos": 1
+  },
+  "toutiao_default": {
+    "name": "头条号默认",
+    "platform": "toutiao",
+    "length": 2000,
+    "tone": "信息密度高+标题党克制",
+    "stance": "客观有干货，适合算法推荐分发",
+    "structure": "吸引式开头 → 核心信息 → 分段展开 → 总结观点",
+    "illustrations": 3,
+    "videos": 0
+  },
+  "baijiahao_default": {
+    "name": "百家号默认",
+    "platform": "baijiahao",
+    "length": 2000,
+    "tone": "专业严谨+通俗易懂",
+    "stance": "深度内容，适合搜索流量",
+    "structure": "引言 → 背景介绍 → 主体分析 → 总结",
+    "illustrations": 4,
+    "videos": 0
+  },
+  "kuaishou_default": {
+    "name": "快手脚本",
+    "platform": "kuaishou",
+    "length": 200,
+    "tone": "接地气+口语化+真实感",
+    "stance": "老铁风格，直接有料",
+    "structure": "前3秒钩子 → 核心内容 → 互动引导",
+    "illustrations": 0,
+    "videos": 1
   }
 }

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useToast } from '../composables/useToast'
+import { API_BASE } from '../utils/api'
 
 // ═══════════════════════════════════════════════════════════════════════
 // Type Definitions
@@ -45,6 +46,7 @@ export interface ApprovalArticle {
   content_preview: string
   source: 'filesystem' | 'database'
   db_version_id?: number
+  db_session_id?: number
 }
 
 export interface Topic {
@@ -169,9 +171,6 @@ interface WsPipelineStatus {
 // Store
 // ═══════════════════════════════════════════════════════════════════════
 
-// API base URL - use relative path in development (Vite proxy), configurable in production
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
-
 export const useDashboardStore = defineStore('dashboard', () => {
   const toast = useToast()
 
@@ -233,9 +232,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
     loadingStates.value[key] = value
   }
 
-  function handleError(e: unknown, context: string): string {
+  function handleError(e: unknown, _context: string): string {
     const message = e instanceof Error ? e.message : String(e)
-    console.error(`[${context}]`, e)
     error.value = message
     return message
   }

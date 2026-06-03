@@ -13,14 +13,20 @@ class TestDispatchAction:
     """Test _dispatch_action_async function."""
 
     def test_confirm_action(self, tmp_path, monkeypatch):
-        """Test confirm action writes flag file and returns PID."""
+        """Test confirm action dispatches to writer_router and writes action file."""
+        import re as _re
+        # Need to mock write_action's target_id validation
         monkeypatch.setattr(
             "dashboard.backend.background.PROJECT_ROOT",
             tmp_path
         )
+        # write_action validates target_id format
+        monkeypatch.setattr(
+            "skills.action.ACTIONS_DIR",
+            tmp_path / "queue" / "actions"
+        )
 
-        topics_dir = tmp_path / "queue" / "topics"
-        topics_dir.mkdir(parents=True)
+        actions_dir = tmp_path / "queue" / "actions"
 
         mock_proc = MagicMock()
         mock_proc.pid = 12345
@@ -30,9 +36,10 @@ class TestDispatchAction:
             result = _dispatch_action_async(action)
 
         assert result == 12345
-        flag_file = topics_dir / "topic-123.confirmed"
-        assert flag_file.exists()
-        data = json.loads(flag_file.read_text())
+        # Confirm action writes to queue/actions/ via write_action
+        action_files = list(actions_dir.glob("confirm_topic-123_*.json"))
+        assert len(action_files) == 1
+        data = json.loads(action_files[0].read_text())
         assert data["action"] == "confirm"
 
     def test_unknown_action(self):

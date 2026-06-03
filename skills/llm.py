@@ -122,10 +122,6 @@ def _get_client() -> httpx.Client:
 class _HTTPClientManager:
     """Manages the shared HTTP client singleton (test-compatible interface)."""
 
-    @property
-    def _client(self) -> httpx.Client | None:
-        return _llm_client
-
     def reset(self) -> None:
         global _llm_client
         with _llm_client_lock:

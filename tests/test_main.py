@@ -105,6 +105,18 @@ class TestRateLimitMiddleware:
 
 
 class TestLifespan:
+    def test_pollers_can_be_disabled(self, monkeypatch):
+        """Verify UI validation can start the API without dispatching actions."""
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.setenv("GAODING_DISABLE_POLLERS", "1")
+        from dashboard.backend import main as main_mod
+        from fastapi.testclient import TestClient
+        with patch.object(main_mod, "start_all_pollers") as mock_start:
+            client = TestClient(main_mod.app)
+            resp = client.get("/api/health")
+            assert resp.status_code == 200
+            mock_start.assert_not_called()
+
     def test_app_starts_successfully(self, monkeypatch):
         """Verify the app can start (lifespan runs without error)."""
         monkeypatch.delenv("API_KEY", raising=False)

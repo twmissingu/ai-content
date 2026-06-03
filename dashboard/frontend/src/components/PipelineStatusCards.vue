@@ -380,6 +380,7 @@ const agents = computed(() => store.agents as Record<string, any>)
   cursor: pointer; transition: all var(--transition-fast);
 }
 .kanban-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.kanban-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .kanban-card.kanban-active { border-left: 3px solid var(--primary); background: var(--primary-light); }
 .kanban-card.kanban-success { border-left: 3px solid var(--success); background: var(--success-light); }
 .kanban-card-title { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -387,6 +388,7 @@ const agents = computed(() => store.agents as Record<string, any>)
 .kanban-empty { font-size: var(--text-xs); color: var(--text-disabled); text-align: center; padding: var(--space-md); }
 .kanban-more { font-size: var(--text-xs); color: var(--primary); text-align: center; padding: var(--space-xs); cursor: pointer; }
 .kanban-more:hover { text-decoration: underline; }
+.kanban-more:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; text-decoration: underline; }
 .kanban-connector { display: flex; align-items: center; padding-top: 40px; }
 .connector-arrow { font-size: var(--text-xl); color: var(--text-disabled); }
 

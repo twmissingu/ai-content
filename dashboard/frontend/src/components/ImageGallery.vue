@@ -104,12 +104,12 @@ function handleKeydown(e: KeyboardEvent) {
 
 <style scoped>
 .image-gallery {
-  margin: 12px 0;
+  margin: var(--space-md) 0;
 }
 
 .gallery-grid {
   display: flex;
-  gap: 8px;
+  gap: var(--space-sm);
   flex-wrap: wrap;
 }
 
@@ -117,7 +117,7 @@ function handleKeydown(e: KeyboardEvent) {
   position: relative;
   width: 120px;
   height: 90px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   cursor: pointer;
   border: 2px solid var(--border-color, #e5e7eb);
@@ -125,7 +125,7 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 .gallery-item:hover {
-  border-color: var(--accent-color, #3b82f6);
+  border-color: var(--primary, #3b82f6);
 }
 
 .gallery-item img {
@@ -147,12 +147,12 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 .image-gallery-empty {
-  padding: 8px 0;
+  padding: var(--space-sm) 0;
 }
 
 .empty-text {
-  color: var(--text-muted, #9ca3af);
-  font-size: 13px;
+  color: var(--text-tertiary, #9ca3af);
+  font-size: var(--text-sm);
 }
 
 /* Lightbox */
@@ -171,19 +171,19 @@ function handleKeydown(e: KeyboardEvent) {
   max-width: 90vw;
   max-height: 90vh;
   object-fit: contain;
-  border-radius: 4px;
+  border-radius: var(--radius-sm, 4px);
 }
 
 .lightbox-close {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: var(--space-lg, 16px);
+  right: var(--space-lg, 16px);
   background: none;
   border: none;
   color: white;
   font-size: 28px;
   cursor: pointer;
-  padding: 8px;
+  padding: var(--space-sm, 8px);
 }
 
 .lightbox-nav {
@@ -195,27 +195,27 @@ function handleKeydown(e: KeyboardEvent) {
   color: white;
   font-size: 36px;
   cursor: pointer;
-  padding: 16px 12px;
-  border-radius: 4px;
+  padding: var(--space-lg, 16px) var(--space-md, 12px);
+  border-radius: var(--radius-sm, 4px);
 }
 
 .lightbox-prev {
-  left: 16px;
+  left: var(--space-lg, 16px);
 }
 
 .lightbox-next {
-  right: 16px;
+  right: var(--space-lg, 16px);
 }
 
 .lightbox-counter {
   position: absolute;
-  bottom: 16px;
+  bottom: var(--space-lg, 16px);
   left: 50%;
   transform: translateX(-50%);
   color: white;
-  font-size: 14px;
+  font-size: var(--text-sm, 14px);
   background: rgba(0, 0, 0, 0.5);
-  padding: 4px 12px;
-  border-radius: 12px;
+  padding: var(--space-xs, 4px) var(--space-md, 12px);
+  border-radius: var(--radius-full, 12px);
 }
 </style>

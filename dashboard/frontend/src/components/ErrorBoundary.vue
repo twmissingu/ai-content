@@ -52,7 +52,6 @@ async function copyError() {
   const text = `Error: ${error.value?.message}\nStack: ${error.value?.stack}\nInfo: ${errorInfo.value}`
   try {
     await navigator.clipboard.writeText(text)
-    alert('错误信息已复制到剪贴板')
   } catch {
     // Fallback
     const ta = document.createElement('textarea')
@@ -61,7 +60,6 @@ async function copyError() {
     ta.select()
     document.execCommand('copy')
     document.body.removeChild(ta)
-    alert('错误信息已复制到剪贴板')
   }
 }
 

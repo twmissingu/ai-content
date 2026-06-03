@@ -124,7 +124,7 @@ class TestApprovalQueueDB:
     def test_queue_includes_db_items(self, client, monkeypatch):
         monkeypatch.setattr(
             "dashboard.backend.routes.approval.get_pending_versions",
-            lambda: [{"id": 42, "platform": "xiaohongshu", "topic": "AI趋势", "score": 88}],
+            lambda: [{"id": 42, "session_id": 7, "platform": "xiaohongshu", "topic": "AI趋势", "score": 88}],
         )
         resp = client.get("/api/approval/queue")
         articles = resp.json()["articles"]
@@ -132,6 +132,7 @@ class TestApprovalQueueDB:
         assert len(db_articles) == 1
         assert db_articles[0]["id"] == "db_42"
         assert db_articles[0]["db_version_id"] == 42
+        assert db_articles[0]["db_session_id"] == 7
 
     def test_queue_db_error_handled(self, client, monkeypatch):
         monkeypatch.setattr(

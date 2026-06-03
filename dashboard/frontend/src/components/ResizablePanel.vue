@@ -20,30 +20,50 @@ function onMouseDown(e: MouseEvent) {
   isResizing.value = true
   document.addEventListener('mousemove', onMouseMove)
   document.addEventListener('mouseup', onMouseUp)
+  document.addEventListener('touchmove', onTouchMove, { passive: false })
+  document.addEventListener('touchend', onTouchEnd)
   document.body.style.cursor = 'col-resize'
   document.body.style.userSelect = 'none'
 }
 
 function onMouseMove(e: MouseEvent) {
   if (!isResizing.value) return
-  if (props.side === 'left') {
-    width.value = Math.min(props.maxWidth, Math.max(props.minWidth, e.clientX))
-  } else {
-    width.value = Math.min(props.maxWidth, Math.max(props.minWidth, window.innerWidth - e.clientX))
-  }
+  updateWidth(e.clientX)
 }
 
 function onMouseUp() {
   isResizing.value = false
   document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('mouseup', onMouseUp)
+  document.removeEventListener('touchmove', onTouchMove)
+  document.removeEventListener('touchend', onTouchEnd)
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
+}
+
+function onTouchMove(e: TouchEvent) {
+  e.preventDefault()
+  if (!isResizing.value || !e.touches[0]) return
+  updateWidth(e.touches[0].clientX)
+}
+
+function onTouchEnd() {
+  onMouseUp()
+}
+
+function updateWidth(clientX: number) {
+  if (props.side === 'left') {
+    width.value = Math.min(props.maxWidth, Math.max(props.minWidth, clientX))
+  } else {
+    width.value = Math.min(props.maxWidth, Math.max(props.minWidth, window.innerWidth - clientX))
+  }
 }
 
 onUnmounted(() => {
   document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('mouseup', onMouseUp)
+  document.removeEventListener('touchmove', onTouchMove)
+  document.removeEventListener('touchend', onTouchEnd)
 })
 </script>
 

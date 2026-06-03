@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
+import { useToast } from '../composables/useToast'
+import { API_BASE } from '../utils/api'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+
+const toast = useToast()
 
 interface PromptTemplate {
   name: string
@@ -40,7 +43,7 @@ async function fetchPrompts() {
     const data = await res.json()
     prompts.value = data.prompts || []
   } catch (e) {
-    console.error('Failed to fetch prompts:', e)
+    toast.error(`获取提示词失败: ${e instanceof Error ? e.message : '未知错误'}`)
   } finally {
     loading.value = false
   }
@@ -85,7 +88,7 @@ async function savePrompt() {
       versions.value = vData.versions || []
     }
   } catch (e) {
-    console.error('Failed to save prompt:', e)
+    toast.error(`保存提示词失败: ${e instanceof Error ? e.message : '未知错误'}`)
   } finally {
     saving.value = false
   }
@@ -111,7 +114,7 @@ async function rollbackVersion(name: string, version: number) {
       }
     }
   } catch (e) {
-    console.error('Failed to rollback:', e)
+    toast.error(`回滚失败: ${e instanceof Error ? e.message : '未知错误'}`)
   }
 }
 
@@ -123,7 +126,7 @@ async function importFromFiles() {
       await fetchPrompts()
     }
   } catch (e) {
-    console.error('Failed to import:', e)
+    toast.error(`导入失败: ${e instanceof Error ? e.message : '未知错误'}`)
   } finally {
     importing.value = false
   }

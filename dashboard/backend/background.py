@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -18,8 +19,8 @@ from pathlib import Path
 
 from config.settings import FAILED_DIR, PROJECT_ROOT, TOKENS_DIR, TRAIL_DIR
 from dashboard.backend.database import check_budget_limit, log_token_usage, create_trace, complete_trace, update_trace_duration, create_pipeline_session, update_pipeline_session
-from dashboard.backend.feishu import alert_budget_warning
-from skills.action import mark_processed, scan_actions
+from dashboard.backend.feishu import alert_budget_warning, alert_agent_error
+from skills.action import mark_processed, scan_actions, write_action
 
 logger = logging.getLogger("gaoding.dashboard")
 
@@ -61,16 +62,17 @@ class Poller:
                 self.target()
             except Exception as e:
                 logger.error(f"Poller[{self.name}] error: {e}")
+                alert_agent_error(f"poller-{self.name}", str(e))
             self._stop.wait(self.interval)
 
 
-_VENV_PYTHON = PROJECT_ROOT / ".venv" / "bin" / "python"
+_PYTHON = sys.executable or "python3"
 
 DISPATCH_MAP = {
-    "confirm": [str(_VENV_PYTHON), str(PROJECT_ROOT / "skills/writer_router.py")],
-    "approve": [str(_VENV_PYTHON), str(PROJECT_ROOT / "skills/publisher.py")],
-    "reject": [str(_VENV_PYTHON), str(PROJECT_ROOT / "skills/writer.py"), "--rewrite"],
-    "rewrite": [str(_VENV_PYTHON), str(PROJECT_ROOT / "skills/writer.py"), "--rewrite"],
+    "confirm": [_PYTHON, str(PROJECT_ROOT / "skills/writer_router.py")],
+    "approve": [_PYTHON, str(PROJECT_ROOT / "skills/publisher.py")],
+    "reject": [_PYTHON, str(PROJECT_ROOT / "skills/writer.py"), "--rewrite"],
+    "rewrite": [_PYTHON, str(PROJECT_ROOT / "skills/writer.py"), "--rewrite"],
 }
 
 
@@ -89,11 +91,11 @@ def _dispatch_action_async(action: dict) -> int:
         return -1
 
     if action_type == "confirm":
-        # Legacy confirm -> also write flag file for backward compat
-        topics_dir = PROJECT_ROOT / "queue/topics"
-        topics_dir.mkdir(parents=True, exist_ok=True)
-        flag_file = topics_dir / f"{target_id}.confirmed"
-        flag_file.write_text(json.dumps(action, ensure_ascii=False, indent=2))
+        # Legacy confirm -> also write action file for backward compat
+        write_action(
+            "confirm", target_id,
+            trigger_agent="dashboard",
+        )
 
     cmd = DISPATCH_MAP.get(action_type)
     if not cmd:
@@ -113,6 +115,7 @@ def _dispatch_action_async(action: dict) -> int:
         return proc.pid
     except Exception as e:
         logger.error(f"Dispatch error for {action_type}/{target_id}: {e}")
+        alert_agent_error(f"dispatch-{action_type}", str(e))
         return -1
 
 

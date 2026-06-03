@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { API_BASE } from '../utils/api'
 
 const props = defineProps<{
   url: string | null
@@ -10,7 +11,7 @@ const emit = defineEmits<{
   close: []
 }>()
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+
 const content = ref('')
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -43,7 +44,7 @@ watch(() => [props.url, props.visible] as const, ([newUrl, vis]) => {
 
 <template>
   <Transition name="slide">
-    <div v-if="visible" class="reader-panel">
+    <div v-if="visible" class="reader-panel" role="dialog" aria-modal="true" aria-label="原文阅读面板">
       <div class="reader-header">
         <h3 class="reader-title">原文阅读</h3>
         <button class="btn btn-ghost btn-sm" @click="emit('close')">✕</button>

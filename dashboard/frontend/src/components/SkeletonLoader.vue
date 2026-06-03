@@ -33,6 +33,12 @@ const skeletonClass = `skeleton-${props.type}`
   gap: var(--space-sm);
 }
 
+.skeleton {
+  background: var(--bg-hover, #e5e7eb);
+  border-radius: var(--radius-sm, 4px);
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
 .skeleton-text {
   height: 16px;
   width: 100%;
@@ -58,5 +64,10 @@ const skeletonClass = `skeleton-${props.type}`
   height: 36px;
   width: 100px;
   border-radius: var(--radius-md);
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 </style>

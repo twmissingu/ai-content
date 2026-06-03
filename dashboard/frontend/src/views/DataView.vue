@@ -12,6 +12,7 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js'
+import { API_BASE } from '../utils/api'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
@@ -20,7 +21,7 @@ const costData = ref<any[]>([])
 const monthlyTotal = ref(0)
 const loading = ref(true)
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+
 
 async function fetchCost() {
   loading.value = true

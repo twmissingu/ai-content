@@ -74,6 +74,7 @@ def get_approval_queue(limit: int = Query(50, ge=1, le=200), offset: int = Query
                 "content_preview": "",
                 "source": "database",
                 "db_version_id": pv['id'],
+                "db_session_id": pv['session_id'],
             })
     except Exception as e:
         logger.error(f"Error fetching pending versions: {e}")
@@ -89,18 +90,11 @@ def approval_act(req: ApproveRequest):
     if req.action not in ("approve", "reject", "rewrite"):
         raise HTTPException(400, f"Invalid action: {req.action}")
 
-    path = write_action(
-        req.action, req.target_id,
-        reason=req.reason,
-        platform_versions=req.platform_versions or ["wechat"],
-        trigger_agent="publisher" if req.action == "approve" else "writer",
-    )
-
     db_warning = None
     if req.target_id.startswith("db_"):
         try:
             version_id = int(req.target_id.replace("db_", ""))
-            # Update DB first, then write action file (reverse of old order)
+            # Update DB first, then write action file
             # to ensure DB is consistent before background scanner picks up the action
             update_platform_version(
                 version_id=version_id,
@@ -115,6 +109,13 @@ def approval_act(req: ApproveRequest):
         except Exception as e:
             logger.exception("Database recording failed for approval action")
             db_warning = "Database recording failed"
+
+    path = write_action(
+        req.action, req.target_id,
+        reason=req.reason,
+        platform_versions=req.platform_versions or ["wechat"],
+        trigger_agent="publisher" if req.action == "approve" else "writer",
+    )
 
     response = {"status": "ok", "action": req.action, "target_id": req.target_id, "path": str(path)}
     if db_warning:

@@ -7,6 +7,7 @@ import { ref } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
 import { useToast } from '../composables/useToast'
 import ConfirmDialog from './ConfirmDialog.vue'
+import { API_BASE } from '../utils/api'
 
 const store = useDashboardStore()
 const toast = useToast()
@@ -23,7 +24,7 @@ function openTriggerDialog(agent: string) {
 async function confirmTrigger() {
   triggerLoading.value = true
   try {
-    const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+    
     const res = await fetch(`${API_BASE}/api/pipeline/trigger`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

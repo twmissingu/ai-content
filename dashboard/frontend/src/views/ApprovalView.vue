@@ -8,10 +8,12 @@
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
+import { useToast } from '../composables/useToast'
 import PaginationBar from '../components/PaginationBar.vue'
 import ApprovalQueueTable from '../components/ApprovalQueueTable.vue'
 
 const store = useDashboardStore()
+const toast = useToast()
 
 // ── Batch mode (page-level state shared with ApprovalQueueTable) ────
 const isBatchMode = ref(false)
@@ -46,7 +48,11 @@ async function batchApprove() {
   if (selectedIds.value.size === 0) return
   batchProcessing.value = true
   try {
-    await Promise.allSettled([...selectedIds.value].map(id => store.approve(id)))
+    const results = await Promise.allSettled([...selectedIds.value].map(id => store.approve(id)))
+    const rejected = results.filter(r => r.status === 'rejected')
+    if (rejected.length > 0) {
+      toast.warning(`${rejected.length} 篇审批失败，${selectedIds.value.size - rejected.length} 篇已通过`)
+    }
     selectedIds.value = new Set()
     isBatchMode.value = false
   } finally {

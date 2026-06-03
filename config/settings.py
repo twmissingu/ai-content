@@ -10,22 +10,8 @@ from pathlib import Path
 from typing import Optional
 
 # ── .env auto-loader ──────────────────────────────────────────────
-def _load_env_dotfile() -> None:
-    """Load .env from project root into os.environ (won't overwrite existing env vars)."""
-    # Load Hermes global config first (project .env takes precedence)
-    hermes_env = Path.home() / ".hermes" / ".env"
-    if hermes_env.exists():
-        with open(hermes_env) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, _, val = line.partition("=")
-                key = key.strip()
-                val = val.strip().strip("\"'")
-                if key and key not in os.environ:
-                    os.environ[key] = val
-    env_path = Path(__file__).resolve().parent.parent / ".env"
+def _load_env_file(env_path: Path) -> None:
+    """Load a .env file into os.environ (won't overwrite existing env vars)."""
     if not env_path.exists():
         return
     with open(env_path) as f:
@@ -36,9 +22,16 @@ def _load_env_dotfile() -> None:
             key, _, val = line.partition("=")
             key = key.strip()
             val = val.strip().strip("\"'")
-            # Don't overwrite env vars already set
             if key and key not in os.environ:
                 os.environ[key] = val
+
+
+def _load_env_dotfile() -> None:
+    """Load .env from project root into os.environ (won't overwrite existing env vars)."""
+    # Load Hermes global config first (project .env takes precedence)
+    _load_env_file(Path.home() / ".hermes" / ".env")
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    _load_env_file(env_path)
 
 _load_env_dotfile()
 
@@ -129,7 +122,7 @@ PLATFORM_DISPLAY: dict[str, str] = {
 
 # ── Feishu notification ───────────────────────────────────────────
 # ── Runtime environment ─────────────────────────────────────────────
-ENVIRONMENT: str = os.getenv("ENV", os.getenv("NODE_ENV", "development"))
+ENVIRONMENT: str = os.getenv("ENV", "development")
 API_KEY: str = os.getenv("API_KEY", "")
 TRUSTED_PROXIES: str = os.getenv("TRUSTED_PROXIES", "")
 PARALLEL_WORKERS: str = os.getenv("PARALLEL_WORKERS", "1")

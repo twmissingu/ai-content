@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
+import { API_BASE } from '../utils/api'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+
 
 // ── Directory tree state ──
 interface TreeNode {

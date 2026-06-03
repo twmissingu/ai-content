@@ -9,6 +9,7 @@
  */
 import { ref, computed, watch, nextTick } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
+import type { ApprovalArticle } from '../stores/dashboard'
 import { useToast } from '../composables/useToast'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -16,13 +17,14 @@ import SkeletonLoader from './SkeletonLoader.vue'
 import ImageGallery from './ImageGallery.vue'
 import ApprovalVersionPanel from './ApprovalVersionPanel.vue'
 import ApprovalPublishPanel from './ApprovalPublishPanel.vue'
+import { API_BASE } from '../utils/api'
 
 const store = useDashboardStore()
 const toast = useToast()
 
 // ── Props for batch mode (controlled by parent) ─────────────────────
 const props = defineProps<{
-  articles: any[]
+  articles: ApprovalArticle[]
   isBatchMode: boolean
   selectedIds: Set<string>
   allSelected: boolean
@@ -64,6 +66,27 @@ const renderedContent = computed(() => {
   if (!article?.content_preview) return ''
   return DOMPurify.sanitize(marked(article.content_preview) as string)
 })
+
+// Combined quality score (average of all available scores)
+function getQualityScore(article: ApprovalArticle): number | null {
+  const scores: number[] = []
+  if (article.meta.proofread_score != null) scores.push(article.meta.proofread_score)
+  if (article.meta.critique_scores?.length) {
+    const last = article.meta.critique_scores[article.meta.critique_scores.length - 1]
+    if (last != null) scores.push(last)
+  }
+  if (article.meta.title_score != null) scores.push(article.meta.title_score)
+  if (article.meta.score != null) scores.push(article.meta.score)
+  if (scores.length === 0) return null
+  return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+}
+
+function getScoreColor(score: number | null): string {
+  if (score == null) return ''
+  if (score >= 80) return 'score-high'
+  if (score >= 60) return 'score-mid'
+  return 'score-low'
+}
 
 // Rejection presets
 const rejectPresets = [
@@ -117,7 +140,7 @@ function cancelApprove() {
 
 // ── Inline editing ────────────────────────────────────────────────────
 async function startEditing(articleId: string) {
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+  
   try {
     const res = await fetch(`${API_BASE}/api/approval/article/${articleId}/content`)
     if (!res.ok) throw new Error('Failed to fetch content')
@@ -136,7 +159,7 @@ function cancelEditing() {
 
 async function saveEditing(articleId: string) {
   editSaving.value = true
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+  
   try {
     const res = await fetch(`${API_BASE}/api/approval/article/${articleId}`, {
       method: 'PUT',
@@ -267,6 +290,10 @@ defineExpose({
             <span class="meta-icon">📊</span>
             评分 {{ article.meta.proofread_score || '-' }}
           </span>
+          <span v-if="getQualityScore(article) != null" class="meta-item" :class="getScoreColor(getQualityScore(article))">
+            <span class="meta-icon">🎯</span>
+            综合 {{ getQualityScore(article) }}
+          </span>
           <span class="meta-divider">·</span>
           <span class="meta-item">
             <span class="meta-icon">🔄</span>
@@ -322,7 +349,7 @@ defineExpose({
           ❌ 驳回
         </button>
         <button
-          v-if="showRejectInput !== article.id && !isEditing"
+          v-if="article.source === 'filesystem' && showRejectInput !== article.id && !isEditing"
           class="btn btn-ghost btn-sm"
           aria-label="编辑文章"
           @click.stop="startEditing(article.id)"
@@ -423,6 +450,7 @@ defineExpose({
 
           <!-- Publish -->
           <ApprovalPublishPanel
+            v-if="article.source === 'filesystem'"
             :article-id="article.id"
             :disabled="processingIds.has(article.id)"
             @published="emit('refresh')"
@@ -431,8 +459,8 @@ defineExpose({
 
         <!-- Version-level operations -->
         <ApprovalVersionPanel
-          v-if="article.source === 'database' && article.db_version_id"
-          :session-id="article.db_version_id"
+          v-if="article.source === 'database' && article.db_session_id"
+          :session-id="article.db_session_id"
         />
       </div>
     </transition>
@@ -510,6 +538,11 @@ defineExpose({
 }
 
 .platform-tag .meta-icon { font-size: var(--text-sm); }
+
+/* Score colors */
+.score-high { color: var(--success, #22c55e) !important; }
+.score-mid { color: var(--warning, #f59e0b) !important; }
+.score-low { color: var(--danger, #ef4444) !important; }
 
 .article-actions {
   display: flex;

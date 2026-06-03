@@ -7,6 +7,7 @@
 import { ref, watch } from 'vue'
 import { useToast } from '../composables/useToast'
 import SkeletonLoader from './SkeletonLoader.vue'
+import { API_BASE } from '../utils/api'
 
 interface PlatformVersion {
   id: number
@@ -32,7 +33,7 @@ async function fetchVersions() {
   if (!sid) return
   loading.value = true
   try {
-    const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+    
     const res = await fetch(`${API_BASE}/api/approval/versions/${sid}`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
@@ -48,7 +49,7 @@ async function fetchVersions() {
 async function approveVersion(versionId: number) {
   processingIds.value.add(versionId)
   try {
-    const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+    
     const res = await fetch(`${API_BASE}/api/approval/version/${versionId}/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -67,7 +68,7 @@ async function approveVersion(versionId: number) {
 async function rejectVersion(versionId: number) {
   processingIds.value.add(versionId)
   try {
-    const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+    
     const res = await fetch(`${API_BASE}/api/approval/version/${versionId}/reject`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -90,7 +91,7 @@ watch(() => props.sessionId, (id) => {
   } else {
     versions.value = []
   }
-}, { immediate: false })
+}, { immediate: true })
 </script>
 
 <template>
