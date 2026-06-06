@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
+import { useKeyboardShortcut, isInputElement } from '../composables/useKeyboardShortcut'
 import { Bar } from 'vue-chartjs'
 import {
   Chart as ChartJS,
@@ -120,6 +121,16 @@ const budgetStatus = computed(() => {
     isWarning: monthlyTotal.value / (budget.monthly_limit_usd || 15) > 0.8,
   }
 })
+
+// ── Keyboard shortcuts ──────────────────────────────────────────────
+function handleKeydown(e: KeyboardEvent) {
+  if (isInputElement(e.target)) return
+  if (e.key === 'r' || e.key === 'R') {
+    fetchCost()
+  }
+}
+
+useKeyboardShortcut(handleKeydown)
 </script>
 
 <template>
@@ -130,7 +141,7 @@ const budgetStatus = computed(() => {
         <h2 class="page-title">数据分析</h2>
         <p class="page-subtitle">成本消耗与内容表现</p>
       </div>
-      <button class="btn btn-ghost btn-sm" @click="fetchCost">
+      <button class="btn btn-ghost btn-sm" @click="fetchCost" aria-label="刷新数据">
         <span>🔄</span> 刷新
       </button>
     </div>
@@ -253,6 +264,11 @@ const budgetStatus = computed(() => {
           <div class="placeholder-text">Phase 3 接入 Feedback 后显示</div>
         </div>
       </div>
+    </div>
+
+    <!-- Keyboard Shortcuts Hint -->
+    <div class="keyboard-hints" role="region" aria-label="快捷键说明">
+      <div class="hint-item"><kbd>R</kbd><span>刷新</span></div>
     </div>
   </div>
 </template>
@@ -492,4 +508,6 @@ const budgetStatus = computed(() => {
     grid-template-columns: 1fr;
   }
 }
+
+
 </style>

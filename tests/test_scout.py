@@ -776,7 +776,7 @@ class TestMain:
             with patch("skills.scout_dedup.dedup_and_filter", return_value=[]):
                 with patch("skills.scout_scorer._is_cold_start", return_value=False):
                     with patch("skills.scout_collectors._write_status"):
-                        with patch("skills.common.atomic_write_json"):
+                        with patch("skills.action.atomic_write_json"):
                             main()
 
 

@@ -90,12 +90,11 @@ def approval_act(req: ApproveRequest):
     if req.action not in ("approve", "reject", "rewrite"):
         raise HTTPException(400, f"Invalid action: {req.action}")
 
-    db_warning = None
     if req.target_id.startswith("db_"):
+        version_id = int(req.target_id.replace("db_", ""))
+        # Update DB first — if this fails, do NOT write action file
+        # to avoid orphan action files with no corresponding DB state (DEV-002)
         try:
-            version_id = int(req.target_id.replace("db_", ""))
-            # Update DB first, then write action file
-            # to ensure DB is consistent before background scanner picks up the action
             update_platform_version(
                 version_id=version_id,
                 status="approved" if req.action == "approve" else "rejected",
@@ -108,7 +107,7 @@ def approval_act(req: ApproveRequest):
             )
         except Exception as e:
             logger.exception("Database recording failed for approval action")
-            db_warning = "Database recording failed"
+            raise HTTPException(500, "数据库记录失败，审批操作已中止")
 
     path = write_action(
         req.action, req.target_id,
@@ -117,12 +116,7 @@ def approval_act(req: ApproveRequest):
         trigger_agent="publisher" if req.action == "approve" else "writer",
     )
 
-    response = {"status": "ok", "action": req.action, "target_id": req.target_id, "path": str(path)}
-    if db_warning:
-        response["status"] = "partial"
-        response["warning"] = db_warning
-
-    return response
+    return {"status": "ok", "action": req.action, "target_id": req.target_id, "path": str(path)}
 
 
 @router.get("/versions/{session_id}")

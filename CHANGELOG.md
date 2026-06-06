@@ -1,5 +1,150 @@
 # Changelog
 
+## [0.9.8] - 2026-06-06
+
+### Monitoring (2)
+
+- **系统监控端点**: 添加 `/api/metrics` 端点，返回 uptime、队列大小、预算、磁盘等系统指标
+- **人类可读摘要**: 添加 `/api/metrics/summary` 端点，提供快速诊断信息
+
+### Accessibility (1)
+
+- **屏幕阅读器测试清单**: 创建 `docs/SCREEN_READER_TESTING.md`，包含 10 个标准化测试场景
+
+### Test Coverage (1)
+
+- **监控端点测试**: 添加 8 个新测试用例覆盖 `/api/metrics` 和 `/api/metrics/summary`
+
+## [0.9.7] - 2026-06-06
+
+### Accessibility (1)
+
+- **屏幕阅读器测试清单**: 创建 NVDA/VoiceOver 手动测试清单，覆盖 10 个主要场景
+
+## [0.9.6] - 2026-06-06
+
+### Test Coverage (2)
+
+- **writer_helpers 单元测试**: 添加 15 个新测试用例覆盖提取的独立函数
+- **测试兼容性修复**: 修复 monkeypatch 以支持 writer_helpers 模块
+
+## [0.9.5] - 2026-06-06
+
+### Code Quality (3)
+
+- **writer_helpers 模块提取**: 将 CLI 解析、批评循环、输出写入等逻辑提取为独立函数
+- **WriterAgent 重构**: 从 561 行减至 449 行 (-20%)
+- **职责分离**: 纯函数更易测试，提升可维护性
+
+## [0.9.4] - 2026-06-06
+
+### Performance Optimization (1)
+
+- **性能优化验证**: 确认数据库 WAL 模式、查询缓存（LRU + TTL）、复合索引、线程本地连接、busy_timeout 等优化已就位
+
+### User Experience Improvements (3)
+
+- **aria-live 播报**: Toast 通知自动播报给屏幕阅读器 (`composables/useToast.ts`)
+- **aria-label 补全**: 修复 toast 关闭按钮和配置编辑器关闭按钮的 aria-label
+- **focus trap 验证**: 确认 ConfirmDialog 和 ImageGallery 已有实现
+
+### Code Quality (2)
+
+- 删除 3 个 DEPRECATED 模块（writer_xhs, writer_douyin, publisher_toutiao）
+- WriterAgent 拆分为 4 个独立方法
+
+### Test Coverage (3)
+
+- 为 3 个核心视图添加组件测试（PipelineView, ApprovalView, TopicsView）
+- 前端测试用例数从 48 增加到 69（+21）
+- 建立了前端组件测试的标准模式
+
+### Deployment (1)
+
+- 创建 GitHub Actions CI 工作流（.github/workflows/ci.yml）
+- 添加后端测试 CI（Python 3.14 + pytest）
+- 添加前端测试 CI（Node.js 20 + vitest）
+- 添加 Docker 构建 CI（Docker Buildx + 缓存）
+
+### Test Results
+
+- 后端: 807 tests passing
+- 前端: 69 tests passing
+- 总计: 876 tests passing
+
+## [0.9.3] - 2026-06-06
+
+### User Experience Improvements (3)
+
+- **aria-live 播报**: Toast 通知自动播报给屏幕阅读器 (`composables/useToast.ts`)
+- **aria-label 补全**: 修复 toast 关闭按钮和配置编辑器关闭按钮的 aria-label
+- **focus trap 验证**: 确认 ConfirmDialog 和 ImageGallery 已有实现
+
+### Code Quality (2)
+
+- 删除 3 个 DEPRECATED 模块（writer_xhs, writer_douyin, publisher_toutiao）
+- WriterAgent 拆分为 4 个独立方法
+
+### Test Coverage (3)
+
+- 为 3 个核心视图添加组件测试（PipelineView, ApprovalView, TopicsView）
+- 前端测试用例数从 48 增加到 69（+21）
+- 建立了前端组件测试的标准模式
+
+### Deployment (1)
+
+- 创建 GitHub Actions CI 工作流（.github/workflows/ci.yml）
+- 添加后端测试 CI（Python 3.14 + pytest）
+- 添加前端测试 CI（Node.js 20 + vitest）
+- 添加 Docker 构建 CI（Docker Buildx + 缓存）
+
+### Test Results
+
+- 后端: 807 tests passing
+- 前端: 69 tests passing
+- 总计: 876 tests passing
+
+## [0.8.1] - 2026-06-05
+
+### Security Fixes (2)
+
+- SSRF protection `fail-open` vulnerability fixed — `_SSRFSafeTransport` now validates redirect targets before following (`routes/reader.py`)
+- Approval action file no longer written when DB recording fails (DEV-002) — prevents orphan action files with no corresponding DB state (`routes/approval.py`)
+
+### New Features (1)
+
+- **Timeout auto-handling**: Topic 30 min unconfirmed → auto-select highest score; Approval 2 hour unresponsive → auto-skip (`background.py` `topic_timeout_target` + `approval_timeout_target`)
+- Feishu alerts for topic/approval timeouts
+
+### Review Findings Fixed (6)
+
+- 6 audit findings resolved across codebase (quality gates key normalization, DEPLOYMENT env variable, video distribution config)
+
+### UX Improvements (12)
+
+- ApprovalView: publish panel, queue table, version panel component extraction
+- PipelineView: status cards, trigger panel component extraction
+- ErrorBoundary component for global error handling
+- SkeletonLoader component for loading states
+- ReaderPanel, ResizablePanel, ImageGallery improvements
+- StatusBadge: design system alignment
+- ConfigView, DataView, KbView, SourcesView refinements
+- Dashboard store and API utility improvements
+
+### Architecture
+
+- New `skills/writer_stages.py` — extracted writer pipeline stages from `writer.py`
+- New `skills/tts.py` — MiMo-V2.5-TTS voice synthesis module
+- Database `manual_reviews.py` module for human review records
+
+### Test Improvements
+
+- New `tests/test_reader_ssr.py` — SSRF protection test coverage
+- Updated `tests/test_background.py` — timeout auto-handling tests
+- Updated `tests/test_api_approval.py` — DEV-002 fix coverage
+- Updated `tests/test_llm.py`, `tests/test_main.py`, `tests/test_writer_unit.py`
+- Total: 845 tests passing
+
 ## [0.8.0] - 2026-06-02
 
 ### AI Image Generation (Agnes)

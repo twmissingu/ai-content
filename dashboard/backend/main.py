@@ -188,7 +188,15 @@ async def lifespan(app: FastAPI):
     logger.info("Background tasks stopped")
 
 
-app = FastAPI(title="稿定 Dashboard", version="0.8.0", lifespan=lifespan)
+app = FastAPI(
+    title="稿定 Dashboard",
+    description="稿定 AI 内容生产系统 — 自动化从选题发现到多平台分发的完整流程",
+    version="0.9.9",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+    lifespan=lifespan,
+)
 
 # Middleware (order matters: last added = first executed)
 _trusted_proxies = set(

@@ -4,6 +4,7 @@ import { useDashboardStore } from '../stores/dashboard'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
 import PaginationBar from '../components/PaginationBar.vue'
 import ReaderPanel from '../components/ReaderPanel.vue'
+import { useKeyboardShortcut, isInputElement } from '../composables/useKeyboardShortcut'
 
 const store = useDashboardStore()
 
@@ -63,6 +64,19 @@ function truncateText(text: string, maxLen: number = 150): string {
   if (!text) return ''
   return text.length > maxLen ? text.slice(0, maxLen) + '...' : text
 }
+
+// ── Keyboard shortcuts ──────────────────────────────────────────────
+function handleKeydown(e: KeyboardEvent) {
+  if (isInputElement(e.target)) return
+  const totalPages = Math.ceil(topicCount.value / pageSize)
+  if (e.key === 'ArrowLeft' && currentPage.value > 1) {
+    currentPage.value--
+  } else if (e.key === 'ArrowRight' && currentPage.value < totalPages) {
+    currentPage.value++
+  }
+}
+
+useKeyboardShortcut(handleKeydown)
 </script>
 
 <template>
@@ -187,7 +201,7 @@ function truncateText(text: string, maxLen: number = 150): string {
           <a :href="topic.url" target="_blank" rel="noopener noreferrer">
             <span>🔗</span> 查看原文
           </a>
-          <button class="btn btn-ghost btn-xs" @click="openReader(topic.url)" title="在面板中阅读">
+          <button class="btn btn-ghost btn-xs" @click="openReader(topic.url)" title="在面板中阅读" aria-label="在面板中阅读原文">
             📖
           </button>
         </div>
@@ -211,6 +225,12 @@ function truncateText(text: string, maxLen: number = 150): string {
       :current-page="currentPage"
       @update:currentPage="currentPage = $event"
     />
+
+    <!-- Keyboard Shortcuts Hint -->
+    <div v-if="store.topics.length > 0" class="keyboard-hints" role="region" aria-label="快捷键说明">
+      <div class="hint-item"><kbd>&larr;</kbd><span>上一页</span></div>
+      <div class="hint-item"><kbd>&rarr;</kbd><span>下一页</span></div>
+    </div>
   </div>
 
   <!-- Reader Panel -->
@@ -531,4 +551,6 @@ function truncateText(text: string, maxLen: number = 150): string {
     grid-template-columns: 1fr;
   }
 }
+
+
 </style>

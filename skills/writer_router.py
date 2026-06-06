@@ -42,20 +42,6 @@ WORKER_CONFIGS = [
         "enabled": True,
         "timeout": 600,  # 10 min
     },
-    {
-        "type": "xiaohongshu",
-        "script": "writer_xhs.py",
-        "args": [],
-        "enabled": PARALLEL,
-        "timeout": 600,
-    },
-    {
-        "type": "douyin",
-        "script": "writer_douyin.py",
-        "args": [],
-        "enabled": PARALLEL,
-        "timeout": 300,  # 5 min (scripts are shorter)
-    },
 ]
 
 

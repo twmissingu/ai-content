@@ -53,7 +53,12 @@ function handleKeydown(e: KeyboardEvent) {
         v-for="(url, idx) in imageUrls"
         :key="idx"
         class="gallery-item"
+        role="button"
+        tabindex="0"
+        :aria-label="`查看配图 ${idx + 1}`"
         @click="openLightbox(idx)"
+        @keydown.enter="openLightbox(idx)"
+        @keydown.space.prevent="openLightbox(idx)"
       >
         <img :src="url" :alt="`配图 ${idx + 1}`" loading="lazy" />
         <span class="image-label">{{ idx === 0 ? '封面' : `配图 ${idx}` }}</span>
@@ -65,6 +70,9 @@ function handleKeydown(e: KeyboardEvent) {
       <div
         v-if="lightboxOpen"
         class="lightbox-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="图片预览"
         @click.self="closeLightbox"
         @keydown="handleKeydown"
         tabindex="0"

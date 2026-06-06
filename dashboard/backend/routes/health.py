@@ -1,7 +1,9 @@
-"""Health and token logging routes."""
+"""Health, metrics, and token logging routes."""
 
 import logging
+import os
 import shutil
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,6 +18,9 @@ from dashboard.backend.helpers import read_json
 logger = logging.getLogger("gaoding.dashboard")
 
 router = APIRouter(tags=["health"])
+
+# Track server start time for uptime calculation
+_START_TIME = time.time()
 
 
 def _get_agent_last_runs() -> dict:
@@ -103,6 +108,73 @@ def health():
     health_status["agent_last_runs"] = _get_agent_last_runs()
 
     return health_status
+
+
+@router.get("/api/metrics")
+def metrics():
+    """System metrics for monitoring (Prometheus-compatible format).
+
+    Returns operational metrics: uptime, queue sizes, budget, disk, agent status.
+    """
+    uptime_seconds = time.time() - _START_TIME
+    queue_sizes = {
+        "pending": sum(1 for _ in PENDING_DIR.glob("*.json")),
+        "review": sum(1 for _ in REVIEW_DIR.glob("*.meta.json")),
+        "actions": sum(1 for _ in ACTIONS_DIR.glob("*.json")),
+        "failed": sum(1 for _ in FAILED_DIR.glob("*.json")),
+    }
+
+    budget = {}
+    try:
+        budget = check_budget_limit()
+    except Exception:
+        budget = {"error": "unavailable"}
+
+    disk = _get_disk_usage()
+
+    db_ok = True
+    try:
+        with get_db() as conn:
+            conn.execute("SELECT 1")
+    except Exception:
+        db_ok = False
+
+    return {
+        "uptime_seconds": round(uptime_seconds, 1),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "database": "ok" if db_ok else "error",
+        "queue": queue_sizes,
+        "budget": budget,
+        "disk": disk,
+        "agents": _get_agent_last_runs(),
+    }
+
+
+@router.get("/api/metrics/summary")
+def metrics_summary():
+    """Human-readable metrics summary for quick overview."""
+    uptime_seconds = time.time() - _START_TIME
+    hours = int(uptime_seconds // 3600)
+    minutes = int((uptime_seconds % 3600) // 60)
+
+    queue_sizes = {
+        "pending": sum(1 for _ in PENDING_DIR.glob("*.json")),
+        "review": sum(1 for _ in REVIEW_DIR.glob("*.meta.json")),
+        "actions": sum(1 for _ in ACTIONS_DIR.glob("*.json")),
+        "failed": sum(1 for _ in FAILED_DIR.glob("*.json")),
+    }
+
+    total_queue = sum(queue_sizes.values())
+    disk = _get_disk_usage()
+
+    return {
+        "status": "ok",
+        "uptime": f"{hours}h {minutes}m",
+        "queue_total": total_queue,
+        "queue_breakdown": queue_sizes,
+        "disk_free_gb": disk.get("free_gb", "unknown"),
+        "disk_used_pct": disk.get("percent_used", "unknown"),
+    }
 
 
 @router.post("/api/token/log")

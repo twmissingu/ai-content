@@ -6,9 +6,10 @@
  *   - ApprovalVersionPanel (platform version management)
  *   - ApprovalPublishPanel (publish button)
  */
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
 import { useToast } from '../composables/useToast'
+import { useKeyboardShortcut, isInputElement } from '../composables/useKeyboardShortcut'
 import PaginationBar from '../components/PaginationBar.vue'
 import ApprovalQueueTable from '../components/ApprovalQueueTable.vue'
 
@@ -71,12 +72,6 @@ const paginatedArticles = computed(() => {
 // ── Keyboard shortcuts ──────────────────────────────────────────────
 const tableRef = ref<InstanceType<typeof ApprovalQueueTable> | null>(null)
 
-function isInputElement(el: EventTarget | null): boolean {
-  if (!el || !(el instanceof HTMLElement)) return false
-  const tag = el.tagName.toLowerCase()
-  return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable
-}
-
 function handleKeydown(e: KeyboardEvent) {
   if (isInputElement(e.target)) return
 
@@ -104,13 +99,7 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => {
-  document.addEventListener('keydown', handleKeydown)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('keydown', handleKeydown)
-})
+useKeyboardShortcut(handleKeydown)
 </script>
 
 <template>
@@ -220,11 +209,6 @@ onUnmounted(() => {
 .batch-checkbox input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; }
 .batch-count { font-size: var(--text-sm); color: var(--primary); font-weight: 500; }
 .batch-right { display: flex; gap: var(--space-sm); }
-
-/* ── Keyboard Hints ─────────────────────────────────────────── */
-.keyboard-hints { display: flex; justify-content: center; gap: var(--space-xl); padding: var(--space-md); background: var(--bg-hover); border-radius: var(--radius-lg); border: 1px solid var(--border-light); flex-wrap: wrap; }
-.hint-item { display: flex; align-items: center; gap: var(--space-xs); font-size: var(--text-sm); color: var(--text-tertiary); }
-kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; padding: 0 var(--space-sm); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 600; color: var(--text-secondary); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); }
 
 /* ── Loading Spinner ─────────────────────────────────────────── */
 .loading-spinner-sm { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255, 255, 255, 0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: var(--space-xs); }

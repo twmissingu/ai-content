@@ -33,8 +33,8 @@
   /* ── 中性色 ───────────────────────────────────────────────────── */
   --text-primary: #1a1a2e;
   --text-secondary: #555;
-  --text-tertiary: #888;
-  --text-disabled: #bbb;
+  --text-tertiary: #767676;
+  --text-disabled: #aaa;
   
   --bg-primary: #f5f6fa;
   --bg-card: #ffffff;
@@ -128,8 +128,8 @@
 
   --text-primary: #e0e0e0;
   --text-secondary: #aaa;
-  --text-tertiary: #777;
-  --text-disabled: #555;
+  --text-tertiary: #979797;
+  --text-disabled: #666;
 
   --bg-primary: #121212;
   --bg-card: #1e1e1e;
@@ -462,6 +462,19 @@ a:focus-visible {
   to { transform: rotate(360deg); }
 }
 
+/* ── 无障碍工具类 ───────────────────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
 /* ── 工具类 ─────────────────────────────────────────────────────── */
 .text-center { text-align: center; }
 .text-right { text-align: right; }
@@ -542,6 +555,43 @@ a:focus-visible {
   .hide-desktop {
     display: none !important;
   }
+}
+
+/* ── 键盘快捷键提示 ─────────────────────────────────────────────── */
+.keyboard-hints {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-xl);
+  padding: var(--space-md);
+  background: var(--bg-hover);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-light);
+  flex-wrap: wrap;
+}
+
+.hint-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 var(--space-sm);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 /* ── 动画 ───────────────────────────────────────────────────────── */

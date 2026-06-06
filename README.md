@@ -62,10 +62,10 @@ Hermes Cron ─→ Scout Agent ─→ queue/pending/ ─→ You confirm
                      Feedback Agent (22:00) ─→ kb/viral/ + kb/strategy/
 
                      Web Dashboard (FastAPI + Vue 3)
-                       ├── REST API (11 route modules)
+                       ├── REST API (12 route modules)
                        ├── WebSocket /ws/pipeline (real-time status)
-                       ├── SQLite (7 domain modules, WAL mode)
-                       └── Background threads (action scanner + budget monitor)
+                       ├── SQLite (8 domain modules, WAL mode)
+                       └── Background threads (action scanner + budget + timeout)
 ```
 
 ---
@@ -177,6 +177,7 @@ python3 dashboard/backend/main.py
 ├── skills/                    # Agent implementations (Python)
 │   ├── scout.py               Topic discovery & scoring
 │   ├── writer.py              7-stage article pipeline
+│   ├── writer_stages.py       Extracted writer pipeline stages
 │   ├── writer_router.py        Parallel multi-platform dispatch
 │   ├── writer_xhs.py          Xiaohongshu worker
 │   ├── writer_douyin.py       Douyin script worker
@@ -184,14 +185,15 @@ python3 dashboard/backend/main.py
 │   ├── publisher_toutiao.py   Toutiao Playwright automation
 │   ├── feedback.py            Data recovery & analysis
 │   ├── knowledge.py           Article archiving
+│   ├── tts.py                 MiMo-V2.5-TTS voice synthesis
 │   ├── common.py              AgentBase, metrics, load_prompt
 │   ├── llm.py                 Shared LLM utility
 │   └── action.py              JSON file protocol
 ├── dashboard/                 # Web Dashboard
 │   ├── backend/
 │   │   ├── main.py            FastAPI (port 8710, middleware + routers)
-│   │   ├── routes/            11 route modules (pipeline, approval, topics, data, kb, config, health, traces, prompts, reader, sources)
-│   │   ├── database/          SQLite data layer (7 modules: core, sessions, versions, tokens, config_ops, traces, prompts)
+│   │   ├── routes/            12 route modules (pipeline, approval, topics, data, kb, config, health, traces, prompts, reader, reviews, sources)
+│   │   ├── database/          SQLite data layer (8 modules: core, sessions, versions, tokens, config_ops, traces, prompts, manual_reviews)
 │   │   ├── ws.py              WebSocket real-time push
 │   │   ├── auth.py            API Key authentication
 │   │   └── ...                background, config_service, search, feishu, helpers, models

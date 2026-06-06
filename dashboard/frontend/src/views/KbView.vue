@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
+import { useKeyboardShortcut, isInputElement } from '../composables/useKeyboardShortcut'
 import { API_BASE } from '../utils/api'
 
 
@@ -23,6 +24,7 @@ const fileLoading = ref(false)
 const fileError = ref<string | null>(null)
 
 // ── Search state ──
+const searchInputRef = ref<HTMLInputElement | null>(null)
 const query = ref('')
 const results = ref<any[]>([])
 const sections = ref<any[]>([])
@@ -166,6 +168,17 @@ function highlightMatch(text: string, keyword: string): string {
   return escaped.replace(regex, '<mark class="highlight">$1</mark>')
 }
 
+// ── Keyboard shortcuts ──────────────────────────────────────────────
+function handleKeydown(e: KeyboardEvent) {
+  if (isInputElement(e.target)) return
+  if (e.key === '/') {
+    e.preventDefault()
+    searchInputRef.value?.focus()
+  }
+}
+
+useKeyboardShortcut(handleKeydown)
+
 onMounted(() => {
   fetchSections()
   fetchTree()
@@ -185,36 +198,53 @@ onMounted(() => {
         </div>
         <template v-else>
           <div v-if="tree.length === 0" class="tree-empty">暂无文件</div>
-          <ul v-else class="tree-list">
+          <ul v-else class="tree-list" role="tree" aria-label="知识库目录">
             <li v-for="node in tree" :key="node.path">
               <div
                 class="tree-node"
                 :class="{ active: selectedFilePath === node.path, expanded: node.expanded }"
+                role="treeitem"
+                :aria-expanded="node.type === 'directory' ? node.expanded : undefined"
+                :aria-selected="selectedFilePath === node.path"
+                tabindex="0"
                 @click="toggleNode(node)"
+                @keydown.enter="toggleNode(node)"
+                @keydown.space.prevent="toggleNode(node)"
               >
                 <span v-if="node.type === 'directory'" class="tree-arrow">{{ node.expanded ? '▼' : '▶' }}</span>
                 <span v-else class="tree-arrow-placeholder"></span>
                 <span class="tree-icon">{{ node.type === 'directory' ? '📂' : getFileIcon(node.name) }}</span>
                 <span class="tree-name">{{ node.name }}</span>
               </div>
-              <ul v-if="node.type === 'directory' && node.expanded && node.children?.length" class="tree-children">
+              <ul v-if="node.type === 'directory' && node.expanded && node.children?.length" class="tree-children" role="group">
                 <li v-for="child in node.children" :key="child.path">
                   <div
                     class="tree-node depth-1"
                     :class="{ active: selectedFilePath === child.path, expanded: child.expanded }"
+                    role="treeitem"
+                    :aria-expanded="child.type === 'directory' ? child.expanded : undefined"
+                    :aria-selected="selectedFilePath === child.path"
+                    tabindex="0"
                     @click="toggleNode(child)"
+                    @keydown.enter="toggleNode(child)"
+                    @keydown.space.prevent="toggleNode(child)"
                   >
                     <span v-if="child.type === 'directory'" class="tree-arrow">{{ child.expanded ? '▼' : '▶' }}</span>
                     <span v-else class="tree-arrow-placeholder"></span>
                     <span class="tree-icon">{{ child.type === 'directory' ? '📂' : getFileIcon(child.name) }}</span>
                     <span class="tree-name">{{ child.name }}</span>
                   </div>
-                  <ul v-if="child.type === 'directory' && child.expanded && child.children?.length" class="tree-children">
+                  <ul v-if="child.type === 'directory' && child.expanded && child.children?.length" class="tree-children" role="group">
                     <li v-for="gc in child.children" :key="gc.path">
                       <div
                         class="tree-node depth-2"
                         :class="{ active: selectedFilePath === gc.path }"
+                        role="treeitem"
+                        :aria-selected="selectedFilePath === gc.path"
+                        tabindex="0"
                         @click="toggleNode(gc)"
+                        @keydown.enter="toggleNode(gc)"
+                        @keydown.space.prevent="toggleNode(gc)"
                       >
                         <span class="tree-arrow-placeholder"></span>
                         <span class="tree-icon">{{ gc.type === 'directory' ? '📂' : getFileIcon(gc.name) }}</span>
@@ -245,6 +275,7 @@ onMounted(() => {
         <div class="search-input-group">
           <span class="search-icon">🔍</span>
           <input
+            ref="searchInputRef"
             v-model="query"
             @keyup.enter="search"
             class="search-input"
@@ -390,6 +421,11 @@ onMounted(() => {
             <li>左侧目录树可直接浏览文件</li>
           </ul>
         </div>
+      </div>
+
+      <!-- Keyboard Shortcuts Hint -->
+      <div class="keyboard-hints" role="region" aria-label="快捷键说明">
+        <div class="hint-item"><kbd>/</kbd><span>聚焦搜索</span></div>
       </div>
     </div>
   </div>
@@ -903,4 +939,6 @@ onMounted(() => {
     min-width: 100px;
   }
 }
+
+
 </style>

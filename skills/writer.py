@@ -10,27 +10,29 @@ Stage logic delegated to writer_stages.py for testability.
 
 import json
 import os
-import sys
-import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
 from config.settings import (
     ACTIONS_DIR,
     DOMAIN,
     IMAGES_DIR,
-    KB_DIR,
     PENDING_DIR,
     REVIEW_DIR,
     STATUS_DIR,
     VIDEOS_DIR,
 )
-from skills.agent_schemas import ArticleDraft, QualityGateResult
+from skills.agent_schemas import QualityGateResult
 from skills.common import AgentBase, agent_main, load_prompt
-from skills.llm import chat, chat_structured, LLMError
 from skills.writer_illustration import illustrate as _illustrate_fn
 from skills.writer_video import generate_video as _generate_video_fn
+from skills.writer_helpers import (
+    parse_cli_args,
+    run_critique_loop,
+    validate_article_draft,
+    write_output,
+    execute_pipeline,
+)
 # Stage functions from decomposed writer_stages
 from skills.writer_stages import (
     STAGES,
@@ -217,117 +219,33 @@ class WriterAgent(AgentBase):
 
     # ── CLI & helpers ──────────────────────────────────────────────
 
-    def _parse_cli_args(self, topic_id, rewrite_mode, rerun_from):
-        """Parse CLI arguments. Returns (topic_id, rewrite_mode, rewrite_target, rerun_from_arg, topic_file_arg, work_dir_arg)."""
-        topic_file_arg = None
-        work_dir_arg = None
-        rerun_from_arg = rerun_from
-        for i, arg in enumerate(sys.argv):
-            if arg == "--topic-file" and i + 1 < len(sys.argv):
-                topic_file_arg = Path(sys.argv[i + 1])
-            elif arg == "--work-dir" and i + 1 < len(sys.argv):
-                work_dir_arg = Path(sys.argv[i + 1])
-            elif arg == "--rerun-from" and i + 1 < len(sys.argv):
-                rerun_from_arg = int(sys.argv[i + 1])
-
-        if topic_id is None:
-            topic_id = sys.argv[1] if len(sys.argv) > 1 else None
-
-        if not rewrite_mode:
-            rewrite_mode = "--rewrite" in sys.argv
-
-        rewrite_target = topic_id if rewrite_mode else None
-        return topic_id, rewrite_mode, rewrite_target, rerun_from_arg, topic_file_arg, work_dir_arg
-
     def _run_critique_loop(self, text: str, topic_title: str) -> tuple[str, list[int]]:
         """Run the critique loop with rewriting. Returns (text, critique_scores)."""
-        self.start_stage("critique")
-        critique_scores: list[int] = []
-        for round_num in range(1, self._quality_gates["max_rewrite_rounds"] + 1):
-            text, score, passed = self._critique(text, topic_title, round_num)
-            critique_scores.append(score)
-            self.write_status("批评修订", 50 + round_num * 10, f"第{round_num}轮: 评分{score}")
-            self.logger.info(f"Stage 4 round {round_num}: score={score}, passed={passed}")
-            if passed:
-                break
-            if round_num < self._quality_gates["max_rewrite_rounds"]:
-                self.write_status("批评修订", 50 + round_num * 10, f"第{round_num}轮未通过，开始第{round_num + 1}轮")
-        self.end_stage("critique")
-        return text, critique_scores
-
-    def _validate_article_draft(self, title, text, topic, source_url,
-                                proofread_score, critique_scores,
-                                title_candidates, images):
-        """Validate output via ArticleDraft schema. Returns validated ArticleDraft or None."""
-        try:
-            return ArticleDraft.model_validate({
-                "title": title,
-                "content": text,
-                "word_count": len(text),
-                "topic": topic["title"],
-                "platform": self.worker_type,
-                "proofread_score": proofread_score,
-                "critique_scores": critique_scores,
-                "title_candidates": title_candidates,
-                "source_url": source_url,
-                "images": images,
-            })
-        except Exception as e:
-            self.logger.warning(f"ArticleDraft validation failed: {e}")
-            return None
+        return run_critique_loop(
+            text, topic_title, self._quality_gates,
+            self._critique, self.write_status,
+            self.start_stage, self.end_stage, self.logger,
+        )
 
     def _write_output(self, text, final_title, topic, source_url,
                       proofread_score, critique_scores, title_candidates,
                       images, extra_meta=None, videos=None, video_prompts=None):
         """Write final article + meta to REVIEW_DIR. Returns (article_path, meta_path)."""
         self.write_status("完成", 95, "写入输出文件")
-        article_path = REVIEW_DIR / f"{self._run_timestamp}-{self.worker_type}.md"
-        meta_path = REVIEW_DIR / f"{self._run_timestamp}-{self.worker_type}.meta.json"
-
-        try:
-            article_path.write_text(f"# {final_title}\n\n{text}", encoding="utf-8")
-        except OSError as e:
-            self.logger.error(f"Failed to write article {article_path}: {e}")
-            raise
-
-        title_score = title_candidates[0]["score"] if title_candidates else 0
-        meta = {
-            "topic": topic["title"],
-            "source_url": source_url,
-            "platform_standard": self.worker_type,
-            "proofread_score": proofread_score,
-            "critique_scores": critique_scores,
-            "revised_rounds": len(critique_scores),
-            "title_score": title_score,
-            "title_candidates": title_candidates,
-            "word_count": len(text),
-            "images": images,
-            "image_generation_method": "agnes",
-            "videos": videos or [],
-            "video_prompts": video_prompts or [],
-            "video_generation_method": "agnes" if videos else "",
-            "status": "completed",
-        }
-        if extra_meta:
-            meta.update(extra_meta)
-        try:
-            meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
-        except OSError as e:
-            self.logger.error(f"Failed to write meta {meta_path}: {e}")
-            raise
-
-        self._validate_article_draft(
-            final_title, text, topic, source_url,
+        return write_output(
+            text, final_title, topic, source_url,
             proofread_score, critique_scores, title_candidates, images,
+            self.worker_type, self._run_timestamp,
+            extra_meta=extra_meta, videos=videos, video_prompts=video_prompts,
+            logger=self.logger,
         )
-        return article_path, meta_path
 
     # ── Main pipeline ──────────────────────────────────────────────
     def run(self, topic_id: Optional[str] = None, rewrite_mode: bool = False,
             rerun_from: Optional[int] = None):
         """Main pipeline execution."""
         topic_id, rewrite_mode, rewrite_target, rerun_from_arg, topic_file_arg, work_dir_arg = \
-            self._parse_cli_args(topic_id, rewrite_mode, rerun_from)
+            parse_cli_args(topic_id, rewrite_mode, rerun_from)
 
         _topic_from_file = None
         if topic_file_arg and topic_file_arg.exists():
@@ -335,179 +253,36 @@ class WriterAgent(AgentBase):
 
         # ── Mode: Re-run from specific stage ─────────────────────────
         if rerun_from_arg and 1 <= rerun_from_arg <= 7:
-            self.logger.info(f"Re-run mode: starting from stage {rerun_from_arg}")
-            self.write_status("重跑", 0, f"从阶段 {rerun_from_arg} 重新执行")
-
-            review_files = sorted(REVIEW_DIR.glob("*.md"), key=os.path.getmtime, reverse=True)
-            if not review_files:
-                self.logger.error("No articles in review/ to re-run")
-                return
-
-            article_path = review_files[0]
-            meta_path = REVIEW_DIR / f"{article_path.stem}.meta.json"
-            if not meta_path.exists():
-                self.logger.error(f"Meta not found: {meta_path}")
-                return
-
-            meta = json.loads(meta_path.read_text())
-            text = article_path.read_text(encoding="utf-8")
-            if text.startswith("# "):
-                text = text.split("\n", 1)[1].strip()
-
-            topic = {"title": meta.get("topic", "Unknown"), "description": ""}
-            source_url = meta.get("source_url", "")
-            proofread_score = meta.get("proofread_score", 70)
-            critique_scores = meta.get("critique_scores", [])
-            title_candidates = meta.get("title_candidates", [])
-            videos: list[str] = []
-            video_prompts: list[str] = []
-            final_title = meta.get("topic", "Unknown")
-            images = meta.get("images", [])
-
-            if rerun_from_arg <= 2:
-                self.write_status("LLM初稿", 20, "重新生成初稿")
-                self.start_stage("draft")
-                source_material = self._fetch_source(source_url) if source_url else "无原文"
-                text = self._draft(topic, source_material)
-                self.end_stage("draft")
-
-            if rerun_from_arg <= 3:
-                self.write_status("AI腔审校", 35, "检测并移除AI腔")
-                text, proofread_score = self._proofread(text)
-
-            if rerun_from_arg <= 4:
-                self.write_status("批评修订", 50, "评委评分中")
-                text, critique_scores = self._run_critique_loop(text, topic["title"])
-
-            if rerun_from_arg <= 5:
-                self.write_status("排版", 75, "格式化排版")
-                self.start_stage("format")
-                text = self._format(text)
-                self.end_stage("format")
-
-            if rerun_from_arg <= 6:
-                self.write_status("标题优化", 85, "生成候选标题")
-                self.start_stage("titles")
-                final_title, title_candidates = self._generate_titles(text, topic["title"])
-                self.end_stage("titles")
-
-            if rerun_from_arg <= 7:
-                self.write_status("配图", 92, "生成配图")
-                self.start_stage("illustrate")
-                images = self._illustrate(text, topic["title"])
-                self.end_stage("illustrate")
-
-                # Stage 7b: Video generation (optional)
-                video_path = self._generate_video(text, topic["title"])
-                videos = [video_path] if video_path else []
-                video_prompts = []  # prompt logged internally
-
-            article_path, meta_path = self._write_output(
-                text, final_title, topic, source_url,
-                proofread_score, critique_scores, title_candidates, images,
-                extra_meta={"rerun_from": rerun_from_arg},
-                videos=videos,
-                video_prompts=video_prompts,
-            )
-            self.write_completed(
-                detail=f"从阶段{rerun_from_arg}重跑完成 · 评分{proofread_score}/{critique_scores[-1] if critique_scores else 0}",
-                article=str(article_path),
-                meta=str(meta_path),
-            )
+            self._run_from_stage(rerun_from_arg)
             return
 
         # ── Mode: Rewrite ──────────────────────────────────────────
         if rewrite_mode and rewrite_target:
-            self.logger.info(f"Rewrite mode: {rewrite_target}")
-            self.write_status("初始化", 0, f"重写模式: {rewrite_target}")
-            original_text, topic, reject_reason = self._read_article_for_rewrite(rewrite_target)
-            if reject_reason:
-                self.logger.info(f"Reject reason: {reject_reason}")
-                topic["reject_reason"] = reject_reason
-
-            topic_title = topic.get("topic") or topic.get("title", rewrite_target)
-            source_url = topic.get("source_url", topic.get("url", ""))
-
-            self.write_status("抓原文", 5, "读取原文素材")
-            self.start_stage("fetch_source")
-            if source_url and not original_text:
-                source_material = self._fetch_source(source_url)
-            else:
-                source_material = original_text or "无原文素材"
-            self.end_stage("fetch_source")
-
-            self.write_status("LLM初稿", 20, "根据反馈重写")
-            self.start_stage("draft")
-            prompt_extra = ""
-            if reject_reason:
-                prompt_extra = f"\n\n驳回原因（必须针对性改进）: {reject_reason}"
-            text = self._draft(
-                {"title": topic_title, "description": topic.get("topic", "") + prompt_extra},
-                source_material,
-            )
-            self.end_stage("draft")
+            topic, source_material, source_url = self._prepare_rewrite(rewrite_target)
 
         # ── Mode: Normal from topic ────────────────────────────────
         else:
-            self.write_status("初始化", 0, "读取选题配置")
-            topic = _topic_from_file if _topic_from_file else self._read_topic(topic_id)
-            self.logger.info(f"Starting pipeline for: {topic['title']}")
-            source_url = topic.get("url", "")
+            topic, source_material, source_url = self._prepare_normal(
+                _topic_from_file, topic_id
+            )
 
-            self.write_status("抓原文", 5, "抓取原文素材")
-            self.start_stage("fetch_source")
-            if source_url:
-                source_material = self._fetch_source(source_url)
-            else:
-                source_material = "无原文链接。将基于选题方向生成。"
-            self.end_stage("fetch_source")
-            self.logger.info(f"Stage 1 done. Source: {len(source_material)} chars")
-
-            self.write_status("LLM初稿", 20, "生成初稿")
-            self.start_stage("draft")
-            text = self._draft(topic, source_material)
-            self.end_stage("draft")
-            self.logger.info(f"Stage 2 done. Draft: {len(text)} chars")
-
-        # Stage 3: Proofread
-        self.write_status("AI腔审校", 35, "检测并移除AI腔")
-        text, proofread_score = self._proofread(text)
-        self.logger.info(f"Stage 3 done. Proofread score: {proofread_score}")
-
-        # Stage 4: Critique & rewrite loop
-        self.write_status("批评修订", 50, "评委评分中")
-        text, critique_scores = self._run_critique_loop(text, topic["title"])
-
-        # Stage 5: Format
-        self.write_status("排版", 75, "格式化排版")
-        self.start_stage("format")
-        text = self._format(text)
-        self.end_stage("format")
-        self.logger.info("Stage 5 done. Formatted.")
-
-        # Stage 6: Titles
-        self.write_status("标题优化", 85, "生成候选标题")
-        self.start_stage("titles")
-        final_title, title_candidates = self._generate_titles(text, topic["title"])
-        self.end_stage("titles")
-        self.logger.info(f"Stage 6 done. Best title: {final_title}")
-
-        # Stage 7: Illustrations
-        self.write_status("配图", 92, "生成配图")
-        self.start_stage("illustrate")
-        images = self._illustrate(text, topic["title"])
-        self.end_stage("illustrate")
-        self.logger.info(f"Stage 7 done. Images: {len(images)}")
-
-        # Stage 7b: Video generation (optional)
-        video_path = self._generate_video(text, topic["title"])
-        videos = [video_path] if video_path else []
-        video_prompts = []  # prompt logged internally
-        if videos:
-            self.logger.info(f"Stage 7b done. Videos: {len(videos)}")
+        # Execute the 7-stage pipeline
+        text, proofread_score, critique_scores, final_title, title_candidates, images, videos, video_prompts = \
+            execute_pipeline(
+                topic, source_material,
+                proofread_fn=self._proofread,
+                critique_loop_fn=self._run_critique_loop,
+                format_fn=self._format,
+                generate_titles_fn=self._generate_titles,
+                illustrate_fn=self._illustrate,
+                generate_video_fn=self._generate_video,
+                write_status_fn=self.write_status,
+                start_stage_fn=self.start_stage,
+                end_stage_fn=self.end_stage,
+                logger=self.logger,
+            )
 
         # Write output
-        source_url = topic.get("url", topic.get("source_url", ""))
         article_path, meta_path = self._write_output(
             text, final_title, topic, source_url,
             proofread_score, critique_scores, title_candidates, images,
@@ -525,6 +300,144 @@ class WriterAgent(AgentBase):
         self.logger.info(f"Article: {article_path}")
         self.logger.info(f"Meta: {meta_path}")
 
+    def _run_from_stage(self, rerun_from_arg: int):
+        """Re-run pipeline from a specific stage."""
+        self.logger.info(f"Re-run mode: starting from stage {rerun_from_arg}")
+        self.write_status("重跑", 0, f"从阶段 {rerun_from_arg} 重新执行")
+
+        review_files = sorted(REVIEW_DIR.glob("*.md"), key=os.path.getmtime, reverse=True)
+        if not review_files:
+            self.logger.error("No articles in review/ to re-run")
+            return
+
+        article_path = review_files[0]
+        meta_path = REVIEW_DIR / f"{article_path.stem}.meta.json"
+        if not meta_path.exists():
+            self.logger.error(f"Meta not found: {meta_path}")
+            return
+
+        meta = json.loads(meta_path.read_text())
+        text = article_path.read_text(encoding="utf-8")
+        if text.startswith("# "):
+            text = text.split("\n", 1)[1].strip()
+
+        topic = {"title": meta.get("topic", "Unknown"), "description": ""}
+        source_url = meta.get("source_url", "")
+        proofread_score = meta.get("proofread_score", 70)
+        critique_scores = meta.get("critique_scores", [])
+        title_candidates = meta.get("title_candidates", [])
+        videos: list[str] = []
+        video_prompts: list[str] = []
+        final_title = meta.get("topic", "Unknown")
+        images = meta.get("images", [])
+
+        if rerun_from_arg <= 2:
+            self.write_status("LLM初稿", 20, "重新生成初稿")
+            self.start_stage("draft")
+            source_material = self._fetch_source(source_url) if source_url else "无原文"
+            text = self._draft(topic, source_material)
+            self.end_stage("draft")
+
+        if rerun_from_arg <= 3:
+            self.write_status("AI腔审校", 35, "检测并移除AI腔")
+            text, proofread_score = self._proofread(text)
+
+        if rerun_from_arg <= 4:
+            self.write_status("批评修订", 50, "评委评分中")
+            text, critique_scores = self._run_critique_loop(text, topic["title"])
+
+        if rerun_from_arg <= 5:
+            self.write_status("排版", 75, "格式化排版")
+            self.start_stage("format")
+            text = self._format(text)
+            self.end_stage("format")
+
+        if rerun_from_arg <= 6:
+            self.write_status("标题优化", 85, "生成候选标题")
+            self.start_stage("titles")
+            final_title, title_candidates = self._generate_titles(text, topic["title"])
+            self.end_stage("titles")
+
+        if rerun_from_arg <= 7:
+            self.write_status("配图", 92, "生成配图")
+            self.start_stage("illustrate")
+            images = self._illustrate(text, topic["title"])
+            self.end_stage("illustrate")
+
+            # Stage 7b: Video generation (optional)
+            video_path = self._generate_video(text, topic["title"])
+            videos = [video_path] if video_path else []
+            video_prompts = []
+
+        article_path, meta_path = self._write_output(
+            text, final_title, topic, source_url,
+            proofread_score, critique_scores, title_candidates, images,
+            extra_meta={"rerun_from": rerun_from_arg},
+            videos=videos,
+            video_prompts=video_prompts,
+        )
+        self.write_completed(
+            detail=f"从阶段{rerun_from_arg}重跑完成 · 评分{proofread_score}/{critique_scores[-1] if critique_scores else 0}",
+            article=str(article_path),
+            meta=str(meta_path),
+        )
+
+    def _prepare_rewrite(self, rewrite_target: str) -> tuple[dict, str, str]:
+        """Prepare topic and source material for rewrite mode."""
+        self.logger.info(f"Rewrite mode: {rewrite_target}")
+        self.write_status("初始化", 0, f"重写模式: {rewrite_target}")
+        original_text, topic, reject_reason = self._read_article_for_rewrite(rewrite_target)
+        if reject_reason:
+            self.logger.info(f"Reject reason: {reject_reason}")
+            topic["reject_reason"] = reject_reason
+
+        topic_title = topic.get("topic") or topic.get("title", rewrite_target)
+        source_url = topic.get("source_url", topic.get("url", ""))
+
+        self.write_status("抓原文", 5, "读取原文素材")
+        self.start_stage("fetch_source")
+        if source_url and not original_text:
+            source_material = self._fetch_source(source_url)
+        else:
+            source_material = original_text or "无原文素材"
+        self.end_stage("fetch_source")
+
+        self.write_status("LLM初稿", 20, "根据反馈重写")
+        self.start_stage("draft")
+        prompt_extra = ""
+        if reject_reason:
+            prompt_extra = f"\n\n驳回原因（必须针对性改进）: {reject_reason}"
+        text = self._draft(
+            {"title": topic_title, "description": topic.get("topic", "") + prompt_extra},
+            source_material,
+        )
+        self.end_stage("draft")
+
+        return topic, source_material, source_url
+
+    def _prepare_normal(self, _topic_from_file: Optional[dict], topic_id: Optional[str]) -> tuple[dict, str, str]:
+        """Prepare topic and source material for normal mode."""
+        self.write_status("初始化", 0, "读取选题配置")
+        topic = _topic_from_file if _topic_from_file else self._read_topic(topic_id)
+        self.logger.info(f"Starting pipeline for: {topic['title']}")
+        source_url = topic.get("url", "")
+
+        self.write_status("抓原文", 5, "抓取原文素材")
+        self.start_stage("fetch_source")
+        if source_url:
+            source_material = self._fetch_source(source_url)
+        else:
+            source_material = "无原文链接。将基于选题方向生成。"
+        self.end_stage("fetch_source")
+        self.logger.info(f"Stage 1 done. Source: {len(source_material)} chars")
+
+        self.write_status("LLM初稿", 20, "生成初稿")
+        self.start_stage("draft")
+        text = self._draft(topic, source_material)
+        self.end_stage("draft")
+        self.logger.info(f"Stage 2 done. Draft: {len(text)} chars")
+
+        return topic, source_material, source_url
 
 def main():
     """Entry point for backward compatibility."""

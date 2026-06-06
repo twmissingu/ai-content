@@ -47,6 +47,8 @@ docker compose logs -f dashboard           # View logs
 - `skills/common.py` — Shared utilities (AgentBase, metrics, status writing, load_prompt) across all agents
 - `skills/writer_illustration.py` — Agnes AI image generation with LLM prompt engineering
 - `skills/writer_video.py` — Agnes AI video generation (async polling, up to 15 min)
+- `skills/writer_stages.py` — Extracted writer pipeline stages from `writer.py`
+- `skills/tts.py` — MiMo-V2.5-TTS voice synthesis module
 - `config/prompts/*.txt` — Agent 提示词模板（7 个，启动时自动导入数据库）
 - `config/prompts/*.md` — 写作提示词模板（8 类型 × 2 平台 + persona_bible + image_prompt_gen + video_prompt_gen），详见 [docs/content_type_system.md](docs/content_type_system.md)
 - `config/prompts/persona_bible.md` — 统一人设圣经，所有模板引用此文件
@@ -58,7 +60,7 @@ docker compose logs -f dashboard           # View logs
 ## Dashboard Backend Modules
 
 - `dashboard/backend/main.py` — FastAPI entry point (middleware + router mounting, v0.8.0)
-- `dashboard/backend/routes/` — Route modules:
+- `dashboard/backend/routes/` — Route modules (12):
   - `pipeline.py` — Pipeline status, trigger, timeline
   - `approval.py` — Approval queue, approve/reject actions, version management
   - `topics.py` — Topic candidates, confirm
@@ -68,9 +70,10 @@ docker compose logs -f dashboard           # View logs
   - `health.py` — Health check, token logging
   - `traces.py` — Pipeline execution traces (`/api/pipeline/traces`)
   - `prompts.py` — Prompt version management (`/api/prompts`)
-  - `reader.py` — Original article proxy fetch (`/api/reader/fetch`)
+  - `reader.py` — Original article proxy fetch with SSRF protection (`/api/reader/fetch`)
+  - `reviews.py` — Manual review / quality calibration (`/api/reviews`)
   - `sources.py` — Source stream management (`/api/sources`)
-- `dashboard/backend/database/` — SQLite operations (split into 7 domain modules):
+- `dashboard/backend/database/` — SQLite operations (split into 8 domain modules):
   - `core.py` — Connection management, cache, schema init (`get_db`, `init_db`)
   - `sessions.py` — Pipeline session CRUD
   - `versions.py` — Platform versions, approval records, quality flywheel
@@ -78,8 +81,9 @@ docker compose logs -f dashboard           # View logs
   - `config_ops.py` — Config key-value store
   - `traces.py` — Execution traces with batch query optimization
   - `prompts.py` — Prompt version management (CRUD + import)
+  - `manual_reviews.py` — Manual review records, stats, deviation detection
 - `dashboard/backend/auth.py` — API Key auth middleware (timing-safe `hmac.compare_digest`)
-- `dashboard/backend/background.py` — Background tasks (action scanning, budget monitoring)
+- `dashboard/backend/background.py` — Background tasks (action scanning, budget monitoring, timeout auto-handling)
 - `dashboard/backend/ws.py` — WebSocket real-time push (`/ws/pipeline`, 3s polling)
 - `dashboard/backend/config_service.py` — Schedule, writing style, quality gates, source config
 - `dashboard/backend/search.py` — FTS5 trigram full-text search for knowledge base

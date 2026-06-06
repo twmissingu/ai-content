@@ -1,8 +1,8 @@
 # AGENTS.md
 
 仓库：`ai-content` — AI 内容生产系统「稿定」的源代码与规格文档库。
-状态：**v0.8.0**（AI 配图 + 视频生成 + 统一发布 + Scout 增强 + 安全加固）。
-版本：[v0.8.0](CHANGELOG.md) — 2026-06-02
+状态：**v0.8.1**（SSRF 修复 + 超时自动处理 + 审批流程加固 + UX 改进）。
+版本：[v0.8.1](CHANGELOG.md) — 2026-06-05
 
 ---
 
@@ -85,6 +85,7 @@ skills/                            Agent 实现代码（Python）
   ├── rss_collector.py             RSS 预采集系统
   ├── topic_analyzer.py            选题分析工具
   ├── writer.py                    写手 Agent（7 阶段管线 + 可选视频）
+  ├── writer_stages.py             Writer 管线阶段提取模块
   ├── writer_router.py             并行 Writer 路由器
   ├── writer_illustration.py       Agnes AI 配图生成
   ├── writer_video.py              Agnes AI 视频生成
@@ -97,6 +98,7 @@ skills/                            Agent 实现代码（Python）
   ├── feedback.py                  数据反馈 Agent
   ├── knowledge.py                 知识沉淀 Agent
   ├── screenshot.py                HTML→PNG 截图工具
+  ├── tts.py                      MiMo-V2.5-TTS 语音合成
   ├── action.py                    action 文件协议
   ├── llm.py                      LLM 调用工具（fallback + 重试）
   └── metrics.py                  性能指标收集
@@ -104,7 +106,7 @@ skills/                            Agent 实现代码（Python）
 dashboard/                         Web Dashboard
   ├── backend/
   │   ├── main.py                  FastAPI 入口（中间件 + 路由挂载，版本 0.8.0）
-  │   ├── routes/                  路由模块（11 个）
+  │   ├── routes/                  路由模块（12 个）
   │   │   ├── pipeline.py          管线状态、触发
   │   │   ├── approval.py          审批队列和操作
   │   │   ├── topics.py            选题候选
@@ -115,15 +117,17 @@ dashboard/                         Web Dashboard
   │   │   ├── traces.py            管线执行追踪（/api/pipeline/traces）
   │   │   ├── prompts.py           提示词版本管理（/api/prompts）
   │   │   ├── reader.py            原文抓取代理（/api/reader/fetch）
+  │   │   ├── reviews.py           人工抽检（质量校准，/api/reviews）
   │   │   └── sources.py           信源流管理（/api/sources）
-  │   ├── database/                SQLite 数据层（拆分为 7 个模块）
+  │   ├── database/                SQLite 数据层（拆分为 8 个模块）
   │   │   ├── core.py              连接管理、缓存、初始化（get_db, init_db）
   │   │   ├── sessions.py          管线会话 CRUD
   │   │   ├── versions.py          平台版本 + 审批记录 + 质量飞轮
   │   │   ├── tokens.py            Token 用量 + 预算控制
   │   │   ├── config_ops.py        配置键值存取
   │   │   ├── traces.py            执行追踪（批量查询优化）
-  │   │   └── prompts.py           提示词版本管理
+  │   │   ├── prompts.py           提示词版本管理
+  │   │   └── manual_reviews.py    人工抽检记录、统计、偏差检测
   │   ├── auth.py                  API Key 认证中间件（hmac.compare_digest）
   │   ├── background.py            后台任务（action 扫描、预算监控）
   │   ├── config_service.py        配置管理服务
@@ -293,5 +297,5 @@ print(f'API Key : {\"OK\" if LLM_API_KEY else \"MISSING\"}')
 - 提示词支持数据库版本管理（`/api/prompts` CRUD），`.txt` 文件启动时自动导入。
 - AI-slop 检测模式存放在 `config/proofread_patterns.json`，支持通过 Dashboard 管理。
 - 质量门禁阈值存放在 `config/quality_gates.json`，Writer 管线各阶段读取对应阈值。
-- 数据库层已拆分为 `dashboard/backend/database/` 包（7 个领域模块），通过 `__init__.py` 统一导出。
+- 数据库层已拆分为 `dashboard/backend/database/` 包（8 个领域模块），通过 `__init__.py` 统一导出。
 - WebSocket 实时推送在 `dashboard/backend/ws.py`，前端通过 `ws://host/ws/pipeline` 接收状态变更。

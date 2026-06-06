@@ -176,6 +176,26 @@ def alert_approval_needed(topic: str, quality_score: int):
     )
 
 
+def alert_topic_timeout(topic_title: str, score: int, timeout_minutes: int):
+    """Notify when a topic times out and is auto-confirmed."""
+    send_feishu_alert(
+        title="选题超时自动确认",
+        content=f"**{topic_title}** (评分: {score})\n\n"
+        f"超过 {timeout_minutes} 分钟未确认，已自动选为最高分选题。",
+        level="warning",
+    )
+
+
+def alert_approval_timeout(article_id: str, timeout_minutes: int):
+    """Notify when an approval times out and is auto-skipped."""
+    send_feishu_alert(
+        title="审批超时自动跳过",
+        content=f"**{article_id}**\n\n"
+        f"超过 {timeout_minutes} 分钟未审批，已自动标记为跳过。",
+        level="warning",
+    )
+
+
 def test_webhook():
     """Test Feishu webhook connection."""
     return send_feishu_alert(

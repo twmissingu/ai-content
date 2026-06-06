@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
 import { useToast } from '../composables/useToast'
+import { useKeyboardShortcut, isInputElement } from '../composables/useKeyboardShortcut'
 import { API_BASE } from '../utils/api'
 
 
@@ -138,7 +139,19 @@ function closeEditor() {
   editingTemplate.value = ''
 }
 
-onMounted(fetchPrompts)
+// ── Keyboard shortcuts ──────────────────────────────────────────────
+function handleKeydown(e: KeyboardEvent) {
+  if (isInputElement(e.target)) return
+  if (e.key === 'Escape' && showEditor.value) {
+    closeEditor()
+  }
+}
+
+useKeyboardShortcut(handleKeydown)
+
+onMounted(() => {
+  fetchPrompts()
+})
 </script>
 
 <template>
@@ -198,6 +211,11 @@ onMounted(fetchPrompts)
       </div>
     </div>
 
+    <!-- Keyboard Shortcuts Hint -->
+    <div class="keyboard-hints" role="region" aria-label="快捷键说明">
+      <div class="hint-item"><kbd>Esc</kbd><span>关闭编辑器</span></div>
+    </div>
+
     <!-- Editor Panel -->
     <transition name="slide">
       <div v-if="showEditor && selectedPrompt" class="card editor-card">
@@ -208,7 +226,7 @@ onMounted(fetchPrompts)
               v{{ selectedPrompt.version }} · 变量: {{ selectedPrompt.variables.join(', ') || '无' }}
             </span>
           </div>
-          <button class="btn btn-ghost btn-sm" @click="closeEditor">✕</button>
+          <button class="btn btn-ghost btn-sm" @click="closeEditor" aria-label="关闭编辑器">✕</button>
         </div>
 
         <textarea
@@ -493,4 +511,6 @@ onMounted(fetchPrompts)
     gap: var(--space-md);
   }
 }
+
+
 </style>

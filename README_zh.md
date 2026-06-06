@@ -134,6 +134,7 @@ python3 skills/publisher.py <target_id>
 ├── skills/                    # Agent 实现代码（Python）
 │   ├── scout.py               选题 Agent
 │   ├── writer.py              7 阶段写手管线
+│   ├── writer_stages.py       Writer 管线阶段提取模块
 │   ├── writer_router.py       并行 Writer 路由器
 │   ├── writer_xhs.py          小红书 Worker
 │   ├── writer_douyin.py       抖音 Worker
@@ -141,6 +142,7 @@ python3 skills/publisher.py <target_id>
 │   ├── publisher_toutiao.py   头条号 Playwright 分发
 │   ├── feedback.py            数据反馈 Agent
 │   ├── knowledge.py           知识沉淀 Agent
+│   ├── tts.py                 MiMo-V2.5-TTS 语音合成
 │   ├── llm.py                 LLM 调用工具
 │   └── action.py              JSON 文件协议
 ├── dashboard/                 # Web Dashboard

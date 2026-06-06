@@ -528,7 +528,7 @@ ALLOWED_PLATFORMS = frozenset({
 
 # Allowed action types
 ALLOWED_ACTIONS = frozenset({
-    "confirm", "approve", "reject", "rewrite", "test_scout"
+    "confirm", "approve", "reject", "rewrite", "skip", "test_scout"
 })
 
 

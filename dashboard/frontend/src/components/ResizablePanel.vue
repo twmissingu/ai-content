@@ -51,6 +51,17 @@ function onTouchEnd() {
   onMouseUp()
 }
 
+function onKeydown(e: KeyboardEvent) {
+  const step = 10
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault()
+    width.value = Math.max(props.minWidth, width.value - step)
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault()
+    width.value = Math.min(props.maxWidth, width.value + step)
+  }
+}
+
 function updateWidth(clientX: number) {
   if (props.side === 'left') {
     width.value = Math.min(props.maxWidth, Math.max(props.minWidth, clientX))
@@ -77,7 +88,12 @@ onUnmounted(() => {
     <div
       class="resize-handle"
       :class="`handle-${side}`"
+      role="separator"
+      aria-orientation="vertical"
+      :aria-label="`${side === 'left' ? '左' : '右'}侧面板，拖拽调整宽度`"
+      tabindex="0"
       @mousedown="onMouseDown"
+      @keydown="onKeydown"
     />
   </div>
 </template>

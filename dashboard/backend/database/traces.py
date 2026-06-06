@@ -28,15 +28,16 @@ def create_trace(session_id: Optional[int], agent: str, stage: str,
 
 def complete_trace(trace_id: int, output_summary: str = None,
                   status: str = 'completed', tokens_used: int = 0,
-                  error_message: str = None):
-    """Mark a trace entry as complete."""
+                  error_message: str = None, duration_ms: int = None):
+    """Mark a trace entry as complete, optionally with duration."""
     with get_db() as conn:
         conn.execute("""
             UPDATE pipeline_traces
             SET output_summary = ?, status = ?, tokens_used = ?,
-                error_message = ?, completed_at = CURRENT_TIMESTAMP
+                error_message = ?, duration_ms = COALESCE(?, duration_ms),
+                completed_at = CURRENT_TIMESTAMP
             WHERE id = ?
-        """, (output_summary, status, tokens_used, error_message, trace_id))
+        """, (output_summary, status, tokens_used, error_message, duration_ms, trace_id))
 
 
 def update_trace_duration(trace_id: int, duration_ms: int):
@@ -70,8 +71,8 @@ def trace_stage(session_id: Optional[int], agent: str, stage: str,
             output_summary=trace_data["output"],
             status="completed",
             tokens_used=trace_data["tokens"],
+            duration_ms=duration_ms,
         )
-        update_trace_duration(trace_id, duration_ms)
     except Exception as e:
         duration_ms = int((time.monotonic() - start_time) * 1000)
         complete_trace(
@@ -80,9 +81,31 @@ def trace_stage(session_id: Optional[int], agent: str, stage: str,
             status="failed",
             tokens_used=trace_data["tokens"],
             error_message=str(e),
+            duration_ms=duration_ms,
         )
-        update_trace_duration(trace_id, duration_ms)
         raise
+
+
+def import_trail_record(session_id: int, agent: str, stage: str,
+                        stage_name: str = None,
+                        status: str = 'completed',
+                        duration_ms: int = None) -> int:
+    """Import a complete trail record in a single transaction (create + complete).
+
+    Returns the trace_id.
+    """
+    with get_db() as conn:
+        cursor = conn.execute("""
+            INSERT INTO pipeline_traces (session_id, agent, stage, stage_name, status)
+            VALUES (?, ?, ?, ?, 'running')
+        """, (session_id, agent, stage, stage_name))
+        trace_id = cursor.lastrowid
+        conn.execute("""
+            UPDATE pipeline_traces
+            SET status = ?, duration_ms = ?, completed_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (status, duration_ms, trace_id))
+        return trace_id
 
 
 def get_traces(session_id: Optional[int] = None, agent: str = None,

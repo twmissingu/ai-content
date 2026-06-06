@@ -12,11 +12,26 @@ export interface Toast {
 const toasts = ref<Toast[]>([])
 let nextId = 0
 
+function announceToScreenReader(message: string) {
+  const announcer = document.getElementById('live-announcer')
+  if (announcer) {
+    announcer.textContent = message
+    // Clear after announcement to allow re-announcement of same message
+    setTimeout(() => {
+      announcer.textContent = ''
+    }, 1000)
+  }
+}
+
 export function useToast() {
   function addToast(type: ToastType, message: string, duration = 3000) {
     const id = nextId++
     const toast: Toast = { id, type, message, duration }
     toasts.value.push(toast)
+
+    // Announce to screen readers
+    const prefix = type === 'success' ? '成功' : type === 'error' ? '错误' : type === 'warning' ? '警告' : '通知'
+    announceToScreenReader(`${prefix}：${message}`)
 
     if (duration > 0) {
       setTimeout(() => removeToast(id), duration)

@@ -56,8 +56,14 @@ watch(() => store.error, (newError) => {
 
 <template>
   <div class="app-layout">
+    <!-- Skip to Content (accessibility) -->
+    <a href="#main-content" class="skip-to-content">跳转到主要内容</a>
+
+    <!-- Live region for dynamic updates (screen readers) -->
+    <div class="sr-only" aria-live="polite" aria-atomic="true" id="live-announcer"></div>
+
     <!-- Toast Notifications -->
-    <div class="toast-container">
+    <div class="toast-container" aria-live="polite" aria-atomic="false" role="status">
       <transition-group name="toast">
         <div
           v-for="t in toast.toasts.value"
@@ -70,7 +76,7 @@ watch(() => store.error, (newError) => {
             {{ t.type === 'success' ? '✅' : t.type === 'error' ? '❌' : t.type === 'warning' ? '⚠️' : 'ℹ️' }}
           </span>
           <span class="toast-message">{{ t.message }}</span>
-          <button class="toast-close" @click.stop="toast.removeToast(t.id)">✕</button>
+          <button class="toast-close" @click.stop="toast.removeToast(t.id)" aria-label="关闭通知">✕</button>
         </div>
       </transition-group>
     </div>
@@ -113,6 +119,7 @@ watch(() => store.error, (newError) => {
           class="btn btn-ghost btn-sm header-btn"
           @click="toggleDark"
           :title="isDark ? '切换亮色' : '切换暗色'"
+          :aria-label="isDark ? '切换亮色主题' : '切换暗色主题'"
         >
           {{ isDark ? '☀️' : '🌙' }}
         </button>
@@ -121,6 +128,7 @@ watch(() => store.error, (newError) => {
           :class="{ 'is-spinning': isRefreshing }"
           @click="refreshAll"
           title="刷新数据"
+          aria-label="刷新所有数据"
         >
           <span class="refresh-icon">🔄</span>
         </button>
@@ -129,6 +137,8 @@ watch(() => store.error, (newError) => {
           :class="{ active: isThreeColumn }"
           @click="isThreeColumn = !isThreeColumn"
           :title="isThreeColumn ? '单栏布局' : '三栏布局'"
+          :aria-label="isThreeColumn ? '切换到单栏布局' : '切换到三栏布局'"
+          :aria-pressed="isThreeColumn"
         >
           {{ isThreeColumn ? '◫' : '☰' }}
         </button>
@@ -161,7 +171,7 @@ watch(() => store.error, (newError) => {
     </nav>
 
     <!-- Main Content -->
-    <main class="app-main" :class="{ 'three-column': isThreeColumn }">
+    <main id="main-content" class="app-main" :class="{ 'three-column': isThreeColumn }" role="main">
       <!-- Left Panel: Quick Stats (three-column mode only) -->
       <aside v-if="isThreeColumn" class="side-panel side-panel-left">
         <div class="side-panel-header">
@@ -247,6 +257,28 @@ watch(() => store.error, (newError) => {
 </template>
 
 <style scoped>
+/* ── Accessibility: Skip to Content ──────────────────────────── */
+.skip-to-content {
+  position: absolute;
+  top: -100px;
+  left: var(--space-md);
+  background: var(--primary);
+  color: white;
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  font-size: var(--text-md);
+  font-weight: 500;
+  z-index: 9999;
+  transition: top 0.2s ease;
+  text-decoration: none;
+}
+
+.skip-to-content:focus {
+  top: 0;
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+
 .app-layout {
   min-height: 100vh;
   display: flex;

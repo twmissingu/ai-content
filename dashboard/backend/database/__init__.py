@@ -56,6 +56,7 @@ from .traces import (
     get_trace_summaries_batch,
     get_trace_summary,
     get_traces,
+    import_trail_record,
     trace_stage,
     update_trace_duration,
 )
@@ -92,7 +93,7 @@ __all__ = [
     # Config
     'get_all_config', 'get_config_value', 'get_pending_config', 'set_config_value',
     # Traces
-    'complete_trace', 'create_trace', 'get_trace_summaries_batch', 'get_trace_summary', 'get_traces', 'trace_stage', 'update_trace_duration',
+    'complete_trace', 'create_trace', 'get_trace_summaries_batch', 'get_trace_summary', 'get_traces', 'import_trail_record', 'trace_stage', 'update_trace_duration',
     # Prompts
     'activate_prompt', 'delete_prompt_version', 'get_prompt', 'import_prompts_from_files',
     'list_prompt_versions', 'list_prompts', 'save_prompt',

@@ -93,8 +93,9 @@ def _apply_writer_paths(monkeypatch, dirs):
     import config.settings
     import skills.writer as wmod
     import skills.writer_stages as wsmod
+    import skills.writer_helpers as whmod
     import skills.action as amod
-    for mod in (config.settings, wmod, wsmod, amod):
+    for mod in (config.settings, wmod, wsmod, whmod, amod):
         _PATH_MAP = {
             "PENDING_DIR": "pending", "REVIEW_DIR": "review",
             "STATUS_DIR": "status", "ACTIONS_DIR": "actions",
@@ -150,7 +151,7 @@ class TestWriterAgentFullPipeline:
         agent._proofread = MagicMock(return_value=("审校后的文章内容。" * 50, 85))
         agent._critique = MagicMock(return_value=("批评修订后的内容。" * 50, 85, True))
         agent._format = MagicMock(return_value=stage_format("格式化后的文章内容。" * 50))
-        mock_titles = ({"title": "最佳标题", "score": 88, "rationale": "吸引人"}, [
+        mock_titles = ("最佳标题", [
             {"title": "最佳标题", "score": 88, "rationale": "好"},
             {"title": "第二标题", "score": 80, "rationale": "一般"},
         ])

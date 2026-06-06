@@ -184,7 +184,30 @@ class TestApprovalActDB:
         assert resp.status_code == 200
         assert recorded.get("action") == "reject"
 
-    def test_db_target_partial_on_error(self, client, monkeypatch):
+    def test_db_target_returns_500_on_db_error(self, client, monkeypatch, tmp_path):
+        """DEV-002: DB update failure must return 500 and NOT write an action file."""
+        actions_dir = tmp_path / "queue" / "actions"
+
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.update_platform_version",
+            lambda **kw: (_ for _ in ()).throw(Exception("DB write failed")),
+        )
+        resp = client.post("/api/approval/act", json={
+            "action": "approve",
+            "target_id": "db_42",
+        })
+        assert resp.status_code == 500
+        # Verify no action file was written
+        assert list(actions_dir.glob("*")) == []
+
+    def test_db_target_returns_500_on_approval_record_error(self, client, monkeypatch, tmp_path):
+        """DEV-002: create_approval_record failure must also block action file."""
+        actions_dir = tmp_path / "queue" / "actions"
+
+        monkeypatch.setattr(
+            "dashboard.backend.routes.approval.update_platform_version",
+            lambda **kw: None,
+        )
         monkeypatch.setattr(
             "dashboard.backend.routes.approval.create_approval_record",
             lambda **kw: (_ for _ in ()).throw(Exception("DB write failed")),
@@ -193,10 +216,18 @@ class TestApprovalActDB:
             "action": "approve",
             "target_id": "db_42",
         })
+        assert resp.status_code == 500
+        # Verify no action file was written
+        assert list(actions_dir.glob("*")) == []
+
+    def test_non_db_target_still_works_on_error(self, client, monkeypatch):
+        """Non-db_ targets should not be affected by the fix -- they have no DB ops."""
+        resp = client.post("/api/approval/act", json={
+            "action": "approve",
+            "target_id": "test-article-001",
+        })
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["status"] == "partial"
-        assert "warning" in data
+        assert resp.json()["status"] == "ok"
 
 
 class TestApproveVersion:

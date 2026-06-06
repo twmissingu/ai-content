@@ -310,6 +310,136 @@ class TestFetchSource:
         assert "抓取失败" in result
 
 
+class TestFetchSourceSSRF:
+    """Test SSRF protection in fetch_source (fail-closed on DNS errors)."""
+
+    def test_gaierror_blocks_fetch(self):
+        """DNS resolution failure must block fetch, not bypass SSRF check.
+
+        DEV-001: gaierror was silently swallowed (fail-open), allowing
+        fetch to proceed without SSRF validation. Must return blocking message.
+        """
+        import socket
+        from skills.writer_stages import fetch_source
+
+        logger = MagicMock()
+
+        with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name resolution failed")):
+            result = fetch_source("https://unresolvable-domain.invalid", logger=logger)
+
+        assert "DNS" in result or "抓取失败" in result, (
+            f"gaierror should produce a blocking message, got: {result}"
+        )
+        # Verify the fetch was NOT attempted (no subprocess.run call)
+        logger.warning.assert_called()
+
+    def test_gaierror_does_not_proceed_to_fetch(self):
+        """Ensure subprocess.run is never called when DNS fails."""
+        import socket
+        import subprocess
+        from skills.writer_stages import fetch_source
+
+        with patch("socket.getaddrinfo", side_effect=socket.gaierror("NXDOMAIN")), \
+             patch.object(subprocess, "run") as mock_run:
+            result = fetch_source("https://no-such-host.example")
+
+        mock_run.assert_not_called()
+        assert "抓取失败" in result or "DNS" in result
+
+    def test_private_ip_still_blocked(self):
+        """Verify existing private-IP blocking still works after refactor."""
+        import socket
+        from skills.writer_stages import fetch_source
+
+        # getaddrinfo returns a private IP
+        fake_addr = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('192.168.1.1', 0))]
+        with patch("socket.getaddrinfo", return_value=fake_addr):
+            result = fetch_source("http://internal.host/api")
+
+        assert "内网" in result
+
+    def test_loopback_ip_still_blocked(self):
+        """Verify loopback IP blocking still works after refactor."""
+        import socket
+        from skills.writer_stages import fetch_source
+
+        fake_addr = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('127.0.0.1', 0))]
+        with patch("socket.getaddrinfo", return_value=fake_addr):
+            result = fetch_source("http://local.example/secret")
+
+        assert "内网" in result or "本地" in result
+
+    def test_public_ip_passes_ssrf(self):
+        """Public IP should pass SSRF check and proceed to fetch."""
+        import socket
+        import subprocess
+        from skills.writer_stages import fetch_source
+
+        fake_addr = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', 0))]
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Public content"
+
+        with patch("socket.getaddrinfo", return_value=fake_addr), \
+             patch.object(subprocess, "run", return_value=mock_result):
+            result = fetch_source("https://example.com/article")
+
+        assert "Public content" in result
+
+
+class TestSSRFProtectionViaAgent:
+    """Test SSRF protection through WriterAgent._fetch_source wrapper.
+
+    These tests verify the agent-level interface delegates SSRF checks correctly.
+    Complements TestFetchSourceSSRF which tests writer_stages.fetch_source directly.
+    """
+
+    def test_ssrf_blocks_private_ip(self, writer_agent):
+        """192.168.x.x must return a blocking message via agent interface."""
+        import socket
+
+        fake_addr = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('192.168.1.100', 0))]
+        with patch("socket.getaddrinfo", return_value=fake_addr):
+            result = writer_agent._fetch_source("http://internal.corp/api")
+
+        assert "内网" in result or "抓取失败" in result
+
+    def test_ssrf_blocks_localhost(self, writer_agent):
+        """127.0.0.1 must return a blocking message via agent interface."""
+        import socket
+
+        fake_addr = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('127.0.0.1', 0))]
+        with patch("socket.getaddrinfo", return_value=fake_addr):
+            result = writer_agent._fetch_source("http://localhost:8080/admin")
+
+        assert "本地" in result or "内网" in result or "抓取失败" in result
+
+    def test_ssrf_blocks_dns_failure(self, writer_agent):
+        """getaddrinfo gaierror must return a blocking message (fail-closed)."""
+        import socket
+
+        with patch("socket.getaddrinfo", side_effect=socket.gaierror("NXDOMAIN")):
+            result = writer_agent._fetch_source("https://no-such-host.invalid")
+
+        assert "DNS" in result or "抓取失败" in result
+
+    def test_ssrf_allows_public_url(self, writer_agent):
+        """Normal public URL should pass SSRF check and proceed to fetch."""
+        import socket
+        import subprocess
+
+        fake_addr = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', 0))]
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Public article content here"
+
+        with patch("socket.getaddrinfo", return_value=fake_addr), \
+             patch.object(subprocess, "run", return_value=mock_result):
+            result = writer_agent._fetch_source("https://example.com/article")
+
+        assert "Public article content" in result
+
+
 class TestLoadAISlopPatterns:
     """Test _load_ai_slop_patterns method."""
 

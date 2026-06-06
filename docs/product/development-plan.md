@@ -1,7 +1,7 @@
 # 开发计划书 — 稿定（AI 内容生产系统）
 
 > 基于 PRD v1.5
-> **当前状态：v0.8.0（Phase 1-3 基本完成，Phase 4 进行中，详见 [CHANGELOG.md](../../CHANGELOG.md)）**
+> **当前状态：v0.8.1（Phase 1-3 已完成，Phase 4 进行中，详见 [CHANGELOG.md](../../CHANGELOG.md)）**
 > 环境状态：Hermes v0.14.0 已安装，Python 3.14.5/Node v26 就绪
 
 ---
@@ -18,7 +18,7 @@ Phase 0 ─→ Phase 1 ─→ Phase 2 ─→ Phase 3 ─→ Phase 4
 | 0 | 基础设施 PoC（Hermes 验证 + 目录结构 + 外部依赖） | ✅ 已完成 |
 | 1 | 核心管线（Scout + Writer + Publisher 基础） | ✅ 已完成 |
 | 2 | Web Dashboard（FastAPI + Vue 3，7 视图） | ✅ 已完成 |
-| 3 | 增强完善（Feedback + 头条号 + 并行 Writer + 信源优化） | 🔄 基本完成（超时自动处理等 P0 项待收尾） |
+| 3 | 增强完善（Feedback + 头条号 + 并行 Writer + 信源优化 + 超时自动处理） | ✅ 已完成 |
 | 4 | 视频阶段（抖音标准 + 视频分发） | 🔄 进行中 |
 
 ---
@@ -67,8 +67,8 @@ Knowledge Agent（Python）→ 归档到 kb/history/
 
 | 模块 | 功能 |
 |------|------|
-| database/ | SQLite 数据层（7 个领域模块：core/sessions/versions/tokens/config_ops/traces/prompts） |
-| routes/ | 11 个路由模块（pipeline/approval/topics/data/kb/config/health/traces/prompts/reader/sources） |
+| database/ | SQLite 数据层（8 个领域模块：core/sessions/versions/tokens/config_ops/traces/prompts/manual_reviews） |
+| routes/ | 12 个路由模块（pipeline/approval/topics/data/kb/config/health/traces/prompts/reader/reviews/sources） |
 | auth.py | API Key 认证（hmac.compare_digest 时序安全） |
 | background.py | 后台任务（action 扫描、预算监控） |
 | ws.py | WebSocket 实时推送（/ws/pipeline） |
@@ -103,9 +103,9 @@ Knowledge Agent（Python）→ 归档到 kb/history/
 | 信源文章优化 | P0-P3 共 13 项 | ✅ 已完成 |
 | 知识库增强 | LLM 关键词提取 + 摘要生成 + INDEX.md 更新 | ✅ 已完成 |
 | 临时选题入口 | Dashboard 粘贴 URL 或写 Markdown 到 queue/pending/ | ✅ 已完成 |
-| 超时自动处理 | 选题 30 分未确认自动选最高分、审批 2 小时未响应跳过 | ⏳ 待实现（P0） |
+| 超时自动处理 | 选题 30 分未确认自动选最高分、审批 2 小时未响应跳过 | ✅ 已完成 |
 | 免打扰时段 | 通知静默配置 + 非静默时段排队发送 | ⏳ 待实现 |
-| 人工抽检 | 每周 3 篇人工评分 vs LLM 评分对比，偏差 > 15% 告警 | ⏳ 待实现 |
+| 人工抽检 | 每周 3 篇人工评分 vs LLM 评分对比，偏差 > 15% 告警 | ✅ 已完成 |
 | 数据备份 | SQLite 每小时备份 + 72h 保留 + 每周恢复验证 | ⏳ 待实现 |
 
 ---
@@ -148,11 +148,11 @@ Knowledge Agent（Python）→ 归档到 kb/history/
 
 | 优先级 | 任务 | 说明 | 预估 |
 |--------|------|------|------|
-| P0 | 超时自动处理 | 选题 30 分未确认自动选最高分、审批 2 小时未响应跳过 | 1 天 |
+| P0 | ~~超时自动处理~~ | ~~选题 30 分未确认自动选最高分、审批 2 小时未响应跳过~~ ✅ 已完成 | — |
 | P0 | 数据备份 | SQLite 每小时备份 + 72h 保留 + 恢复验证 | 0.5 天 |
 | P1 | X KOL 分级 | 8 档 X KOL 分级权重，扩展信源采集 | 2 天 |
 | P1 | 免打扰时段 | 通知静默配置 + 排队发送 | 0.5 天 |
-| P1 | 人工抽检 | Dashboard 人工评分 + LLM 对比 + 偏差告警 | 0.5 天 |
+| P1 | ~~人工抽检~~ | ~~Dashboard 人工评分 + LLM 对比 + 偏差告警~~ ✅ 已完成 | — |
 | P2 | 前端 E2E 测试 | Playwright 覆盖 SourcesView / ReaderPanel / 三栏布局 | 1 天 |
 | P3 | 平台适配引擎 | 各平台独立格式适配规则 | 3 天 |
 | P3 | 选题竞争度分析 | 热度 + 饱和度二维评估 | 1 天 |

@@ -106,7 +106,7 @@ def review_statistics():
         return stats
     except Exception as e:
         logger.error(f"Error getting review stats: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="获取统计数据失败")
 
 
 @router.get("/pending")
@@ -121,4 +121,4 @@ def pending_reviews(limit: int = 10):
         return {"articles": articles, "total": len(articles)}
     except Exception as e:
         logger.error(f"Error getting pending reviews: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="获取待审文章失败")

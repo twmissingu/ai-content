@@ -79,6 +79,7 @@ class TestWriterIntegration:
 
         import config.settings
         import skills.writer as writer_mod
+        import skills.writer_helpers as helpers_mod
         monkeypatch.setattr(config.settings, 'PENDING_DIR', temp_dirs['pending'])
         monkeypatch.setattr(config.settings, 'REVIEW_DIR', temp_dirs['review'])
         monkeypatch.setattr(config.settings, 'STATUS_DIR', temp_dirs['status'])
@@ -87,6 +88,8 @@ class TestWriterIntegration:
         monkeypatch.setattr(writer_mod, 'REVIEW_DIR', temp_dirs['review'])
         monkeypatch.setattr(writer_mod, 'STATUS_DIR', temp_dirs['status'])
         monkeypatch.setattr(writer_mod, 'ACTIONS_DIR', temp_dirs['actions'])
+        monkeypatch.setattr(helpers_mod, 'REVIEW_DIR', temp_dirs['review'])
+        monkeypatch.setattr(helpers_mod, 'ACTIONS_DIR', temp_dirs['actions'])
 
         # Run writer
         from skills.writer import WriterAgent
@@ -138,6 +141,7 @@ class TestWriterIntegration:
 
         import config.settings
         import skills.writer as writer_mod
+        import skills.writer_helpers as helpers_mod
         monkeypatch.setattr(config.settings, 'PENDING_DIR', temp_dirs['pending'])
         monkeypatch.setattr(config.settings, 'REVIEW_DIR', temp_dirs['review'])
         monkeypatch.setattr(config.settings, 'STATUS_DIR', temp_dirs['status'])
@@ -146,6 +150,8 @@ class TestWriterIntegration:
         monkeypatch.setattr(writer_mod, 'REVIEW_DIR', temp_dirs['review'])
         monkeypatch.setattr(writer_mod, 'STATUS_DIR', temp_dirs['status'])
         monkeypatch.setattr(writer_mod, 'ACTIONS_DIR', temp_dirs['actions'])
+        monkeypatch.setattr(helpers_mod, 'REVIEW_DIR', temp_dirs['review'])
+        monkeypatch.setattr(helpers_mod, 'ACTIONS_DIR', temp_dirs['actions'])
 
         # Run writer
         from skills.writer import WriterAgent

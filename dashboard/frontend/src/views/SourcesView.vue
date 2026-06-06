@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
+import { useKeyboardShortcut, isInputElement } from '../composables/useKeyboardShortcut'
 import { API_BASE } from '../utils/api'
 
 
@@ -119,6 +120,17 @@ function truncate(text: string, max: number = 80): string {
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize))
 
+// ── Keyboard shortcuts ──────────────────────────────────────────────
+function handleKeydown(e: KeyboardEvent) {
+  if (isInputElement(e.target)) return
+  if (e.key === 'r' || e.key === 'R') {
+    fetchItems()
+    fetchStats()
+  }
+}
+
+useKeyboardShortcut(handleKeydown)
+
 onMounted(() => {
   fetchItems()
   fetchStats()
@@ -133,7 +145,7 @@ onMounted(() => {
         <h2 class="page-title">信源流</h2>
         <p class="page-subtitle">Scout 采集的原始信源数据</p>
       </div>
-      <button class="btn btn-ghost btn-sm" @click="fetchItems(); fetchStats()">刷新</button>
+      <button class="btn btn-ghost btn-sm" @click="fetchItems(); fetchStats()" aria-label="刷新信源数据">刷新</button>
     </div>
 
     <!-- Stats Cards -->
@@ -193,7 +205,7 @@ onMounted(() => {
 
     <!-- Table -->
     <div v-else-if="items.length > 0" class="card table-wrapper">
-      <table class="sources-table">
+      <table class="sources-table" aria-label="信源数据列表">
         <thead>
           <tr>
             <th>标题</th>
@@ -248,6 +260,11 @@ onMounted(() => {
       <button class="btn btn-ghost btn-sm" :disabled="currentPage <= 1" @click="currentPage--; fetchItems()">上一页</button>
       <span class="page-info">{{ currentPage }} / {{ totalPages }}</span>
       <button class="btn btn-ghost btn-sm" :disabled="currentPage >= totalPages" @click="currentPage++; fetchItems()">下一页</button>
+    </div>
+
+    <!-- Keyboard Shortcuts Hint -->
+    <div class="keyboard-hints" role="region" aria-label="快捷键说明">
+      <div class="hint-item"><kbd>R</kbd><span>刷新</span></div>
     </div>
   </div>
 </template>
@@ -518,4 +535,6 @@ onMounted(() => {
     align-items: flex-start;
   }
 }
+
+
 </style>

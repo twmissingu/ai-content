@@ -9,6 +9,7 @@
 import { computed, ref, onMounted } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
 import { useToast } from '../composables/useToast'
+import { useKeyboardShortcut, isInputElement } from '../composables/useKeyboardShortcut'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import PipelineTriggerPanel from '../components/PipelineTriggerPanel.vue'
@@ -86,6 +87,16 @@ function getProgressColor(pct: number): string {
   if (pct >= 60) return 'primary'
   return 'warning'
 }
+
+// ── Keyboard shortcuts ──────────────────────────────────────────────
+function handleKeydown(e: KeyboardEvent) {
+  if (isInputElement(e.target)) return
+  if (e.key === 'r' || e.key === 'R') {
+    store.fetchPipeline()
+  }
+}
+
+useKeyboardShortcut(handleKeydown)
 
 // ── Lifecycle ────────────────────────────────────────────────────
 onMounted(() => {
@@ -286,6 +297,11 @@ onMounted(() => {
         </button>
       </div>
     </div>
+
+    <!-- Keyboard Shortcuts Hint -->
+    <div class="keyboard-hints" role="region" aria-label="快捷键说明">
+      <div class="hint-item"><kbd>R</kbd><span>刷新</span></div>
+    </div>
   </div>
 </template>
 
@@ -374,4 +390,6 @@ onMounted(() => {
   .pending-item { flex-direction: column; align-items: flex-start; }
   .pending-actions { width: 100%; justify-content: flex-end; }
 }
+
+
 </style>

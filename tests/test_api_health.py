@@ -163,3 +163,77 @@ class TestHealthDegraded:
         resp = client.get("/api/health")
         data = resp.json()
         assert data["status"] == "warning"
+
+
+class TestMetrics:
+    """Tests for /api/metrics endpoint."""
+
+    def test_metrics_returns_ok(self, client):
+        resp = client.get("/api/metrics")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "uptime_seconds" in data
+        assert "timestamp" in data
+        assert "database" in data
+        assert "queue" in data
+        assert "budget" in data
+        assert "disk" in data
+        assert "agents" in data
+
+    def test_metrics_uptime_positive(self, client):
+        resp = client.get("/api/metrics")
+        data = resp.json()
+        assert data["uptime_seconds"] >= 0
+
+    def test_metrics_queue_sizes(self, client):
+        resp = client.get("/api/metrics")
+        data = resp.json()
+        queue = data["queue"]
+        assert "pending" in queue
+        assert "review" in queue
+        assert "actions" in queue
+        assert "failed" in queue
+        assert queue["pending"] >= 1  # We created a test topic
+
+    def test_metrics_database_ok(self, client):
+        resp = client.get("/api/metrics")
+        data = resp.json()
+        assert data["database"] == "ok"
+
+    def test_metrics_database_error(self, client, monkeypatch):
+        def failing_get_db():
+            ctx = MagicMock()
+            ctx.__enter__ = MagicMock(side_effect=Exception("connection refused"))
+            ctx.__exit__ = MagicMock(return_value=False)
+            return ctx
+        monkeypatch.setattr("dashboard.backend.routes.health.get_db", failing_get_db)
+        resp = client.get("/api/metrics")
+        data = resp.json()
+        assert data["database"] == "error"
+
+
+class TestMetricsSummary:
+    """Tests for /api/metrics/summary endpoint."""
+
+    def test_summary_returns_ok(self, client):
+        resp = client.get("/api/metrics/summary")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert "uptime" in data
+        assert "queue_total" in data
+        assert "queue_breakdown" in data
+        assert "disk_free_gb" in data
+        assert "disk_used_pct" in data
+
+    def test_summary_uptime_format(self, client):
+        resp = client.get("/api/metrics/summary")
+        data = resp.json()
+        # Uptime should be like "0h 1m" or "1h 30m"
+        assert "h" in data["uptime"]
+        assert "m" in data["uptime"]
+
+    def test_summary_queue_total(self, client):
+        resp = client.get("/api/metrics/summary")
+        data = resp.json()
+        assert data["queue_total"] >= 1  # We created a test topic

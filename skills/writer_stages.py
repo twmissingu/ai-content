@@ -114,36 +114,59 @@ def sanitize_text(text: Optional[str], max_length: int = 500) -> str:
 
 # ── Stage 1: Fetch source ──────────────────────────────────────────
 
+def _check_ssrf(url: str, logger=None) -> Optional[str]:
+    """Validate URL against SSRF attacks. Returns None if safe, error message if blocked.
+
+    Fail-closed: any DNS or validation error blocks the request.
+    """
+    from urllib.parse import urlparse
+    import ipaddress as _ipaddress
+    import socket as _socket
+
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if not hostname:
+        if logger:
+            logger.warning(f"Blocked fetch to URL with no hostname: {url}")
+        return "[原文抓取失败：URL 格式无效]"
+
+    # Block well-known local addresses
+    if hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+        if logger:
+            logger.warning(f"Blocked fetch to localhost: {url}")
+        return "[原文抓取失败：禁止访问本地地址]"
+
+    # Resolve hostname and check resolved IPs (fail-closed on DNS errors)
+    try:
+        resolved = _socket.getaddrinfo(hostname, None)
+    except _socket.gaierror:
+        if logger:
+            logger.warning(f"DNS resolution failed for {url}")
+        return "[原文抓取失败：DNS 解析失败]"
+    except Exception as e:
+        if logger:
+            logger.warning(f"SSRF DNS check error for {url}: {e}")
+        return "[原文抓取失败：DNS 解析异常]"
+
+    for family, _, _, _, sockaddr in resolved:
+        ip = _ipaddress.ip_address(sockaddr[0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local:
+            if logger:
+                logger.warning(f"Blocked fetch to private IP {ip}: {url}")
+            return "[原文抓取失败：禁止访问内网地址]"
+
+    return None
+
+
 def fetch_source(url: str, logger=None) -> str:
     """Stage 1: Fetch source material from URL via Firecrawl."""
     if not url:
         return "无原文链接。将仅基于选题方向生成内容。"
 
-    # SSRF protection: block private/internal IPs
-    try:
-        from urllib.parse import urlparse
-        import ipaddress as _ipaddress
-        import socket as _socket
-        parsed = urlparse(url)
-        hostname = parsed.hostname
-        if hostname:
-            if hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
-                if logger:
-                    logger.warning(f"Blocked fetch to localhost: {url}")
-                return "[原文抓取失败：禁止访问本地地址]"
-            try:
-                resolved = _socket.getaddrinfo(hostname, None)
-                for family, _, _, _, sockaddr in resolved:
-                    ip = _ipaddress.ip_address(sockaddr[0])
-                    if ip.is_private or ip.is_loopback or ip.is_link_local:
-                        if logger:
-                            logger.warning(f"Blocked fetch to private IP {ip}: {url}")
-                        return "[原文抓取失败：禁止访问内网地址]"
-            except _socket.gaierror:
-                pass
-    except Exception as e:
-        if logger:
-            logger.debug(f"SSRF check failed for {url}: {e}")
+    # SSRF protection: fail-closed on any error
+    ssrf_block = _check_ssrf(url, logger)
+    if ssrf_block:
+        return ssrf_block
 
     try:
         result = subprocess.run(

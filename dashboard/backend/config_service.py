@@ -100,6 +100,8 @@ def get_default_quality_gates() -> dict:
         "max_rewrite_rounds": MAX_REWRITE_ROUNDS,
         "auto_approve_threshold": 90,
         "reject_threshold": 40,
+        "topic_timeout_minutes": 30,
+        "approval_timeout_minutes": 120,
     }
 
 
