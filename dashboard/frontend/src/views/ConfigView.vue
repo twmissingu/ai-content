@@ -277,19 +277,25 @@ onMounted(() => {
 .config-view {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xl);
+  gap: var(--space-2xl);
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: var(--space-lg);
+  padding: var(--space-xl);
+  background: rgba(255, 253, 248, 0.58);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-2xl);
 }
 
 .page-title {
   font-size: var(--text-3xl);
-  font-weight: 600;
+  font-weight: 650;
   color: var(--text-primary);
+  letter-spacing: -0.025em;
   margin: 0 0 var(--space-xs) 0;
 }
 
@@ -308,12 +314,15 @@ onMounted(() => {
 
 .card-title {
   font-size: var(--text-lg);
-  font-weight: 600;
+  font-weight: 650;
   color: var(--text-primary);
   margin: 0;
 }
 
-.card-count {
+.card-count,
+.prompt-meta,
+.editor-meta,
+.version-date {
   font-size: var(--text-sm);
   color: var(--text-tertiary);
 }
@@ -324,55 +333,60 @@ onMounted(() => {
   gap: var(--space-sm);
 }
 
-.prompt-item {
+.prompt-item,
+.prompt-item-skeleton,
+.version-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: var(--space-md) var(--space-lg);
-  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  border-radius: var(--radius-xl);
+}
+
+.prompt-item {
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: border-color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
 }
 
 .prompt-item:hover {
-  background: var(--bg-hover);
+  background: rgba(248, 244, 236, 0.62);
+  border-color: var(--border-light);
 }
 
 .prompt-item.active {
   background: var(--primary-light);
-  border: 1px solid var(--primary);
+  border-color: rgba(77, 100, 117, 0.24);
+  transform: translateX(2px);
 }
 
 .prompt-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  min-width: 0;
+}
+
+.prompt-name,
+.editor-title,
+.version-num {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
 }
 
 .prompt-name {
-  font-weight: 500;
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-}
-
-.prompt-meta {
-  font-size: var(--text-sm);
-  color: var(--text-tertiary);
-}
-
-.prompt-badge {
-  font-size: var(--text-xs);
   font-weight: 600;
-  color: var(--primary);
-  background: var(--primary-light);
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
 }
 
-.prompt-item-skeleton {
-  display: flex;
-  justify-content: space-between;
-  padding: var(--space-md) var(--space-lg);
+.prompt-badge,
+.version-active {
+  padding: 2px 8px;
+  border: 1px solid rgba(77, 100, 117, 0.18);
+  border-radius: var(--radius-full);
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  font-size: var(--text-xs);
+  font-weight: 650;
 }
 
 .empty-state {
@@ -382,11 +396,14 @@ onMounted(() => {
   gap: var(--space-md);
   padding: var(--space-2xl);
   color: var(--text-tertiary);
+  background-image: var(--paper-grain);
+  background-size: 8px 8px;
 }
 
 .empty-icon {
-  font-size: 48px;
-  opacity: 0.5;
+  font-size: 44px;
+  opacity: 0.52;
+  filter: grayscale(0.18);
 }
 
 .empty-text {
@@ -394,7 +411,8 @@ onMounted(() => {
 }
 
 .editor-card {
-  border: 1px solid var(--primary);
+  border-color: rgba(77, 100, 117, 0.26);
+  background: var(--surface-glow);
 }
 
 .editor-header {
@@ -406,34 +424,31 @@ onMounted(() => {
 
 .editor-title {
   font-size: var(--text-lg);
-  font-weight: 600;
-  font-family: var(--font-mono);
-  color: var(--text-primary);
+  font-weight: 650;
   margin: 0 0 var(--space-xs) 0;
-}
-
-.editor-meta {
-  font-size: var(--text-sm);
-  color: var(--text-tertiary);
 }
 
 .prompt-textarea {
   width: 100%;
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  line-height: 1.6;
-  padding: var(--space-md);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  background: var(--bg-hover);
+  line-height: 1.75;
+  padding: var(--space-lg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xl);
+  background: rgba(248, 244, 236, 0.58);
+  background-image: var(--paper-grain);
+  background-size: 8px 8px;
   color: var(--text-primary);
   resize: vertical;
   outline: none;
-  transition: border-color var(--transition-fast);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
 }
 
 .prompt-textarea:focus {
   border-color: var(--primary);
+  background-color: rgba(255, 253, 248, 0.86);
+  box-shadow: 0 0 0 3px rgba(77, 100, 117, 0.1);
 }
 
 .editor-actions {
@@ -451,7 +466,7 @@ onMounted(() => {
 
 .version-title {
   font-size: var(--text-md);
-  font-weight: 600;
+  font-weight: 650;
   color: var(--text-primary);
   margin: 0 0 var(--space-md) 0;
 }
@@ -463,12 +478,8 @@ onMounted(() => {
 }
 
 .version-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-md);
   font-size: var(--text-sm);
+  background: rgba(248, 244, 236, 0.46);
 }
 
 .version-item.active {
@@ -482,27 +493,29 @@ onMounted(() => {
 }
 
 .version-num {
-  font-weight: 600;
-  font-family: var(--font-mono);
-  color: var(--text-primary);
-}
-
-.version-date {
-  color: var(--text-tertiary);
+  font-weight: 650;
 }
 
 .version-active {
-  font-size: var(--text-xs);
-  font-weight: 600;
   color: var(--success);
   background: var(--success-light);
-  padding: 1px 6px;
-  border-radius: var(--radius-full);
+  border-color: rgba(95, 127, 101, 0.2);
 }
 
 .btn-xs {
-  padding: 2px 6px;
+  padding: 3px 8px;
   font-size: var(--text-xs);
+}
+
+.slide-enter-active,
+.slide-leave-active {
+  transition: opacity var(--transition-normal), transform var(--transition-normal);
+}
+
+.slide-enter-from,
+.slide-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
 }
 
 @media (max-width: 768px) {
@@ -510,7 +523,12 @@ onMounted(() => {
     flex-direction: column;
     gap: var(--space-md);
   }
+
+  .prompt-item,
+  .version-item {
+    align-items: flex-start;
+    gap: var(--space-sm);
+    flex-direction: column;
+  }
 }
-
-
 </style>

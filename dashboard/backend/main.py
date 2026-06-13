@@ -129,9 +129,12 @@ def _get_cors_origins() -> list[str]:
         return default_origins
     origins = [o.strip() for o in env_value.split(",") if o.strip()]
     environment = os.getenv("ENV", os.getenv("NODE_ENV", "development"))
-    if "*" in origins and environment == "production":
-        logger.warning("CORS_ORIGINS='*' blocked in production — using default origins")
-        return default_origins
+    if "*" in origins:
+        if environment == "production":
+            logger.warning("CORS_ORIGINS='*' blocked in production — using default origins")
+            return default_origins
+        else:
+            logger.warning("CORS_ORIGINS='*' detected — credentials will be disabled for wildcard")
     valid_origins = []
     for origin in origins:
         if origin == "*":
@@ -185,16 +188,19 @@ async def lifespan(app: FastAPI):
     ws_manager.stop_watcher()
     stop_all_pollers()
     shutdown_db_connections()
+    from skills.llm import close_cache_connections
+    close_cache_connections()
     logger.info("Background tasks stopped")
 
 
+_env = os.getenv("ENV", os.getenv("NODE_ENV", "development"))
 app = FastAPI(
     title="稿定 Dashboard",
     description="稿定 AI 内容生产系统 — 自动化从选题发现到多平台分发的完整流程",
     version="0.9.9",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json",
+    docs_url="/api/docs" if _env != "production" else None,
+    redoc_url="/api/redoc" if _env != "production" else None,
+    openapi_url="/api/openapi.json" if _env != "production" else None,
     lifespan=lifespan,
 )
 
@@ -207,10 +213,11 @@ app.add_middleware(
     AuthMiddleware,
     api_key=os.getenv("API_KEY"),
 )
+_cors_origins = _get_cors_origins()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_get_cors_origins(),
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=("*" not in _cors_origins),  # credentials + wildcard is unsafe
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Content-Type", "Authorization", "X-API-Key"],
 )

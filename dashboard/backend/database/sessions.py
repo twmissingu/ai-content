@@ -86,6 +86,15 @@ def get_pipeline_sessions(
         }
 
 
+def get_pipeline_session_by_id(session_id: int) -> Optional[dict]:
+    """Get a single pipeline session by ID."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM pipeline_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
 def get_today_sessions() -> list[dict]:
     """Get today's pipeline sessions."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")

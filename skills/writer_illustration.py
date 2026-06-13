@@ -187,17 +187,21 @@ def generate_images_agnes(
     tasks = [(i, p) for i, p in enumerate(prompts) if p]
     if not tasks:
         return []
-    paths: list[str] = []
-    with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+    # Cap max_workers to avoid overwhelming external APIs
+    max_workers = min(len(tasks), 4)
+    results: dict[int, str] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(_generate_one, i, p): i for i, p in tasks
         }
         for future in as_completed(futures):
+            idx = futures[future]
             result = future.result()
             if result is not None:
-                paths.append(result)
+                results[idx] = result
 
-    return paths
+    # Return paths in original prompt order (cover first, then inline)
+    return [results[i] for i in sorted(results.keys())]
 
 
 def illustrate(

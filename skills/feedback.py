@@ -154,12 +154,56 @@ class FeedbackAgent(AgentBase):
 
     # ── Step 4: Update knowledge base ─────────────────────────────
     def _update_viral_kb(self, viral: dict):
-        """Write viral insights to kb/viral/."""
+        """Write viral insights to kb/viral/ and update hit_library."""
         VIRAL_DIR.mkdir(parents=True, exist_ok=True)
         path = VIRAL_DIR / f"viral_{self._run_date}.json"
         from skills.common import atomic_write_json
         atomic_write_json(path, viral)
         self.logger.info(f"Viral data written: {path}")
+
+        # Update hit_library.json for Scout integration
+        self._update_hit_library(viral)
+
+    def _update_hit_library(self, viral: dict):
+        """Update hit_library.json with keywords and patterns for Scout scoring."""
+        from config.settings import CONFIG_DIR
+
+        hit_library_path = CONFIG_DIR / "hit_library.json"
+        existing = {}
+        if hit_library_path.exists():
+            try:
+                existing = json.loads(hit_library_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                existing = {}
+
+        # Merge keywords (keep top 50)
+        existing_keywords = set(existing.get("keywords", []))
+        new_keywords = {kw["word"] for kw in viral.get("top_keywords", [])}
+        all_keywords = list(existing_keywords | new_keywords)[:50]
+
+        # Merge title patterns
+        existing_patterns = existing.get("title_patterns", [])
+        new_patterns = list(viral.get("title_patterns", {}).keys())
+        all_patterns = list(set(existing_patterns + new_patterns))[:10]
+
+        # Update topic directions with performance data
+        existing_directions = existing.get("topic_directions", {})
+        for direction, count in viral.get("topic_directions", {}).items():
+            if direction in existing_directions:
+                existing_directions[direction]["count"] += count
+            else:
+                existing_directions[direction] = {"count": count, "avg_reads": 0}
+
+        hit_library = {
+            "keywords": all_keywords,
+            "title_patterns": all_patterns,
+            "topic_directions": existing_directions,
+            "last_updated": self._run_date,
+        }
+
+        from skills.common import atomic_write_json
+        atomic_write_json(hit_library_path, hit_library)
+        self.logger.info(f"Hit library updated: {hit_library_path}")
 
     def _update_strategy_kb(self, viral: dict):
         """Generate strategy recommendations based on viral data."""

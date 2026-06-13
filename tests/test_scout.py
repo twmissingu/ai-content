@@ -416,7 +416,8 @@ class TestIsColdStart:
         from unittest.mock import patch
         from skills.scout_scorer import _is_cold_start
 
-        with patch("skills.scout_scorer.HISTORY_DIR", tmp_path / "history"):
+        with patch("skills.scout_scorer.HISTORY_DIR", tmp_path / "history"), \
+             patch("skills.scout_scorer._cold_start_cache", None):
             result = _is_cold_start()
 
         assert result is True
@@ -432,10 +433,143 @@ class TestIsColdStart:
         for i in range(6):
             (history_dir / f"article{i}.md").write_text(f"# Article {i}")
 
-        with patch("skills.scout_scorer.HISTORY_DIR", history_dir):
+        with patch("skills.scout_scorer.HISTORY_DIR", history_dir), \
+             patch("skills.scout_scorer._cold_start_cache", None):
             result = _is_cold_start()
 
         assert result is False
+
+
+class TestDedupAndFilter:
+    """Tests for dedup_and_filter function."""
+
+    def test_dedup_removes_exact_duplicates(self, tmp_path):
+        """Exact duplicate titles should be removed."""
+        from unittest.mock import patch
+        from skills.scout_dedup import dedup_and_filter
+
+        candidates = [
+            {"title": "AI Agent 新突破", "source": "weibo", "hot_value": 80},
+            {"title": "AI Agent 新突破", "source": "zhihu", "hot_value": 70},
+            {"title": "量子计算进展", "source": "bilibili", "hot_value": 90},
+        ]
+
+        with patch("skills.scout_dedup.HISTORY_DIR", tmp_path / "history"), \
+             patch("skills.scout_dedup.PENDING_DIR", tmp_path / "pending"):
+            result = dedup_and_filter(candidates)
+
+        titles = [c["title"] for c in result]
+        assert len([t for t in titles if t == "AI Agent 新突破"]) == 1
+        assert "量子计算进展" in titles
+
+    def test_dedup_removes_batch_duplicates(self, tmp_path):
+        """Batch duplicates with overlapping entities should be merged."""
+        from unittest.mock import patch
+        from skills.scout_dedup import dedup_and_filter
+
+        candidates = [
+            {"title": "OpenAI发布GPT-5大模型", "source": "weibo", "hot_value": 90, "keywords": ["OpenAI", "GPT-5"]},
+            {"title": "OpenAI GPT-5模型正式发布", "source": "zhihu", "hot_value": 80, "keywords": ["OpenAI", "GPT-5"]},
+        ]
+
+        with patch("skills.scout_dedup.HISTORY_DIR", tmp_path / "history"), \
+             patch("skills.scout_dedup.PENDING_DIR", tmp_path / "pending"):
+            result = dedup_and_filter(candidates)
+
+        # Should keep only the higher hot_value one
+        assert len(result) == 1
+        assert result[0]["hot_value"] == 90
+
+    def test_dedup_keeps_different_topics(self, tmp_path):
+        """Different topics should all be kept."""
+        from unittest.mock import patch
+        from skills.scout_dedup import dedup_and_filter
+
+        candidates = [
+            {"title": "量子计算新突破", "source": "weibo", "hot_value": 80},
+            {"title": "SpaceX火星计划", "source": "zhihu", "hot_value": 70},
+            {"title": "苹果新iPhone发布", "source": "bilibili", "hot_value": 90},
+        ]
+
+        with patch("skills.scout_dedup.HISTORY_DIR", tmp_path / "history"), \
+             patch("skills.scout_dedup.PENDING_DIR", tmp_path / "pending"):
+            result = dedup_and_filter(candidates)
+
+        assert len(result) == 3
+
+
+class TestCalculateFreshness:
+    """Tests for calculate_freshness function."""
+
+    def test_recent_hot_value_returns_high_score(self):
+        """High hot_value should map to high freshness."""
+        from skills.scout_scorer import calculate_freshness
+
+        candidate = {"hot_value": 100}
+        result = calculate_freshness(candidate)
+        assert result >= 70
+
+    def test_low_hot_value_returns_low_score(self):
+        """Low hot_value should map to low freshness."""
+        from skills.scout_scorer import calculate_freshness
+
+        candidate = {"hot_value": 10}
+        result = calculate_freshness(candidate)
+        assert result <= 40
+
+    def test_default_score_when_no_data(self):
+        """Missing hot_value should return default."""
+        from skills.scout_scorer import calculate_freshness
+
+        candidate = {}
+        result = calculate_freshness(candidate)
+        assert result == 60
+
+    def test_recent_timestamp_returns_high_score(self):
+        """Timestamp within 1 hour should return 90."""
+        import time
+        from skills.scout_scorer import calculate_freshness
+
+        candidate = {"published_at": time.time() - 1800}  # 30 min ago
+        result = calculate_freshness(candidate)
+        assert result == 90
+
+    def test_6h_timestamp_returns_medium_score(self):
+        """Timestamp within 6 hours should return 75."""
+        import time
+        from skills.scout_scorer import calculate_freshness
+
+        candidate = {"published_at": time.time() - 10800}  # 3 hours ago
+        result = calculate_freshness(candidate)
+        assert result == 75
+
+    def test_24h_timestamp_returns_lower_score(self):
+        """Timestamp within 24 hours should return 60."""
+        import time
+        from skills.scout_scorer import calculate_freshness
+
+        candidate = {"timestamp": time.time() - 43200}  # 12 hours ago
+        result = calculate_freshness(candidate)
+        assert result == 60
+
+    def test_old_timestamp_returns_low_score(self):
+        """Timestamp older than 48 hours should return 20."""
+        import time
+        from skills.scout_scorer import calculate_freshness
+
+        candidate = {"date": time.time() - 200000}  # ~55 hours ago
+        result = calculate_freshness(candidate)
+        assert result == 20
+
+    def test_isoformat_timestamp(self):
+        """ISO format timestamp should be parsed correctly."""
+        from datetime import datetime, timezone, timedelta
+        from skills.scout_scorer import calculate_freshness
+
+        recent = datetime.now(timezone.utc) - timedelta(minutes=30)
+        candidate = {"published_at": recent.isoformat()}
+        result = calculate_freshness(candidate)
+        assert result == 90
 
 
 class TestCollectAll:

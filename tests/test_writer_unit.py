@@ -386,6 +386,73 @@ class TestFetchSourceSSRF:
 
         assert "Public content" in result
 
+    def test_localhost_hostname_blocked(self):
+        """localhost hostname should be blocked without DNS lookup."""
+        from skills.writer_stages import fetch_source
+
+        result = fetch_source("http://localhost:8080/api")
+        assert "本地" in result or "抓取失败" in result
+
+    def test_empty_url_returns_message(self):
+        """Empty URL should return a message, not crash."""
+        from skills.writer_stages import fetch_source
+
+        result = fetch_source("")
+        assert "无原文" in result
+
+
+class TestStageFormat:
+    """Test stage_format function."""
+
+    def test_chinese_english_spacing(self):
+        """Should add spaces between Chinese and English characters."""
+        from skills.writer_stages import stage_format
+
+        result = stage_format("这是Python语言")
+        assert "Python" in result
+        # Should have space between Chinese and English
+        assert "是 Python" in result or "这是 Python" in result
+
+    def test_normalizes_paragraph_breaks(self):
+        """Should reduce excessive newlines."""
+        from skills.writer_stages import stage_format
+
+        result = stage_format("第一段\n\n\n\n\n第二段")
+        assert "\n\n\n" not in result
+
+    def test_removes_extra_spaces(self):
+        """Should collapse multiple spaces."""
+        from skills.writer_stages import stage_format
+
+        result = stage_format("hello  world")
+        assert "  " not in result
+
+    def test_strips_whitespace(self):
+        """Should strip leading/trailing whitespace."""
+        from skills.writer_stages import stage_format
+
+        result = stage_format("  hello  ")
+        assert result == result.strip()
+
+
+class TestSanitizeText:
+    """Test sanitize_text function."""
+
+    def test_removes_code_blocks(self):
+        """Should remove markdown code blocks."""
+        from skills.writer_stages import sanitize_text
+
+        result = sanitize_text("before\n```python\ncode\n```\nafter")
+        assert "code" not in result
+
+    def test_respects_max_length(self):
+        """Should truncate to max_length."""
+        from skills.writer_stages import sanitize_text
+
+        long_text = "a" * 1000
+        result = sanitize_text(long_text, max_length=100)
+        assert len(result) <= 100
+
 
 class TestSSRFProtectionViaAgent:
     """Test SSRF protection through WriterAgent._fetch_source wrapper.

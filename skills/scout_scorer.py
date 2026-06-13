@@ -62,17 +62,26 @@ STRONG_PUSH = 85
 
 
 # ── LLM scoring ────────────────────────────────────────────────────
+_cold_start_cache: bool | None = None
+
+
 def _is_cold_start() -> bool:
-    """Check if system is in cold start (first 2 weeks)."""
+    """Check if system is in cold start (first 2 weeks). Cached per process."""
+    global _cold_start_cache
+    if _cold_start_cache is not None:
+        return _cold_start_cache
     if not HISTORY_DIR.exists():
+        _cold_start_cache = True
         return True
     # Limit scan to 10 files — we only need to know if >= 5 exist
     count = 0
     for _ in HISTORY_DIR.rglob("*.md"):
         count += 1
         if count >= 5:
+            _cold_start_cache = False
             return False
-    return count < 5
+    _cold_start_cache = count < 5
+    return _cold_start_cache
 
 
 def calculate_freshness(candidate: dict) -> int:

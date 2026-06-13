@@ -65,6 +65,7 @@ def _recent_topics(days: int = SAME_TOPIC_BLOCK_DAYS) -> set[str]:
     recent = set()
     if HISTORY_DIR.exists():
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        # Sort descending so we can stop early when hitting old directories
         for d in sorted(HISTORY_DIR.iterdir(), reverse=True):
             if not d.is_dir():
                 continue
@@ -72,7 +73,7 @@ def _recent_topics(days: int = SAME_TOPIC_BLOCK_DAYS) -> set[str]:
             try:
                 dir_date = datetime.strptime(d.name, "%Y-%m-%d").replace(tzinfo=timezone.utc)
                 if dir_date < cutoff:
-                    continue
+                    break  # sorted desc, all remaining are older
             except ValueError:
                 continue  # skip non-date directories
             for f in d.glob("*.md"):

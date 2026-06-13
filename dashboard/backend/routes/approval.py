@@ -109,12 +109,16 @@ def approval_act(req: ApproveRequest):
             logger.exception("Database recording failed for approval action")
             raise HTTPException(500, "数据库记录失败，审批操作已中止")
 
-    path = write_action(
-        req.action, req.target_id,
-        reason=req.reason,
-        platform_versions=req.platform_versions or ["wechat"],
-        trigger_agent="publisher" if req.action == "approve" else "writer",
-    )
+    try:
+        path = write_action(
+            req.action, req.target_id,
+            reason=req.reason,
+            platform_versions=req.platform_versions or ["wechat"],
+            trigger_agent="publisher" if req.action == "approve" else "writer",
+        )
+    except Exception as e:
+        logger.error(f"Failed to write action file for {req.target_id}: {e}")
+        raise HTTPException(500, "操作文件写入失败")
 
     return {"status": "ok", "action": req.action, "target_id": req.target_id, "path": str(path)}
 

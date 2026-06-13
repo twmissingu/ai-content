@@ -91,10 +91,12 @@ def _invalidate_cache() -> None:
 
 
 @contextmanager
-def get_db():
+def get_db(read_only: bool = False):
     """Get database connection with WAL mode.
 
     Uses thread-local connections for better concurrency.
+    Args:
+        read_only: If True, skip commit on exit (for SELECT-only queries).
     """
     if not hasattr(_thread_local, 'conn') or _thread_local.conn is None:
         conn = sqlite3.connect(str(DATABASE_PATH), timeout=10)
@@ -109,7 +111,8 @@ def get_db():
     conn = _thread_local.conn
     try:
         yield conn
-        conn.commit()
+        if not read_only:
+            conn.commit()
     except Exception:
         conn.rollback()
         raise

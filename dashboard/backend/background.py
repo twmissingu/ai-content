@@ -138,13 +138,23 @@ def _dispatch_action_async(action: dict) -> int:
     full_cmd = cmd + [target_id]
     logger.info(f"Dispatching async: {' '.join(full_cmd)}")
     try:
-        proc = subprocess.Popen(
-            full_cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            cwd=PROJECT_ROOT,
-        )
-        logger.info(f"Dispatched {action_type}/{target_id} (PID: {proc.pid})")
+        # Redirect stdout/stderr to log file for post-mortem diagnosis
+        log_dir = PROJECT_ROOT / "data" / "logs" / "dispatch"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        log_path = log_dir / f"{action_type}_{target_id}_{stamp}.log"
+        log_file = open(log_path, "a", encoding="utf-8")
+        try:
+            proc = subprocess.Popen(
+                full_cmd,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                cwd=PROJECT_ROOT,
+            )
+        finally:
+            # Close our handle — subprocess owns the FD after Popen succeeds
+            log_file.close()
+        logger.info(f"Dispatched {action_type}/{target_id} (PID: {proc.pid}, log: {log_path})")
         return proc.pid
     except Exception as e:
         logger.error(f"Dispatch error for {action_type}/{target_id}: {e}")
@@ -194,10 +204,45 @@ def import_trails_target():
 
     Expects paired files: {id}.start.json and {id}.end.json.
     Uses import_trail_record() for single-transaction insert.
+    Uses file_lock to prevent concurrent poller races.
     """
     TRAIL_DIR.mkdir(parents=True, exist_ok=True)
     start_files = list(TRAIL_DIR.glob("*.start.json"))
 
+    # File lock to prevent concurrent trail imports
+    lock_path = TRAIL_DIR / ".import.lock"
+    try:
+        from contextlib import contextmanager
+        @contextmanager
+        def _trail_lock():
+            lock_dir = lock_path.with_suffix(".lockdir")
+            deadline = time.time() + 10
+            while True:
+                try:
+                    lock_dir.mkdir()
+                    break
+                except FileExistsError:
+                    if time.time() > deadline:
+                        logger.warning("Trail import lock timeout, proceeding without lock")
+                        break
+                    time.sleep(0.1)
+            try:
+                yield
+            finally:
+                try:
+                    lock_dir.rmdir()
+                except OSError:
+                    pass
+
+        with _trail_lock():
+            _import_trails_inner(start_files)
+    except Exception as e:
+        logger.warning(f"Trail import lock error: {e}")
+        _import_trails_inner(start_files)
+
+
+def _import_trails_inner(start_files):
+    """Inner trail import logic (separated for lock wrapping)."""
     processed = set()
     for f in sorted(start_files, key=lambda x: x.stat().st_mtime):
         trail_id = f.stem.replace(".start", "")
@@ -382,9 +427,20 @@ def approval_timeout_target():
         if skipped_marker.exists():
             continue  # Already processed
 
-        # Per-article: DB record + file operation together.
-        # If DB fails, log and skip this article (next poll will retry).
-        # If file operation fails after DB, the DB record is the audit trail.
+        # Atomicity: rename first (filesystem truth), then DB audit trail.
+        # If rename fails (concurrent poll), skip. If DB fails after rename,
+        # the article is still correctly marked as skipped in the filesystem.
+        if meta_path.exists():
+            try:
+                meta_path.rename(skipped_marker)
+            except OSError:
+                continue  # Already renamed by concurrent poll
+
+        # Write skip action
+        write_action("skip", article_id, trigger_agent="timeout-poller",
+                      reason=f"审批超时({timeout_min}分钟)")
+
+        # DB audit trail (non-critical: filesystem state is already consistent)
         try:
             from dashboard.backend.database import get_db as _get_db
             with _get_db() as _conn:
@@ -405,18 +461,7 @@ def approval_timeout_target():
                 """, (trace_id,))
         except Exception as e:
             logger.warning(f"Failed to record approval timeout for {article_id} in SQLite: {e}")
-            continue  # Skip this article, retry on next poll
-
-        # Write skip action
-        write_action("skip", article_id, trigger_agent="timeout-poller",
-                      reason=f"审批超时({timeout_min}分钟)")
-
-        # Rename .meta.json -> .skipped.json so next poll skips it
-        if meta_path.exists():
-            try:
-                meta_path.rename(skipped_marker)
-            except OSError:
-                continue  # Already renamed by concurrent poll
+            # Non-fatal: article is already skipped in filesystem
 
         # Feishu notification
         try:

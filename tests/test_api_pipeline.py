@@ -228,3 +228,33 @@ class TestPipelineRerun:
         )
         resp = client.post("/api/pipeline/rerun", json={"stage": 2})
         assert resp.status_code == 500
+
+
+class TestPipelineStages:
+    def test_returns_stages(self, client):
+        resp = client.get("/api/pipeline/stages")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "stages" in data
+        assert len(data["stages"]) == 7
+        assert data["stages"][0]["name"] == "抓原文"
+        assert data["stages"][6]["name"] == "配图"
+
+
+class TestPipelineTimelineFilter:
+    def test_filter_by_status(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "dashboard.backend.routes.pipeline.get_pipeline_sessions",
+            lambda limit=14: {
+                "items": [
+                    {"id": 1, "date": "2026-05-28", "period": "morning", "topic": "AI", "status": "completed", "started_at": None, "completed_at": None},
+                    {"id": 2, "date": "2026-05-28", "period": "evening", "topic": "Python", "status": "failed", "started_at": None, "completed_at": None},
+                ],
+                "total": 2,
+            },
+        )
+        resp = client.get("/api/pipeline/timeline?status=completed")
+        data = resp.json()
+        db_sessions = [s for s in data["sessions"] if s["source"] == "database"]
+        assert len(db_sessions) == 1
+        assert db_sessions[0]["status"] == "completed"

@@ -53,11 +53,11 @@ const chartData = computed(() => ({
   datasets: [{
     label: '每日成本 ($)',
     data: recentCosts.value.map(d => d.cost),
-    backgroundColor: 'rgba(26, 115, 232, 0.6)',
-    borderColor: 'rgba(26, 115, 232, 1)',
+    backgroundColor: 'rgba(77, 100, 117, 0.58)',
+    borderColor: 'rgba(77, 100, 117, 0.92)',
     borderWidth: 1,
-    borderRadius: 4,
-    hoverBackgroundColor: 'rgba(26, 115, 232, 0.8)',
+    borderRadius: 6,
+    hoverBackgroundColor: 'rgba(77, 100, 117, 0.72)',
   }],
 }))
 
@@ -69,7 +69,9 @@ const chartOptions = computed(() => ({
       display: false,
     },
     tooltip: {
-      backgroundColor: 'rgba(0, 0, 0, 0.8)',
+      backgroundColor: 'rgba(36, 33, 29, 0.88)',
+      titleColor: '#fffdf8',
+      bodyColor: '#fffdf8',
       titleFont: {
         size: 12,
       },
@@ -78,7 +80,7 @@ const chartOptions = computed(() => ({
         weight: 'bold' as const,
       },
       padding: 12,
-      cornerRadius: 8,
+      cornerRadius: 10,
       callbacks: {
         label: (context: any) => `$${context.parsed.y.toFixed(4)}`,
       },
@@ -93,19 +95,19 @@ const chartOptions = computed(() => ({
         font: {
           size: 11,
         },
-        color: 'rgba(0, 0, 0, 0.5)',
+        color: 'rgba(98, 93, 85, 0.82)',
       },
     },
     y: {
       beginAtZero: true,
       grid: {
-        color: 'rgba(0, 0, 0, 0.05)',
+        color: 'rgba(92, 79, 62, 0.08)',
       },
       ticks: {
         font: {
           size: 11,
         },
-        color: 'rgba(0, 0, 0, 0.5)',
+        color: 'rgba(98, 93, 85, 0.82)',
         callback: (value: any) => `$${value}`,
       },
     },
@@ -277,7 +279,7 @@ useKeyboardShortcut(handleKeydown)
 .data-view {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xl);
+  gap: var(--space-2xl);
 }
 
 /* ── Page Header ─────────────────────────────────────────────── */
@@ -285,12 +287,18 @@ useKeyboardShortcut(handleKeydown)
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: var(--space-lg);
+  padding: var(--space-xl);
+  background: rgba(255, 253, 248, 0.58);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-2xl);
 }
 
 .page-title {
   font-size: var(--text-3xl);
-  font-weight: 600;
+  font-weight: 650;
   color: var(--text-primary);
+  letter-spacing: -0.025em;
   margin: 0 0 var(--space-xs) 0;
 }
 
@@ -303,7 +311,7 @@ useKeyboardShortcut(handleKeydown)
 /* ── Stats Grid ──────────────────────────────────────────────── */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: var(--space-lg);
 }
 
@@ -311,23 +319,31 @@ useKeyboardShortcut(handleKeydown)
   display: flex;
   align-items: flex-start;
   gap: var(--space-lg);
-  transition: all var(--transition-normal);
+  background: var(--surface-glow);
+  transition: border-color var(--transition-normal), box-shadow var(--transition-normal), transform var(--transition-normal);
 }
 
 .stat-card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
+  border-color: var(--border-color);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .stat-icon {
-  font-size: var(--text-4xl);
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-xl);
+  background: rgba(248, 244, 236, 0.72);
+  font-size: var(--text-2xl);
   line-height: 1;
-  opacity: 0.8;
+  opacity: 0.76;
+  filter: grayscale(0.18);
 }
 
-.stat-content {
-  flex: 1;
-}
+.stat-content { flex: 1; }
 
 .stat-label {
   font-size: var(--text-sm);
@@ -337,14 +353,15 @@ useKeyboardShortcut(handleKeydown)
 
 .stat-value {
   font-size: var(--text-3xl);
-  font-weight: 700;
+  font-weight: 750;
   color: var(--text-primary);
-  line-height: 1.2;
+  line-height: 1.18;
+  letter-spacing: -0.03em;
 }
 
 .stat-unit {
   font-size: var(--text-md);
-  font-weight: 400;
+  font-weight: 450;
   color: var(--text-tertiary);
 }
 
@@ -355,13 +372,11 @@ useKeyboardShortcut(handleKeydown)
   margin-top: var(--space-md);
 }
 
-.stat-progress .progress-bar {
-  flex: 1;
-}
+.stat-progress .progress-bar { flex: 1; }
 
 .progress-text {
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: 650;
   color: var(--text-secondary);
   min-width: 36px;
   text-align: right;
@@ -370,44 +385,46 @@ useKeyboardShortcut(handleKeydown)
 .stat-hint {
   font-size: var(--text-sm);
   color: var(--text-tertiary);
-  margin-top: var(--space-xs);
-}
-
-/* ── Cost Card ───────────────────────────────────────────────── */
-.cost-card {
-  background: linear-gradient(135deg, var(--bg-card) 0%, var(--success-light) 100%);
-}
-
-.articles-card {
-  background: linear-gradient(135deg, var(--bg-card) 0%, var(--primary-light) 100%);
-}
-
-.topics-card {
-  background: linear-gradient(135deg, var(--bg-card) 0%, var(--warning-light) 100%);
-}
-
-.stat-hint {
   margin-top: var(--space-sm);
 }
 
+/* ── Stat Card Tints ────────────────────────────────────────── */
+.cost-card { background: linear-gradient(135deg, rgba(255, 253, 248, 0.96), rgba(239, 246, 236, 0.76)); }
+.articles-card { background: linear-gradient(135deg, rgba(255, 253, 248, 0.96), rgba(238, 243, 245, 0.78)); }
+.topics-card { background: linear-gradient(135deg, rgba(255, 253, 248, 0.96), rgba(250, 244, 231, 0.82)); }
+
 .stat-link {
   font-size: var(--text-sm);
-  color: var(--primary);
+  color: var(--primary-dark);
   text-decoration: none;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .stat-link:hover {
   text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 /* ── Chart Card ──────────────────────────────────────────────── */
+.chart-card,
+.platform-card {
+  background: var(--surface-glow);
+}
+
 .chart-card {
-  min-height: 300px;
+  min-height: 320px;
+}
+
+.chart-card .card-header,
+.platform-card .card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
 }
 
 .chart-container {
-  height: 250px;
+  height: 260px;
   padding: var(--space-md);
 }
 
@@ -418,47 +435,54 @@ useKeyboardShortcut(handleKeydown)
   align-items: center;
   justify-content: center;
   gap: var(--space-md);
-  height: 200px;
+  height: 210px;
   color: var(--text-tertiary);
 }
 
 .loading-spinner {
   width: 24px;
   height: 24px;
-  border: 3px solid var(--border-color);
+  border: 2px solid var(--border-color);
   border-top-color: var(--primary);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin 0.9s linear infinite;
 }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 
-/* ── Empty State ─────────────────────────────────────────────── */
-.empty-chart {
+/* ── Empty / Placeholder State ───────────────────────────────── */
+.empty-chart,
+.placeholder-content {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 200px;
+  min-height: 210px;
   gap: var(--space-sm);
+  background-image: var(--paper-grain);
+  background-size: 8px 8px;
 }
 
-.empty-icon {
-  font-size: 48px;
+.empty-icon,
+.placeholder-icon {
+  font-size: 44px;
   opacity: 0.5;
+  filter: grayscale(0.18);
 }
 
 .empty-text {
   font-size: var(--text-lg);
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-secondary);
 }
 
-.empty-hint {
+.empty-hint,
+.placeholder-text {
   font-size: var(--text-md);
   color: var(--text-tertiary);
+  text-align: center;
 }
 
 /* ── Platform Cards ──────────────────────────────────────────── */
@@ -469,27 +493,14 @@ useKeyboardShortcut(handleKeydown)
 }
 
 .placeholder-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
   padding: var(--space-3xl);
-  gap: var(--space-md);
-}
-
-.placeholder-icon {
-  font-size: 48px;
-  opacity: 0.5;
-}
-
-.placeholder-text {
-  font-size: var(--text-md);
-  color: var(--text-tertiary);
-  text-align: center;
+  border-radius: var(--radius-xl);
 }
 
 /* ── Responsive ──────────────────────────────────────────────── */
 @media (max-width: 768px) {
+  .page-header { flex-direction: column; }
+
   .stats-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -499,7 +510,7 @@ useKeyboardShortcut(handleKeydown)
   }
 
   .chart-container {
-    height: 200px;
+    height: 220px;
   }
 }
 
@@ -508,6 +519,4 @@ useKeyboardShortcut(handleKeydown)
     grid-template-columns: 1fr;
   }
 }
-
-
 </style>

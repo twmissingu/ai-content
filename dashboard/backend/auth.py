@@ -9,6 +9,9 @@ denies all requests.
 import hmac
 import logging
 import os
+import time
+from collections import defaultdict
+from datetime import datetime, timezone
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -23,6 +26,13 @@ _PUBLIC_PATHS = {
     "/api/health",
     "/api/token/log",
 }
+
+# Auth failure tracking for security event alerting
+_auth_failure_counts: dict[str, list[float]] = defaultdict(list)
+_AUTH_FAILURE_WINDOW = 300  # 5 minutes
+_AUTH_FAILURE_THRESHOLD = 10  # Alert after 10 failures in window
+_last_alert_time: float = 0
+_ALERT_COOLDOWN = 60  # Min 60 seconds between alerts
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -68,9 +78,39 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Check API key
         provided_key = request.headers.get("X-API-Key", "")
         if not hmac.compare_digest(provided_key, self._api_key):
+            self._log_auth_failure(request)
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid or missing API key"},
             )
 
         return await call_next(request)
+
+    def _log_auth_failure(self, request: Request):
+        """Track auth failures per IP and alert if threshold exceeded."""
+        global _last_alert_time
+        client_ip = request.client.host if request.client else "unknown"
+        now = time.time()
+        cutoff = now - _AUTH_FAILURE_WINDOW
+
+        _auth_failure_counts[client_ip] = [
+            t for t in _auth_failure_counts[client_ip] if t > cutoff
+        ]
+        _auth_failure_counts[client_ip].append(now)
+
+        if len(_auth_failure_counts[client_ip]) >= _AUTH_FAILURE_THRESHOLD:
+            if now - _last_alert_time > _ALERT_COOLDOWN:
+                _last_alert_time = now
+                logger.warning(
+                    f"Auth failure threshold exceeded for {client_ip}: "
+                    f"{len(_auth_failure_counts[client_ip])} failures in {_AUTH_FAILURE_WINDOW}s"
+                )
+                try:
+                    from dashboard.backend.feishu import alert_agent_error
+                    alert_agent_error(
+                        "auth",
+                        f"认证失败阈值告警: {client_ip} 在 {_AUTH_FAILURE_WINDOW}s 内失败 "
+                        f"{len(_auth_failure_counts[client_ip])} 次",
+                    )
+                except Exception as e:
+                    logger.debug(f"Failed to send auth failure alert: {e}")

@@ -238,7 +238,8 @@ def main(agent: Optional[ScoutAgent] = None):
         agent.start_stage("write")
     try:
         for c in validated_final:
-            write_topic_pending(c)
+            topic_dict = c.model_dump() if hasattr(c, 'model_dump') else c
+            write_topic_pending(topic_dict)
     finally:
         if agent:
             agent.end_stage("write")
@@ -247,10 +248,10 @@ def main(agent: Optional[ScoutAgent] = None):
     try:
         ScoutOutput(
             session=_SESSION,
-            topics=[TopicCandidate.model_validate(c) for c in validated_final],
+            topics=validated_final,
             total_collected=len(candidates),
             total_selected=len(validated_final),
-            sources_used=list({c.get("source", "unknown") for c in validated_final}),
+            sources_used=list({c.source for c in validated_final}),
         )
     except Exception as e:
         logger.warning(f"ScoutOutput validation failed: {e}")

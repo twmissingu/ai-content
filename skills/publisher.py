@@ -9,6 +9,7 @@ Uses temp files instead of command-line args for content passing (security).
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -43,12 +44,14 @@ class PublisherAgent(AgentBase):
     
     def find_article(self, target_id: str) -> tuple[Optional[Path], Optional[dict]]:
         """Find article files matching target_id in queue/review/."""
-        meta_path = REVIEW_DIR / f"{target_id}.meta.json"
-        article_path = REVIEW_DIR / f"{target_id}.md"
+        # Sanitize target_id: strip glob metacharacters to prevent pattern injection
+        safe_id = re.sub(r'[\*\?\[\]]', '', target_id)
+        meta_path = REVIEW_DIR / f"{safe_id}.meta.json"
+        article_path = REVIEW_DIR / f"{safe_id}.md"
 
         # Try different patterns
         if not meta_path.exists():
-            for f in REVIEW_DIR.glob(f"*{target_id}*.meta.json"):
+            for f in REVIEW_DIR.glob(f"*{safe_id}*.meta.json"):
                 meta_path = f
                 article_path = REVIEW_DIR / f"{f.stem.replace('.meta', '')}.md"
                 break

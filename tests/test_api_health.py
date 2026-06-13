@@ -22,6 +22,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.backend.routes.health.REVIEW_DIR", review_dir)
     monkeypatch.setattr("dashboard.backend.routes.health.ACTIONS_DIR", actions_dir)
     monkeypatch.setattr("dashboard.backend.routes.health.FAILED_DIR", failed_dir)
+    monkeypatch.setattr("dashboard.backend.routes.topics.PENDING_DIR", pending_dir)
 
     # Create test topic
     (pending_dir / "topic_test-001.json").write_text(json.dumps({

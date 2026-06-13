@@ -190,37 +190,69 @@ useKeyboardShortcut(handleKeydown)
 </template>
 
 <style scoped>
-.approval-view { display: flex; flex-direction: column; gap: var(--space-xl); }
+.approval-view { display: flex; flex-direction: column; gap: var(--space-2xl); }
 
 /* ── Page Header ────────────────────────────────────────────── */
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; }
-.page-title { font-size: var(--text-3xl); font-weight: 600; color: var(--text-primary); margin: 0 0 var(--space-xs) 0; }
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: var(--space-xl);
+  background: rgba(255, 253, 248, 0.58);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-2xl);
+}
+.page-title {
+  font-size: var(--text-3xl);
+  font-weight: 720;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-xs) 0;
+  letter-spacing: 0.04em;
+}
 .page-subtitle { font-size: var(--text-md); color: var(--text-tertiary); margin: 0; }
 .page-actions { display: flex; align-items: center; gap: var(--space-md); }
 .page-actions .btn.active { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
 
-.stat-badge { padding: var(--space-sm) var(--space-lg); background: var(--bg-hover); color: var(--text-secondary); font-size: var(--text-md); font-weight: 500; border-radius: var(--radius-full); }
-.stat-badge.has-items { background: var(--primary-light); color: var(--primary); }
+.stat-badge {
+  padding: var(--space-sm) var(--space-lg);
+  background: rgba(250, 247, 240, 0.76);
+  color: var(--text-secondary);
+  font-size: var(--text-md);
+  font-weight: 560;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-full);
+}
+.stat-badge.has-items { background: var(--primary-light); color: var(--primary); border-color: rgba(77, 100, 117, 0.18); }
 
 /* ── Batch Bar ───────────────────────────────────────────────── */
-.batch-bar { display: flex; justify-content: space-between; align-items: center; padding: var(--space-md) var(--space-lg); background: var(--primary-light); border-radius: var(--radius-lg); border: 1px solid var(--primary); }
+.batch-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-lg);
+  background: var(--primary-light);
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(77, 100, 117, 0.2);
+  box-shadow: var(--shadow-sm);
+}
 .batch-left { display: flex; align-items: center; gap: var(--space-lg); }
 .batch-checkbox { display: flex; align-items: center; gap: var(--space-sm); cursor: pointer; font-size: var(--text-sm); color: var(--text-primary); }
-.batch-checkbox input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; }
-.batch-count { font-size: var(--text-sm); color: var(--primary); font-weight: 500; }
+.batch-checkbox input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary); }
+.batch-count { font-size: var(--text-sm); color: var(--primary); font-weight: 650; }
 .batch-right { display: flex; gap: var(--space-sm); }
 
 /* ── Loading Spinner ─────────────────────────────────────────── */
-.loading-spinner-sm { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255, 255, 255, 0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: var(--space-xs); }
+.loading-spinner-sm { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255, 253, 248, 0.34); border-top-color: #fffdf8; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: var(--space-xs); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Slide Transition ────────────────────────────────────────── */
-.slide-enter-active, .slide-leave-active { transition: all 0.3s ease; }
-.slide-enter-from, .slide-leave-to { opacity: 0; transform: translateY(-10px); }
+.slide-enter-active, .slide-leave-active { transition: opacity var(--transition-normal), transform var(--transition-normal); }
+.slide-enter-from, .slide-leave-to { opacity: 0; transform: translateY(-8px); }
 
 /* ── Responsive ──────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .page-header { flex-direction: column; gap: var(--space-md); }
   .page-actions { width: 100%; justify-content: flex-end; }
+  .batch-bar { flex-direction: column; align-items: flex-start; gap: var(--space-md); }
 }
 </style>

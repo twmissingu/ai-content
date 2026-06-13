@@ -325,12 +325,22 @@ def stage_critique(text: str, topic_title: str, round_num: int,
     with ThreadPoolExecutor(max_workers=2) as executor:
         scorer_future = executor.submit(_run_scorer)
         critic_future = executor.submit(_run_critic)
-        scorer_result, scorer_duration = scorer_future.result()
-        critic_result, critic_duration = critic_future.result()
 
-    if record_llm_call:
-        record_llm_call(duration=scorer_duration, success=True)
-        record_llm_call(duration=critic_duration, success=True)
+        try:
+            scorer_result, scorer_duration = scorer_future.result()
+            if record_llm_call:
+                record_llm_call(duration=scorer_duration, success=True)
+        except Exception as e:
+            logging.getLogger("gaoding.writer_stages").warning(f"Scorer failed: {e}, using defaults")
+            scorer_result = {"score": 0, "weakness": "scorer unavailable", "suggestions": []}
+
+        try:
+            critic_result, critic_duration = critic_future.result()
+            if record_llm_call:
+                record_llm_call(duration=critic_duration, success=True)
+        except Exception as e:
+            logging.getLogger("gaoding.writer_stages").warning(f"Critic failed: {e}, using defaults")
+            critic_result = {"critique_score": 0, "issues": ["critic unavailable"], "missing": ""}
 
     scorer_score = int(scorer_result.get("score", 50))
     scorer_weakness = scorer_result.get("weakness", "")

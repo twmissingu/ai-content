@@ -17,6 +17,7 @@ from .core import (
 # Pipeline sessions
 from .sessions import (
     create_pipeline_session,
+    get_pipeline_session_by_id,
     get_pipeline_sessions,
     get_today_sessions,
     update_pipeline_session,
@@ -84,7 +85,7 @@ __all__ = [
     # Core
     'DATABASE_PATH', 'cached_query', 'get_db', 'init_db', 'shutdown_db_connections', '_invalidate_cache',
     # Sessions
-    'create_pipeline_session', 'get_pipeline_sessions', 'get_today_sessions', 'update_pipeline_session',
+    'create_pipeline_session', 'get_pipeline_session_by_id', 'get_pipeline_sessions', 'get_today_sessions', 'update_pipeline_session',
     # Versions + Approval
     'create_approval_record', 'create_platform_version', 'get_approval_records',
     'get_pending_versions', 'get_platform_versions', 'get_quality_flywheel_data', 'update_platform_version',

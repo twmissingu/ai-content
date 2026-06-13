@@ -1,4 +1,4 @@
-"""Pipeline routes — agent status, timeline, and manual triggers."""
+"""Pipeline routes — agent status, timeline, session detail, and manual triggers."""
 
 import logging
 import os
@@ -9,10 +9,10 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
-from config.settings import KB_DIR, PROJECT_ROOT, STATUS_DIR
-from dashboard.backend.database import check_budget_limit, get_pipeline_sessions
+from config.settings import KB_DIR, PROJECT_ROOT, REVIEW_DIR, STATUS_DIR, TRAIL_DIR
+from dashboard.backend.database import check_budget_limit, get_pipeline_sessions, get_pipeline_session_by_id
 from dashboard.backend.helpers import detect_timeout, read_json
 from dashboard.backend.models import TriggerRequest, RerunRequest
 
@@ -27,6 +27,11 @@ _TRIGGER_RATE_LIMIT = 5
 _TRIGGER_RATE_WINDOW = 60
 _TRIGGER_MAX_CLIENTS = 1000
 _TOPIC_ID_RE = re.compile(r'^[\w\-]+$')
+
+# Global concurrency limit for agent triggers
+_MAX_CONCURRENT_AGENTS = 3
+_running_agents = 0
+_running_agents_lock = threading.Lock()
 
 
 @router.get("/status")
@@ -49,19 +54,58 @@ def get_pipeline_status():
     }
 
 
+@router.get("/status/writer-workers")
+def get_writer_workers():
+    """Get aggregated status of all writer workers."""
+    workers = {}
+
+    # Check for writer-router.json first
+    router_path = STATUS_DIR / "writer-router.json"
+    if router_path.exists():
+        router_data = read_json(router_path)
+        if router_data:
+            return router_data
+
+    # Otherwise, aggregate from individual worker files
+    for f in STATUS_DIR.glob("writer-worker-*.json"):
+        data = read_json(f)
+        if data:
+            worker_name = f.stem.replace("writer-worker-", "")
+            workers[worker_name] = data
+
+    # Also check for main writer status
+    writer_path = STATUS_DIR / "writer.json"
+    if writer_path.exists():
+        writer_data = read_json(writer_path)
+        if writer_data:
+            workers["main"] = writer_data
+
+    return {
+        "workers": workers,
+        "worker_count": len(workers),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @router.get("/timeline")
-def get_pipeline_timeline():
+def get_pipeline_timeline(
+    limit: int = Query(14, ge=1, le=50),
+    status: str = Query(None, description="Filter by status: completed/failed/running"),
+):
     """Get recent pipeline sessions from database and filesystem."""
     sessions = []
 
-    db_result = get_pipeline_sessions(limit=14)
+    db_result = get_pipeline_sessions(limit=limit)
     for s in db_result.get('items', []):
+        session_status = s.get('status', 'unknown')
+        if status and session_status != status:
+            continue
         sessions.append({
             "id": s.get('id'),
             "date": s.get('date', ''),
             "period": s.get('period', ''),
             "topic": s.get('topic', ''),
-            "status": s.get('status', 'unknown'),
+            "status": session_status,
             "article_count": 1,
             "articles": [s.get('topic', '')],
             "source": "database",
@@ -71,15 +115,18 @@ def get_pipeline_timeline():
 
     history_dir = KB_DIR / "history"
     if history_dir.exists():
-        for d in sorted(history_dir.iterdir(), reverse=True)[:14]:
+        for d in sorted(history_dir.iterdir(), reverse=True)[:limit]:
             if d.is_dir():
                 articles = list(d.glob("*.md"))
+                fs_status = "completed"
+                if status and fs_status != status:
+                    continue
                 sessions.append({
                     "id": None,
                     "date": d.name,
                     "period": "",
                     "topic": "",
-                    "status": "completed",
+                    "status": fs_status,
                     "article_count": len(articles),
                     "articles": [a.stem for a in articles],
                     "source": "filesystem",
@@ -88,6 +135,57 @@ def get_pipeline_timeline():
                 })
 
     return {"sessions": sessions}
+
+
+@router.get("/sessions/{session_id}")
+def get_session_detail(session_id: int):
+    """Get detailed information about a specific pipeline session."""
+    from dashboard.backend.database import get_platform_versions
+
+    try:
+        session = get_pipeline_session_by_id(session_id)
+        if not session:
+            raise HTTPException(404, f"Session not found: {session_id}")
+
+        # Get platform versions for this session
+        versions = get_platform_versions(session_id)
+
+        # Get trace data if available
+        traces = []
+        trail_dir = TRAIL_DIR
+        if trail_dir.exists():
+            for f in trail_dir.glob(f"*{session_id}*.json"):
+                trace_data = read_json(f)
+                if trace_data:
+                    traces.append(trace_data)
+
+        return {
+            "session": session,
+            "versions": versions,
+            "traces": traces,
+            "version_count": len(versions),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting session detail: {e}")
+        raise HTTPException(500, "获取会话详情失败")
+
+
+@router.get("/stages")
+def get_pipeline_stages():
+    """Get the list of pipeline stages with descriptions."""
+    return {
+        "stages": [
+            {"id": 1, "name": "抓原文", "key": "fetch_source", "description": "从选题 URL 抓取原始内容"},
+            {"id": 2, "name": "LLM初稿", "key": "draft", "description": "根据素材生成初稿"},
+            {"id": 3, "name": "AI腔审校", "key": "proofread", "description": "正则+LLM双检测去AI味"},
+            {"id": 4, "name": "批评修订", "key": "critique", "description": "评委打分，低于阈值重写"},
+            {"id": 5, "name": "排版", "key": "format", "description": "中英文空格、段落分割"},
+            {"id": 6, "name": "标题优化", "key": "titles", "description": "生成3个候选标题，选最优"},
+            {"id": 7, "name": "配图", "key": "illustrate", "description": "AI配图生成"},
+        ]
+    }
 
 
 @router.post("/trigger")
@@ -121,6 +219,13 @@ def trigger_agent(req: TriggerRequest, request: Request):
     if req.session and req.session not in ("morning", "evening"):
         raise HTTPException(400, f"Invalid session: {req.session}. Must be 'morning' or 'evening'.")
 
+    # Global concurrency limit
+    global _running_agents
+    with _running_agents_lock:
+        if _running_agents >= _MAX_CONCURRENT_AGENTS:
+            raise HTTPException(429, f"并发 agent 数已达上限 ({_MAX_CONCURRENT_AGENTS})，请稍后再试")
+        _running_agents += 1
+
     skills_dir = PROJECT_ROOT / "skills"
     venv_python = PROJECT_ROOT / ".venv" / "bin" / "python"
 
@@ -144,6 +249,18 @@ def trigger_agent(req: TriggerRequest, request: Request):
             start_new_session=True,
         )
         logger.info(f"Triggered {req.agent} (PID: {process.pid})")
+
+        # Decrement concurrency counter when process exits
+        def _wait_and_release():
+            global _running_agents
+            try:
+                process.wait()
+            finally:
+                with _running_agents_lock:
+                    _running_agents = max(0, _running_agents - 1)
+
+        threading.Thread(target=_wait_and_release, daemon=True).start()
+
         return {
             "status": "ok",
             "agent": req.agent,
@@ -151,6 +268,8 @@ def trigger_agent(req: TriggerRequest, request: Request):
             "message": f"{req.agent} agent started",
         }
     except Exception as e:
+        with _running_agents_lock:
+            _running_agents = max(0, _running_agents - 1)
         logger.error(f"Failed to trigger {req.agent}: {e}")
         raise HTTPException(500, f"触发 {req.agent} 失败")
 
@@ -173,8 +292,8 @@ def rerun_from_stage(req: RerunRequest, request: Request):
     try:
         process = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             cwd=str(PROJECT_ROOT),
         )
         logger.info(f"Re-run from stage {req.stage} (PID: {process.pid})")

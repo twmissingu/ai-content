@@ -1,15 +1,17 @@
 """Knowledge Agent — archive approved articles into kb/.
 
 Archives article + meta to kb/history/{date}/, runs LLM analysis,
-and updates kb/topics/.
+and updates kb/topics/ and kb/INDEX.md.
 
 Uses AgentBase for unified status writing, logging, and metrics.
 """
 
 import json
 import os
+import re
 import shutil
 import sys
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -50,6 +52,77 @@ class KnowledgeAgent(AgentBase):
         entry = f"- {date_str} | {platform} | {topic}\n"
         with open(index_path, "a") as f:
             f.write(entry)
+
+    def _update_main_index(self, topic: str, keywords: list[str], tags: list[str]):
+        """Update kb/INDEX.md with article entry and keyword index."""
+        index_path = KB_DIR / "INDEX.md"
+        date_str = datetime.now().strftime("%Y-%m-%d")
+
+        # Read existing index
+        existing = ""
+        if index_path.exists():
+            existing = index_path.read_text(encoding="utf-8", errors="ignore")
+
+        # Add article entry if not already present
+        article_entry = f"- {date_str} | {topic}"
+        if article_entry not in existing:
+            # Find or create Articles section
+            if "## 文章索引" not in existing:
+                existing += "\n## 文章索引\n"
+            # Insert after the section header
+            parts = existing.split("## 文章索引")
+            if len(parts) == 2:
+                existing = parts[0] + "## 文章索引\n" + article_entry + "\n" + parts[1]
+            else:
+                existing += article_entry + "\n"
+
+        # Update keyword index
+        if keywords:
+            # Extract existing keywords
+            keyword_section = ""
+            if "## 关键词索引" in existing:
+                parts = existing.split("## 关键词索引")
+                keyword_section = parts[1] if len(parts) > 1 else ""
+
+            # Count existing keywords
+            existing_keywords = Counter()
+            for match in re.findall(r'- (\S+)', keyword_section):
+                existing_keywords[match] += 1
+
+            # Add new keywords
+            for kw in keywords[:10]:
+                existing_keywords[kw.lower()] += 1
+
+            # Rebuild keyword section
+            keyword_lines = "\n".join(
+                f"- {kw}" for kw, _ in existing_keywords.most_common(50)
+            )
+
+            if "## 关键词索引" in existing:
+                parts = existing.split("## 关键词索引")
+                existing = parts[0] + "## 关键词索引\n" + keyword_lines + "\n"
+            else:
+                existing += "\n## 关键词索引\n" + keyword_lines + "\n"
+
+        # Write updated index (atomic: temp file + rename)
+        import tempfile
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_fd, tmp_path = tempfile.mkstemp(
+            dir=index_path.parent, prefix=".INDEX.", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                f.write(existing.strip() + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, index_path)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        self.logger.info(f"Main INDEX.md updated with: {topic}")
 
     def _analyze_article(self, content: str, meta: dict) -> dict[str, Any]:
         """Use LLM to extract keywords, tags, and writing patterns."""
@@ -121,6 +194,7 @@ class KnowledgeAgent(AgentBase):
         self.logger.info(f"Archived to: {dest}")
 
         # LLM analysis (non-blocking: failure doesn't stop archival)
+        analysis = {}
         try:
             self.write_status("AI 分析中", 70, f"分析: {topic}")
             content = article_path.read_text(encoding="utf-8", errors="ignore")
@@ -135,6 +209,14 @@ class KnowledgeAgent(AgentBase):
             self._update_topics_index(topic, meta.get("platform_standard", "wechat"))
         except Exception as e:
             self.logger.warning(f"Topics index update failed (article still archived): {e}")
+
+        # Update main INDEX.md with keywords (non-blocking)
+        try:
+            keywords = analysis.get("keywords", [])
+            tags = analysis.get("tags", [])
+            self._update_main_index(topic, keywords, tags)
+        except Exception as e:
+            self.logger.warning(f"Main INDEX.md update failed (article still archived): {e}")
 
         self.write_completed(f"归档完成: {topic}")
         self.logger.info("Done")

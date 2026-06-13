@@ -183,10 +183,7 @@ class TestTopicTimeoutTarget:
              patch("dashboard.backend.background.get_quality_gates",
                    return_value={"topic_timeout_minutes": 30}), \
              patch("dashboard.backend.background.write_action") as mock_write, \
-             patch("dashboard.backend.background.alert_topic_timeout"), \
-             patch("dashboard.backend.background.create_pipeline_session", return_value=1), \
-             patch("dashboard.backend.background.create_trace", return_value=100), \
-             patch("dashboard.backend.background.complete_trace"):
+             patch("dashboard.backend.background.alert_topic_timeout"):
             topic_timeout_target()
 
         mock_write.assert_called_once()
@@ -207,10 +204,7 @@ class TestTopicTimeoutTarget:
              patch("dashboard.backend.background.get_quality_gates",
                    return_value={"topic_timeout_minutes": 30}), \
              patch("dashboard.backend.background.write_action") as mock_write, \
-             patch("dashboard.backend.background.alert_topic_timeout"), \
-             patch("dashboard.backend.background.create_pipeline_session"), \
-             patch("dashboard.backend.background.create_trace"), \
-             patch("dashboard.backend.background.complete_trace"):
+             patch("dashboard.backend.background.alert_topic_timeout"):
             topic_timeout_target()
 
         mock_write.assert_not_called()
@@ -226,10 +220,7 @@ class TestTopicTimeoutTarget:
              patch("dashboard.backend.background.get_quality_gates",
                    return_value={"topic_timeout_minutes": 30}), \
              patch("dashboard.backend.background.write_action") as mock_write, \
-             patch("dashboard.backend.background.alert_topic_timeout"), \
-             patch("dashboard.backend.background.create_pipeline_session"), \
-             patch("dashboard.backend.background.create_trace"), \
-             patch("dashboard.backend.background.complete_trace"):
+             patch("dashboard.backend.background.alert_topic_timeout"):
             topic_timeout_target()
 
         mock_write.assert_not_called()
@@ -246,10 +237,7 @@ class TestTopicTimeoutTarget:
              patch("dashboard.backend.background.get_quality_gates",
                    return_value={"topic_timeout_minutes": 30}), \
              patch("dashboard.backend.background.write_action"), \
-             patch("dashboard.backend.background.alert_topic_timeout") as mock_alert, \
-             patch("dashboard.backend.background.create_pipeline_session", return_value=1), \
-             patch("dashboard.backend.background.create_trace", return_value=100), \
-             patch("dashboard.backend.background.complete_trace"):
+             patch("dashboard.backend.background.alert_topic_timeout") as mock_alert:
             topic_timeout_target()
 
         mock_alert.assert_called_once()
@@ -266,10 +254,7 @@ class TestTopicTimeoutTarget:
              patch("dashboard.backend.background.get_quality_gates",
                    return_value={"topic_timeout_minutes": 10}), \
              patch("dashboard.backend.background.write_action") as mock_write, \
-             patch("dashboard.backend.background.alert_topic_timeout"), \
-             patch("dashboard.backend.background.create_pipeline_session", return_value=1), \
-             patch("dashboard.backend.background.create_trace", return_value=100), \
-             patch("dashboard.backend.background.complete_trace"):
+             patch("dashboard.backend.background.alert_topic_timeout"):
             topic_timeout_target()
 
         mock_write.assert_called_once()
@@ -325,10 +310,7 @@ class TestApprovalTimeoutTarget:
              patch("dashboard.backend.background.get_quality_gates",
                    return_value={"approval_timeout_minutes": 120}), \
              patch("dashboard.backend.background.write_action") as mock_write, \
-             patch("dashboard.backend.background.alert_approval_timeout"), \
-             patch("dashboard.backend.background.create_pipeline_session", return_value=1), \
-             patch("dashboard.backend.background.create_trace", return_value=100), \
-             patch("dashboard.backend.background.complete_trace"):
+             patch("dashboard.backend.background.alert_approval_timeout"):
             approval_timeout_target()
 
         mock_write.assert_called_once()
@@ -349,10 +331,7 @@ class TestApprovalTimeoutTarget:
              patch("dashboard.backend.background.get_quality_gates",
                    return_value={"approval_timeout_minutes": 120}), \
              patch("dashboard.backend.background.write_action") as mock_write, \
-             patch("dashboard.backend.background.alert_approval_timeout"), \
-             patch("dashboard.backend.background.create_pipeline_session"), \
-             patch("dashboard.backend.background.create_trace"), \
-             patch("dashboard.backend.background.complete_trace"):
+             patch("dashboard.backend.background.alert_approval_timeout"):
             approval_timeout_target()
 
         mock_write.assert_not_called()
@@ -368,10 +347,7 @@ class TestApprovalTimeoutTarget:
              patch("dashboard.backend.background.get_quality_gates",
                    return_value={"approval_timeout_minutes": 120}), \
              patch("dashboard.backend.background.write_action") as mock_write, \
-             patch("dashboard.backend.background.alert_approval_timeout"), \
-             patch("dashboard.backend.background.create_pipeline_session"), \
-             patch("dashboard.backend.background.create_trace"), \
-             patch("dashboard.backend.background.complete_trace"):
+             patch("dashboard.backend.background.alert_approval_timeout"):
             approval_timeout_target()
 
         mock_write.assert_not_called()
@@ -388,10 +364,7 @@ class TestApprovalTimeoutTarget:
              patch("dashboard.backend.background.get_quality_gates",
                    return_value={"approval_timeout_minutes": 120}), \
              patch("dashboard.backend.background.write_action"), \
-             patch("dashboard.backend.background.alert_approval_timeout") as mock_alert, \
-             patch("dashboard.backend.background.create_pipeline_session", return_value=1), \
-             patch("dashboard.backend.background.create_trace", return_value=100), \
-             patch("dashboard.backend.background.complete_trace"):
+             patch("dashboard.backend.background.alert_approval_timeout") as mock_alert:
             approval_timeout_target()
 
         mock_alert.assert_called_once()
@@ -436,10 +409,7 @@ class TestApprovalTimeoutTarget:
              patch("dashboard.backend.background.get_quality_gates",
                    return_value={"approval_timeout_minutes": 60}), \
              patch("dashboard.backend.background.write_action") as mock_write, \
-             patch("dashboard.backend.background.alert_approval_timeout"), \
-             patch("dashboard.backend.background.create_pipeline_session", return_value=1), \
-             patch("dashboard.backend.background.create_trace", return_value=100), \
-             patch("dashboard.backend.background.complete_trace"):
+             patch("dashboard.backend.background.alert_approval_timeout"):
             approval_timeout_target()
 
         mock_write.assert_called_once()
@@ -459,10 +429,7 @@ class TestApprovalTimeoutTarget:
              patch("dashboard.backend.background.get_quality_gates",
                    return_value={"approval_timeout_minutes": 120}), \
              patch("dashboard.backend.background.write_action") as mock_write, \
-             patch("dashboard.backend.background.alert_approval_timeout"), \
-             patch("dashboard.backend.background.create_pipeline_session", return_value=1), \
-             patch("dashboard.backend.background.create_trace", return_value=100), \
-             patch("dashboard.backend.background.complete_trace"):
+             patch("dashboard.backend.background.alert_approval_timeout"):
             approval_timeout_target()
 
         assert mock_write.call_count == 2
@@ -489,10 +456,7 @@ class TestTopicTimeoutAcceptance:
              patch("dashboard.backend.background.get_quality_gates",
                    return_value={"topic_timeout_minutes": 30}), \
              patch("dashboard.backend.background.write_action") as mock_write, \
-             patch("dashboard.backend.background.alert_topic_timeout"), \
-             patch("dashboard.backend.background.create_pipeline_session", return_value=1), \
-             patch("dashboard.backend.background.create_trace", return_value=100), \
-             patch("dashboard.backend.background.complete_trace"):
+             patch("dashboard.backend.background.alert_topic_timeout"):
             topic_timeout_target()
 
         mock_write.assert_called_once()
@@ -512,10 +476,7 @@ class TestTopicTimeoutAcceptance:
              patch("dashboard.backend.background.get_quality_gates",
                    return_value={"topic_timeout_minutes": 30}), \
              patch("dashboard.backend.background.write_action") as mock_write, \
-             patch("dashboard.backend.background.alert_topic_timeout"), \
-             patch("dashboard.backend.background.create_pipeline_session"), \
-             patch("dashboard.backend.background.create_trace"), \
-             patch("dashboard.backend.background.complete_trace"):
+             patch("dashboard.backend.background.alert_topic_timeout"):
             topic_timeout_target()
 
         mock_write.assert_not_called()
@@ -537,10 +498,7 @@ class TestApprovalTimeoutAcceptance:
              patch("dashboard.backend.background.get_quality_gates",
                    return_value={"approval_timeout_minutes": 120}), \
              patch("dashboard.backend.background.write_action") as mock_write, \
-             patch("dashboard.backend.background.alert_approval_timeout"), \
-             patch("dashboard.backend.background.create_pipeline_session", return_value=1), \
-             patch("dashboard.backend.background.create_trace", return_value=100), \
-             patch("dashboard.backend.background.complete_trace"):
+             patch("dashboard.backend.background.alert_approval_timeout"):
             approval_timeout_target()
 
         mock_write.assert_called_once()
@@ -560,10 +518,7 @@ class TestApprovalTimeoutAcceptance:
              patch("dashboard.backend.background.get_quality_gates",
                    return_value={"approval_timeout_minutes": 120}), \
              patch("dashboard.backend.background.write_action") as mock_write, \
-             patch("dashboard.backend.background.alert_approval_timeout"), \
-             patch("dashboard.backend.background.create_pipeline_session"), \
-             patch("dashboard.backend.background.create_trace"), \
-             patch("dashboard.backend.background.complete_trace"):
+             patch("dashboard.backend.background.alert_approval_timeout"):
             approval_timeout_target()
 
         mock_write.assert_not_called()
