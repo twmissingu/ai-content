@@ -9,6 +9,7 @@ denies all requests.
 import hmac
 import logging
 import os
+import threading
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -24,13 +25,14 @@ logger = logging.getLogger("gaoding.dashboard")
 # Paths that don't require authentication
 _PUBLIC_PATHS = {
     "/api/health",
-    "/api/token/log",
 }
 
-# Auth failure tracking for security event alerting
+# Auth failure tracking for security event alerting (thread-safe)
 _auth_failure_counts: dict[str, list[float]] = defaultdict(list)
+_auth_failure_lock = threading.Lock()
 _AUTH_FAILURE_WINDOW = 300  # 5 minutes
 _AUTH_FAILURE_THRESHOLD = 10  # Alert after 10 failures in window
+_MAX_AUTH_TRACKED_IPS = 5000  # Bound memory usage
 _last_alert_time: float = 0
 _ALERT_COOLDOWN = 60  # Min 60 seconds between alerts
 
@@ -93,24 +95,33 @@ class AuthMiddleware(BaseHTTPMiddleware):
         now = time.time()
         cutoff = now - _AUTH_FAILURE_WINDOW
 
-        _auth_failure_counts[client_ip] = [
-            t for t in _auth_failure_counts[client_ip] if t > cutoff
-        ]
-        _auth_failure_counts[client_ip].append(now)
+        with _auth_failure_lock:
+            # Evict stale entries if map is too large (bounded memory)
+            if len(_auth_failure_counts) > _MAX_AUTH_TRACKED_IPS:
+                stale_ips = [ip for ip, ts in _auth_failure_counts.items()
+                             if not ts or ts[-1] < cutoff]
+                for ip in stale_ips:
+                    del _auth_failure_counts[ip]
 
-        if len(_auth_failure_counts[client_ip]) >= _AUTH_FAILURE_THRESHOLD:
+            _auth_failure_counts[client_ip] = [
+                t for t in _auth_failure_counts[client_ip] if t > cutoff
+            ]
+            _auth_failure_counts[client_ip].append(now)
+            failure_count = len(_auth_failure_counts[client_ip])
+
+        if failure_count >= _AUTH_FAILURE_THRESHOLD:
             if now - _last_alert_time > _ALERT_COOLDOWN:
                 _last_alert_time = now
                 logger.warning(
                     f"Auth failure threshold exceeded for {client_ip}: "
-                    f"{len(_auth_failure_counts[client_ip])} failures in {_AUTH_FAILURE_WINDOW}s"
+                    f"{failure_count} failures in {_AUTH_FAILURE_WINDOW}s"
                 )
                 try:
                     from dashboard.backend.feishu import alert_agent_error
                     alert_agent_error(
                         "auth",
                         f"认证失败阈值告警: {client_ip} 在 {_AUTH_FAILURE_WINDOW}s 内失败 "
-                        f"{len(_auth_failure_counts[client_ip])} 次",
+                        f"{failure_count} 次",
                     )
                 except Exception as e:
                     logger.debug(f"Failed to send auth failure alert: {e}")

@@ -658,6 +658,18 @@ def write_status(
         "error": error,
         **extra
     }
-    
+
     path = STATUS_DIR / f"{agent}.json"
     atomic_write_json(path, status)
+
+
+def load_image_styles() -> dict:
+    """Load image style mappings from config/image_styles.json."""
+    from config.settings import CONFIG_DIR
+    path = CONFIG_DIR / "image_styles.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}

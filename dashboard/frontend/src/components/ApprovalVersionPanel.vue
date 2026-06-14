@@ -49,15 +49,14 @@ async function fetchVersions() {
 async function approveVersion(versionId: number) {
   processingIds.value.add(versionId)
   try {
-    
+
     const res = await fetch(`${API_BASE}/api/approval/version/${versionId}/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     toast.success('版本已批准')
-    const v = versions.value.find(v => v.id === versionId)
-    if (v) v.status = 'approved'
+    versions.value = versions.value.map(v => v.id === versionId ? { ...v, status: 'approved' } : v)
   } catch (e) {
     toast.error(`批准失败: ${e instanceof Error ? e.message : '未知错误'}`)
   } finally {
@@ -68,15 +67,14 @@ async function approveVersion(versionId: number) {
 async function rejectVersion(versionId: number) {
   processingIds.value.add(versionId)
   try {
-    
+
     const res = await fetch(`${API_BASE}/api/approval/version/${versionId}/reject`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     toast.success('版本已驳回')
-    const v = versions.value.find(v => v.id === versionId)
-    if (v) v.status = 'rejected'
+    versions.value = versions.value.map(v => v.id === versionId ? { ...v, status: 'rejected' } : v)
   } catch (e) {
     toast.error(`驳回失败: ${e instanceof Error ? e.message : '未知错误'}`)
   } finally {

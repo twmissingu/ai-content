@@ -31,7 +31,7 @@ def _reset_rate_limiter():
     yield
     try:
         from dashboard.backend.main import rate_limiter
-        rate_limiter.requests.clear()
+        rate_limiter._buckets.clear()
     except Exception:
         pass
 

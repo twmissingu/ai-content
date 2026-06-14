@@ -9,7 +9,7 @@ def client(monkeypatch):
     """Create a test client with mocked database functions."""
     # Reset rate limiter to avoid 429 from previous test runs or running backend
     from dashboard.backend.main import rate_limiter
-    rate_limiter.requests.clear()
+    rate_limiter._buckets.clear()
 
     sample_traces = [
         {"id": 1, "session_id": 10, "agent": "scout", "stage": "collect",

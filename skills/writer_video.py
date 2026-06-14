@@ -20,7 +20,10 @@ from pathlib import Path
 from typing import Optional
 
 from config.settings import CONFIG_DIR
-from skills.common import get_agent_logger
+from skills.common import get_agent_logger, load_image_styles
+
+# Backward compatibility alias
+_load_image_styles = load_image_styles
 
 
 def _load_video_count(worker_type: str) -> int:
@@ -35,17 +38,6 @@ def _load_video_count(worker_type: str) -> int:
         return style.get("videos", 0)
     except (json.JSONDecodeError, OSError):
         return 0
-
-
-def _load_image_styles() -> dict:
-    """Load image style mappings from config/image_styles.json."""
-    path = CONFIG_DIR / "image_styles.json"
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
 
 
 def split_article_into_segments(

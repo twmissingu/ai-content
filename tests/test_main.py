@@ -32,22 +32,32 @@ class TestRateLimiter:
     def test_window_expires(self):
         from dashboard.backend.main import RateLimiter
         rl = RateLimiter(requests_per_minute=2)
-        # Manually set old timestamps
-        rl.requests["1.2.3.4"] = [time.time() - 61, time.time() - 61]
+        # Fill the bucket
+        rl.is_allowed("1.2.3.4")
+        rl.is_allowed("1.2.3.4")
+        assert rl.is_allowed("1.2.3.4") is False
+        # Manually set old bucket timestamps to simulate time passing
+        now = time.time()
+        old_bucket_ts = int(now - 120) // 60 * 60  # 2 minutes ago
+        rl._buckets["1.2.3.4"] = (old_bucket_ts, 2, old_bucket_ts - 60, 0, now - 120)
         assert rl.is_allowed("1.2.3.4") is True
 
-    def test_evicts_stale_clients(self):
+    def test_evicts_lru_clients(self):
         from dashboard.backend.main import RateLimiter
         rl = RateLimiter(requests_per_minute=120)
         rl._MAX_CLIENTS = 2
-        # Add 3 clients, 2 stale
-        rl.requests["stale1"] = [time.time() - 120]
-        rl.requests["stale2"] = [time.time() - 120]
-        rl.requests["active"] = [time.time()]
+        # Add 3 clients with different last_seen times
+        now = time.time()
+        bucket_ts = int(now) // 60 * 60
+        rl._buckets["client1"] = (bucket_ts, 1, bucket_ts - 60, 0, now - 300)
+        rl._buckets["client2"] = (bucket_ts, 1, bucket_ts - 60, 0, now - 200)
+        rl._buckets["client3"] = (bucket_ts, 1, bucket_ts - 60, 0, now - 100)
         # Trigger eviction by calling is_allowed on a new IP
         rl.is_allowed("new_ip")
-        assert "stale1" not in rl.requests
-        assert "stale2" not in rl.requests
+        # LRU (client1 with oldest last_seen) should be evicted
+        assert "client1" not in rl._buckets
+        assert "client2" in rl._buckets
+        assert "client3" in rl._buckets
 
 
 class TestGetCorsOrigins:
@@ -93,7 +103,7 @@ class TestRateLimitMiddleware:
         monkeypatch.delenv("API_KEY", raising=False)
         from dashboard.backend.main import app, rate_limiter
         # Reset rate limiter state
-        rate_limiter.requests.clear()
+        rate_limiter._buckets.clear()
         from fastapi.testclient import TestClient
         return TestClient(app)
 

@@ -54,7 +54,10 @@ import time
 
 
 class RateLimiter:
-    """Simple in-memory rate limiter with bounded memory.
+    """In-memory rate limiter using sliding window counters (O(1) per request).
+
+    Uses two 60-second buckets per client to approximate a sliding window.
+    Memory is bounded by _MAX_CLIENTS with LRU eviction of inactive clients.
 
     NOTE: In-memory storage means per-process isolation — each worker gets its
     own counter. Multi-worker deployments (e.g. gunicorn --workers=N) require a
@@ -65,29 +68,49 @@ class RateLimiter:
 
     def __init__(self, requests_per_minute: int = 120):
         self.requests_per_minute = requests_per_minute
-        self.requests: dict[str, list[float]] = defaultdict(list)
+        # {ip: (current_bucket_ts, current_count, previous_bucket_ts, previous_count, last_seen)}
+        self._buckets: dict[str, tuple[float, int, float, int, float]] = {}
         self._lock = threading.Lock()
 
     def is_allowed(self, client_ip: str) -> bool:
         now = time.time()
-        minute_ago = now - 60
-        with self._lock:
-            # Evict stale clients when map grows too large.
-            # NOTE: O(n) scan over all entries; could be optimized with an LRU
-            # cache or time-bucketed counters if the client map grows very large.
-            if len(self.requests) > self._MAX_CLIENTS:
-                stale = [ip for ip, ts in self.requests.items()
-                         if not ts or ts[-1] < minute_ago]
-                for ip in stale:
-                    del self.requests[ip]
+        bucket_ts = int(now) // 60 * 60  # Start of current 60s bucket
 
-            self.requests[client_ip] = [
-                t for t in self.requests[client_ip] if t > minute_ago
-            ]
-            if len(self.requests[client_ip]) >= self.requests_per_minute:
-                return False
-            self.requests[client_ip].append(now)
-            return True
+        with self._lock:
+            entry = self._buckets.get(client_ip)
+
+            if entry is None:
+                # New client — evict LRU if at capacity
+                if len(self._buckets) >= self._MAX_CLIENTS:
+                    self._evict_lru()
+                self._buckets[client_ip] = (bucket_ts, 1, bucket_ts - 60, 0, now)
+                return True
+
+            cur_ts, cur_count, prev_ts, prev_count, _ = entry
+
+            if cur_ts == bucket_ts:
+                # Same bucket — check against limit
+                if cur_count >= self.requests_per_minute:
+                    return False
+                self._buckets[client_ip] = (cur_ts, cur_count + 1, prev_ts, prev_count, now)
+                return True
+            elif cur_ts == bucket_ts - 60:
+                # Previous bucket becomes old, current becomes previous
+                if cur_count >= self.requests_per_minute:
+                    return False
+                self._buckets[client_ip] = (bucket_ts, 1, cur_ts, cur_count, now)
+                return True
+            else:
+                # Stale — reset both buckets
+                self._buckets[client_ip] = (bucket_ts, 1, bucket_ts - 60, 0, now)
+                return True
+
+    def _evict_lru(self) -> None:
+        """Evict the least recently seen client. Called under lock."""
+        if not self._buckets:
+            return
+        oldest_ip = min(self._buckets, key=lambda ip: self._buckets[ip][4])
+        del self._buckets[oldest_ip]
 
 
 rate_limiter = RateLimiter(requests_per_minute=120)
@@ -204,6 +227,24 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+# Global exception handler — prevents leaking internal details in production
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch-all exception handler that hides internal details in production."""
+    logger.error(f"Unhandled exception on {request.method} {request.url.path}: {exc}", exc_info=True)
+    if _env == "production":
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "服务器内部错误，请稍后重试"},
+        )
+    # In development, include the error for debugging
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {type(exc).__name__}: {str(exc)[:200]}"},
+    )
+
+
 # Middleware (order matters: last added = first executed)
 _trusted_proxies = set(
     p.strip() for p in os.getenv("TRUSTED_PROXIES", "").split(",") if p.strip()
@@ -250,11 +291,31 @@ app.mount(
 
 
 @app.middleware("http")
-async def add_image_cache_headers(request: Request, call_next):
-    """Add Cache-Control headers for static image responses."""
+async def add_security_and_cache_headers(request: Request, call_next):
+    """Add security headers to all responses and cache headers for static assets."""
     response = await call_next(request)
+
+    # Security headers (applied to all responses)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self' ws: wss:; "
+        "font-src 'self'; "
+        "frame-ancestors 'none'"
+    )
+    if _env == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+    # Cache headers for static images
     if request.url.path.startswith("/api/images/"):
         response.headers["Cache-Control"] = "public, max-age=86400"
+
     return response
 
 

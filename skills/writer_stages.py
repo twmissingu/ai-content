@@ -16,18 +16,24 @@ import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
-from config.settings import CONFIG_DIR, DOMAIN, LENGTH, TONE, STANCE
+from config.settings import CONFIG_DIR, DOMAIN, LENGTH, MAX_REWRITE_ROUNDS, TONE, STANCE
 from skills.agent_schemas import QualityGateResult
 from skills.common import load_prompt
 from skills.llm import chat, chat_structured
 
 # ── Constants ──────────────────────────────────────────────────────
 
+# Content size limits for LLM context windows
+MAX_SOURCE_FETCH_SIZE = 8000
+MAX_PROOFREAD_INPUT_SIZE = 8000
+MAX_REWRITE_INPUT_SIZE = 3000
+MAX_CRITIQUE_INPUT_SIZE = 8000
+
 _DEFAULT_GATES = {
     "proofread_threshold": 60,
     "critique_threshold": 70,
     "title_threshold": 75,
-    "max_rewrite_rounds": 3,
+    "max_rewrite_rounds": MAX_REWRITE_ROUNDS,
 }
 
 STAGES = [
@@ -175,7 +181,7 @@ def fetch_source(url: str, logger=None) -> str:
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode == 0 and result.stdout.strip():
-            return result.stdout[:8000]  # limit size
+            return result.stdout[:MAX_SOURCE_FETCH_SIZE]
     except Exception as e:
         if logger:
             logger.warning(f"Failed to fetch source: {e}")
@@ -243,7 +249,7 @@ def stage_proofread(text: str, patterns: list, quality_gates: dict,
     start_time = time.monotonic()
     llm_result = chat_structured(
         system_prompt="你是一个专业的文字编辑，擅长识别AI生成内容的痕迹并使其更自然。你对AI腔零容忍。",
-        user_prompt=load_prompt("writer_proofread", article=cleaned[:8000]),
+        user_prompt=load_prompt("writer_proofread", article=cleaned[:MAX_PROOFREAD_INPUT_SIZE]),
         temperature=0.3,
     )
     duration = time.monotonic() - start_time
@@ -262,7 +268,7 @@ def stage_proofread(text: str, patterns: list, quality_gates: dict,
             start_time = time.monotonic()
             cleaned = chat(
                 system_prompt="你是一个文字编辑。请重写以下段落，去掉AI写作腔调，使其更自然口语化。",
-                user_prompt=f"请重写这段文字，更自然、更像真人写的:\n\n{cleaned[:3000]}\n\n建议: {suggestion}",
+                user_prompt=f"请重写这段文字，更自然、更像真人写的:\n\n{cleaned[:MAX_REWRITE_INPUT_SIZE]}\n\n建议: {suggestion}",
                 temperature=0.7,
             )
             duration = time.monotonic() - start_time
@@ -303,7 +309,7 @@ def stage_critique(text: str, topic_title: str, round_num: int,
             user_prompt=load_prompt(
                 "writer_critique_scorer",
                 topic_title=topic_title,
-                article=text[:8000],
+                article=text[:MAX_CRITIQUE_INPUT_SIZE],
             ),
             temperature=0.4,
         )
@@ -316,7 +322,7 @@ def stage_critique(text: str, topic_title: str, round_num: int,
             user_prompt=load_prompt(
                 "writer_critique_critic",
                 topic_title=topic_title,
-                article=text[:8000],
+                article=text[:MAX_CRITIQUE_INPUT_SIZE],
             ),
             temperature=0.6,
         )

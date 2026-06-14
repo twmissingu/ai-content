@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
@@ -18,8 +19,9 @@ router = APIRouter(prefix="/api/topics", tags=["topics"])
 
 def _safe_topic_id(topic_id: str) -> str:
     """Sanitize topic_id to prevent path traversal."""
-    safe = topic_id.replace("/", "_").replace("\\", "_").replace("\0", "")
-    safe = safe.replace("..", "")
+    if any(c in topic_id for c in ('/', '\\', '\0')):
+        return ""
+    safe = re.sub(r'\.\.', '', topic_id)
     target = PENDING_DIR / f"{safe}.json"
     try:
         target.resolve().relative_to(PENDING_DIR.resolve())
@@ -39,11 +41,21 @@ def get_topics(
     """List pending topic candidates from queue/pending/.
 
     Supports filtering by session, minimum score, and source.
+    Uses scandir for efficient directory listing.
     """
-    files = sorted(PENDING_DIR.glob("topic_*.json"), key=os.path.getmtime, reverse=True)
+    # Use scandir for efficient directory listing
+    topic_files = []
+    with os.scandir(PENDING_DIR) as it:
+        for entry in it:
+            if entry.is_file() and entry.name.startswith("topic_") and entry.name.endswith(".json"):
+                topic_files.append(entry)
+    topic_files.sort(key=lambda e: e.stat().st_mtime, reverse=True)
+
     topics = []
-    for f in files:
-        data = read_json(f)
+    total = 0
+    needed = offset + limit
+    for entry in topic_files:
+        data = read_json(Path(entry.path))
         if not data:
             continue
 
@@ -55,11 +67,13 @@ def get_topics(
         if source and data.get("source") != source:
             continue
 
-        data["id"] = f.stem
-        data["filename"] = f.name
-        topics.append(data)
+        total += 1
+        # Only collect what we need for the page
+        if len(topics) < needed:
+            data["id"] = entry.name.replace(".json", "")
+            data["filename"] = entry.name
+            topics.append(data)
 
-    total = len(topics)
     topics = topics[offset:offset + limit]
     return {"topics": topics, "count": len(topics), "total": total}
 
@@ -140,12 +154,13 @@ def get_topic_detail(topic_id: str):
 @router.post("/confirm")
 def confirm_topic(req: ConfirmRequest):
     """Confirm a topic, triggering Writer on next cron."""
-    # Verify topic exists
     safe_id = _safe_topic_id(req.target_id)
-    if safe_id:
-        topic_path = PENDING_DIR / f"{safe_id}.json"
-        if not topic_path.exists():
-            raise HTTPException(404, f"Topic not found: {req.target_id}")
+    if not safe_id:
+        raise HTTPException(400, f"Invalid topic ID: {req.target_id}")
 
-    path = write_action("confirm", req.target_id)
+    topic_path = PENDING_DIR / f"{safe_id}.json"
+    if not topic_path.exists():
+        raise HTTPException(404, f"Topic not found: {req.target_id}")
+
+    path = write_action("confirm", safe_id)
     return {"status": "ok", "path": str(path)}

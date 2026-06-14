@@ -31,7 +31,6 @@ async function quickApprove(id: string) {
   try {
     await store.approve(id)
     toast.success('已通过')
-    await store.fetchApprovalQueue()
   } catch (e) {
     toast.error(`操作失败: ${e instanceof Error ? e.message : '未知错误'}`)
   } finally {
@@ -46,8 +45,6 @@ async function quickReject(id: string) {
     await store.reject(id, quickRejectReason.value)
     toast.success('已驳回')
     quickRejectReason.value = ''
-    quickRejectingId.value = null
-    await store.fetchApprovalQueue()
   } catch (e) {
     toast.error(`操作失败: ${e instanceof Error ? e.message : '未知错误'}`)
   } finally {

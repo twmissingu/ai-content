@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
+import { useToast } from '../composables/useToast'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
 import { useKeyboardShortcut, isInputElement } from '../composables/useKeyboardShortcut'
 import { Bar } from 'vue-chartjs'
@@ -17,8 +18,14 @@ import { API_BASE } from '../utils/api'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
+interface CostEntry {
+  date: string
+  cost: number
+}
+
 const store = useDashboardStore()
-const costData = ref<any[]>([])
+const toast = useToast()
+const costData = ref<CostEntry[]>([])
 const monthlyTotal = ref(0)
 const loading = ref(true)
 
@@ -33,13 +40,16 @@ async function fetchCost() {
     costData.value = data.daily || []
     monthlyTotal.value = data.monthly_total || 0
   } catch (e) {
-    console.error('Failed to fetch cost data:', e)
+    toast.error('加载成本数据失败')
   } finally {
     loading.value = false
   }
 }
 
-onMounted(fetchCost)
+onMounted(() => {
+  fetchCost()
+  store.fetchConfig()
+})
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
@@ -82,7 +92,7 @@ const chartOptions = computed(() => ({
       padding: 12,
       cornerRadius: 10,
       callbacks: {
-        label: (context: any) => `$${context.parsed.y.toFixed(4)}`,
+        label: (context: { parsed: { y: number } }) => `$${context.parsed.y.toFixed(4)}`,
       },
     },
   },
@@ -108,7 +118,7 @@ const chartOptions = computed(() => ({
           size: 11,
         },
         color: 'rgba(98, 93, 85, 0.82)',
-        callback: (value: any) => `$${value}`,
+        callback: (value: string | number) => `$${value}`,
       },
     },
   },

@@ -49,7 +49,7 @@ def get_cost_data():
         logger.error(f"Error getting cost data: {e}")
         cost_path = PROJECT_ROOT / "data/logs/cost.csv"
         if not cost_path.exists():
-            return {"daily": [], "monthly_total": 0, "error": str(e)}
+            return {"daily": [], "monthly_total": 0, "error": "数据加载失败，请稍后重试"}
         import csv
         import io
         lines = cost_path.read_text().strip().split("\n")[1:]

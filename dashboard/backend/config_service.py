@@ -147,19 +147,37 @@ def get_default_budget() -> dict:
     }
 
 
+# File content cache with mtime-based invalidation
+_file_cache: dict[str, tuple[float, dict]] = {}  # filename -> (mtime, data)
+_file_cache_lock = threading.Lock()
+
+
 def load_config_from_file(filename: str, defaults: dict = None) -> dict:
-    """Load configuration from JSON file."""
+    """Load configuration from JSON file with mtime-based caching."""
     path = CONFIG_DIR / filename
-    if path.exists():
-        try:
-            data = json.loads(path.read_text())
-            if defaults:
-                # Merge with defaults
-                merged = {**defaults, **data}
-                return merged
-            return data
-        except (json.JSONDecodeError, OSError):
-            pass
+    if not path.exists():
+        return defaults or {}
+
+    try:
+        current_mtime = path.stat().st_mtime
+    except OSError:
+        return defaults or {}
+
+    with _file_cache_lock:
+        cached = _file_cache.get(filename)
+        if cached and cached[0] == current_mtime:
+            data = cached[1]
+            return {**defaults, **data} if defaults else data
+
+    try:
+        data = json.loads(path.read_text())
+        with _file_cache_lock:
+            _file_cache[filename] = (current_mtime, data)
+        if defaults:
+            return {**defaults, **data}
+        return data
+    except (json.JSONDecodeError, OSError):
+        pass
     return defaults or {}
 
 

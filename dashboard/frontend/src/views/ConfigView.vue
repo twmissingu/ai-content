@@ -63,6 +63,7 @@ async function selectPrompt(prompt: PromptTemplate) {
     const data = await res.json()
     versions.value = data.versions || []
   } catch (e) {
+    toast.error('加载版本历史失败')
     versions.value = []
   }
 }
@@ -81,13 +82,16 @@ async function savePrompt() {
         variables,
       }),
     })
-    if (res.ok) {
-      await fetchPrompts()
-      // Refresh versions
-      const vRes = await fetch(`${API_BASE}/api/prompts/${editingName.value}/versions`)
-      const vData = await vRes.json()
-      versions.value = vData.versions || []
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(text || `HTTP ${res.status}`)
     }
+    await fetchPrompts()
+    // Refresh versions
+    const vRes = await fetch(`${API_BASE}/api/prompts/${editingName.value}/versions`)
+    const vData = await vRes.json()
+    versions.value = vData.versions || []
+    toast.success('提示词已保存')
   } catch (e) {
     toast.error(`保存提示词失败: ${e instanceof Error ? e.message : '未知错误'}`)
   } finally {

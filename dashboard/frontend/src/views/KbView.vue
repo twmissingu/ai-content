@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import DOMPurify from 'dompurify'
+import { useToast } from '../composables/useToast'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
 import { useKeyboardShortcut, isInputElement } from '../composables/useKeyboardShortcut'
 import { API_BASE } from '../utils/api'
 
-
+const toast = useToast()
 
 // ── Directory tree state ──
 interface TreeNode {
@@ -24,10 +26,24 @@ const fileLoading = ref(false)
 const fileError = ref<string | null>(null)
 
 // ── Search state ──
+interface KbSearchResult {
+  path: string
+  title: string
+  section: string
+  snippet: string
+  score: number
+}
+
+interface KbSection {
+  name: string
+  path: string
+  file_count: number
+}
+
 const searchInputRef = ref<HTMLInputElement | null>(null)
 const query = ref('')
-const results = ref<any[]>([])
-const sections = ref<any[]>([])
+const results = ref<KbSearchResult[]>([])
+const sections = ref<KbSection[]>([])
 const searched = ref(false)
 const loading = ref(false)
 const loadingSections = ref(false)
@@ -44,7 +60,7 @@ async function fetchTree() {
     const data = await res.json()
     tree.value = (data.tree || []).map(initNode)
   } catch (e) {
-    console.error('Failed to load tree:', e)
+    toast.error('加载知识库目录失败')
   } finally {
     treeLoading.value = false
   }
@@ -165,7 +181,7 @@ function highlightMatch(text: string, keyword: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
   const regex = new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
-  return escaped.replace(regex, '<mark class="highlight">$1</mark>')
+  return DOMPurify.sanitize(escaped.replace(regex, '<mark class="highlight">$1</mark>'))
 }
 
 // ── Keyboard shortcuts ──────────────────────────────────────────────

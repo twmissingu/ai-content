@@ -6,7 +6,7 @@
  *   - ApprovalVersionPanel (platform version management)
  *   - ApprovalPublishPanel (publish button)
  */
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useDashboardStore } from '../stores/dashboard'
 import { useToast } from '../composables/useToast'
 import { useKeyboardShortcut, isInputElement } from '../composables/useKeyboardShortcut'
@@ -15,6 +15,11 @@ import ApprovalQueueTable from '../components/ApprovalQueueTable.vue'
 
 const store = useDashboardStore()
 const toast = useToast()
+
+// Fetch data on mount for direct navigation
+onMounted(() => {
+  store.fetchApprovalQueue()
+})
 
 // ── Batch mode (page-level state shared with ApprovalQueueTable) ────
 const isBatchMode = ref(false)

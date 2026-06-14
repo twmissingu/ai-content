@@ -606,14 +606,14 @@ class TestLoadImageStyles:
     """Test _load_image_styles() from writer_illustration module."""
 
     def test_returns_empty_when_no_file(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("skills.writer_illustration.CONFIG_DIR", tmp_path / "nonexistent")
+        monkeypatch.setattr("config.settings.CONFIG_DIR", tmp_path / "nonexistent")
         from skills.writer_illustration import _load_image_styles
         result = _load_image_styles()
         assert result == {}
 
     def test_loads_from_file(self, tmp_path, monkeypatch):
         import json
-        monkeypatch.setattr("skills.writer_illustration.CONFIG_DIR", tmp_path)
+        monkeypatch.setattr("config.settings.CONFIG_DIR", tmp_path)
         styles = {
             "tutorial": {"style": "modern, clean", "aspect_ratio": "16:9", "size": "1024x576"},
             "news": {"style": "photorealistic", "aspect_ratio": "4:3", "size": "800x600"},
@@ -625,7 +625,7 @@ class TestLoadImageStyles:
         assert result["news"]["size"] == "800x600"
 
     def test_returns_empty_on_json_error(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("skills.writer_illustration.CONFIG_DIR", tmp_path)
+        monkeypatch.setattr("config.settings.CONFIG_DIR", tmp_path)
         (tmp_path / "image_styles.json").write_text("not json{")
         from skills.writer_illustration import _load_image_styles
         result = _load_image_styles()

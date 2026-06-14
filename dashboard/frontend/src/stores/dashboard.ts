@@ -229,7 +229,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
   }
 
   function setLoading(key: string, value: boolean) {
-    loadingStates.value[key] = value
+    loadingStates.value = { ...loadingStates.value, [key]: value }
   }
 
   function handleError(e: unknown, _context: string): string {

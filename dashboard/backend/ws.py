@@ -109,9 +109,17 @@ class ConnectionManager:
         return "|".join(parts)
 
     async def _watch_status_files(self):
-        """Poll status files every 3s and broadcast on change."""
+        """Poll status files every 3s and broadcast on change.
+
+        Skips polling entirely when no clients are connected.
+        """
         while True:
             try:
+                # Skip all work if nobody is listening
+                if not self._connections:
+                    await asyncio.sleep(3)
+                    continue
+
                 h = self._status_hash()
                 if h != self._last_status_hash:
                     self._last_status_hash = h

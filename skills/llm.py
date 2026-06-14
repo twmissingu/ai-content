@@ -47,6 +47,7 @@ _CACHE_TTL_SECONDS: int = int(os.getenv("LLM_CACHE_TTL_HOURS", "24")) * 3600
 _CACHE_MAX_ENTRIES: int = int(os.getenv("LLM_CACHE_MAX_ENTRIES", "5000"))
 _CACHE_ENABLED: bool = os.getenv("LLM_CACHE_ENABLED", "true").lower() == "true"
 _cache_lock = threading.Lock()
+_cache_entry_count: int = -1  # -1 = not initialized; >= 0 = tracked count
 
 
 def _get_cache_db_path() -> Path:
@@ -142,6 +143,7 @@ def _cache_get(cache_key: str) -> str | None:
 
 def _cache_put(cache_key: str, response: str, model: str) -> None:
     """Store a response in the cache with LRU eviction."""
+    global _cache_entry_count
     if not _CACHE_ENABLED:
         return
     try:
@@ -154,15 +156,21 @@ def _cache_put(cache_key: str, response: str, model: str) -> None:
                    VALUES (?, ?, ?, ?, ?, 1)""",
                 (cache_key, response, model, now, now),
             )
+            # Initialize count from DB if not yet tracked
+            if _cache_entry_count < 0:
+                _cache_entry_count = conn.execute("SELECT COUNT(*) FROM llm_cache").fetchone()[0]
+            else:
+                _cache_entry_count += 1  # INSERT OR REPLACE may not increase count
+
             # Evict oldest entries if over limit
-            count = conn.execute("SELECT COUNT(*) FROM llm_cache").fetchone()[0]
-            if count > _CACHE_MAX_ENTRIES:
-                excess = count - _CACHE_MAX_ENTRIES
+            if _cache_entry_count > _CACHE_MAX_ENTRIES:
+                excess = _cache_entry_count - _CACHE_MAX_ENTRIES
                 conn.execute(
                     "DELETE FROM llm_cache WHERE cache_key IN "
                     "(SELECT cache_key FROM llm_cache ORDER BY last_accessed ASC LIMIT ?)",
                     (excess,),
                 )
+                _cache_entry_count = _CACHE_MAX_ENTRIES
             conn.commit()
             logger.debug(f"LLM cache put: {cache_key[:12]}... (model={model})")
     except Exception as e:

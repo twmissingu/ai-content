@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import threading
+import time
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,10 +34,23 @@ _MAX_CONCURRENT_AGENTS = 3
 _running_agents = 0
 _running_agents_lock = threading.Lock()
 
+# Pipeline status cache (shared between REST and WebSocket)
+_status_cache: dict | None = None
+_status_cache_ts: float = 0
+_status_cache_lock = threading.Lock()
+_STATUS_CACHE_TTL = 2.0  # seconds
+
 
 @router.get("/status")
 def get_pipeline_status():
-    """Read all status files and return aggregated view with budget info."""
+    """Read all status files and return aggregated view with budget info (cached)."""
+    global _status_cache, _status_cache_ts
+    now = time.time()
+
+    with _status_cache_lock:
+        if _status_cache and (now - _status_cache_ts) < _STATUS_CACHE_TTL:
+            return _status_cache
+
     agents = {}
     for f in STATUS_DIR.glob("*.json"):
         data = read_json(f)
@@ -47,11 +61,17 @@ def get_pipeline_status():
             agents[name]["timeout"] = True
 
     budget = check_budget_limit()
-    return {
+    result = {
         "agents": agents,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "budget": budget,
     }
+
+    with _status_cache_lock:
+        _status_cache = result
+        _status_cache_ts = now
+
+    return result
 
 
 @router.get("/status/writer-workers")

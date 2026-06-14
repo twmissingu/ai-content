@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useToast } from '../composables/useToast'
 import SkeletonLoader from '../components/SkeletonLoader.vue'
 import { useKeyboardShortcut, isInputElement } from '../composables/useKeyboardShortcut'
 import { API_BASE } from '../utils/api'
+
+const toast = useToast()
 
 
 
@@ -73,7 +76,7 @@ async function fetchStats() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     stats.value = await res.json()
   } catch (e) {
-    console.error('Failed to load stats:', e)
+    toast.error('加载统计信息失败')
   } finally {
     statsLoading.value = false
   }

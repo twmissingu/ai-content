@@ -53,11 +53,6 @@ CANDIDATE_CAP = 10
 MIN_CANDIDATES = 5
 MAX_SUB_DIRECTIONS = 3  # diversity: at least 3 different sub-directions
 
-# Phase 1: only morning/afternoon session
-_SESSION = None  # set at call time via main()
-_RUN_TIMESTAMP = None  # set at call time via main()
-_RUN_DATE = None  # set at call time via main()
-
 # Stage name mapping for trace files
 _STAGE_NAMES = {
     "collect": "采集选题",
@@ -67,9 +62,19 @@ _STAGE_NAMES = {
 }
 
 
-def _write_status(stage: str, progress_pct: int, detail: str, error: Optional[str] = None) -> None:
+class _ScoutContext:
+    """Thread-safe context for a single scout run (replaces module-level globals)."""
+    __slots__ = ('session', 'run_timestamp', 'run_date')
+
+    def __init__(self, session: str, run_timestamp: str, run_date: str):
+        self.session = session
+        self.run_timestamp = run_timestamp
+        self.run_date = run_date
+
+
+def _write_status(ctx: _ScoutContext, stage: str, progress_pct: int, detail: str, error: Optional[str] = None) -> None:
     """Write scout agent status using the standalone write_status function."""
-    _write_status_fn("scout", stage, progress_pct, detail, error, started_at=_RUN_TIMESTAMP)
+    _write_status_fn("scout", stage, progress_pct, detail, error, started_at=ctx.run_timestamp)
 
 
 class ScoutAgent(AgentBase):
@@ -133,21 +138,21 @@ def main(agent: Optional[ScoutAgent] = None):
         agent: Optional ScoutAgent instance for stage tracking.
                If None, falls back to standalone _write_status.
     """
-    global _SESSION, _RUN_TIMESTAMP, _RUN_DATE
-    _SESSION = sys.argv[1] if len(sys.argv) > 1 else "morning"
-    _RUN_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    _RUN_DATE = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    session = sys.argv[1] if len(sys.argv) > 1 else "morning"
+    run_timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    run_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    ctx = _ScoutContext(session, run_timestamp, run_date)
 
     # No session created here — dashboard background imports trail files
     session_id = None
-    _write_status("collecting", 5, f"Starting scout {_SESSION} session")
-    logger.info(f"{_SESSION} session started at {_RUN_TIMESTAMP}")
+    _write_status(ctx, "collecting", 5, f"Starting scout {ctx.session} session")
+    logger.info(f"{ctx.session} session started at {ctx.run_timestamp}")
 
     cold_start = _is_cold_start()
     logger.info(f"Cold start mode: {cold_start}")
 
     # Step 1: Collect
-    _write_status("collecting", 15, "Collecting from all sources")
+    _write_status(ctx, "collecting", 15, "Collecting from all sources")
     if agent:
         agent.start_stage("collect")
     try:
@@ -159,7 +164,7 @@ def main(agent: Optional[ScoutAgent] = None):
     logger.info(f"Collected {len(candidates)} raw candidates")
 
     # Step 2: Dedup & filter
-    _write_status("dedup", 35, f"Deduplicating {len(candidates)} candidates")
+    _write_status(ctx, "dedup", 35, f"Deduplicating {len(candidates)} candidates")
     if agent:
         agent.start_stage("dedup")
     try:
@@ -170,7 +175,7 @@ def main(agent: Optional[ScoutAgent] = None):
     logger.info(f"After dedup: {len(candidates)} unique")
 
     # Step 3: Score candidates via LLM (concurrent)
-    _write_status("scoring", 50, f"Scoring {len(candidates)} candidates via LLM")
+    _write_status(ctx, "scoring", 50, f"Scoring {len(candidates)} candidates via LLM")
     scored: list[dict] = []
 
     if agent:
@@ -196,6 +201,7 @@ def main(agent: Optional[ScoutAgent] = None):
 
                     # Update progress
                     _write_status(
+                        ctx,
                         "scoring",
                         50 + int(30 * completed / max(len(candidates), 1)),
                         f"Scoring {completed}/{len(candidates)}: {candidate['title'][:30]}"
@@ -233,7 +239,7 @@ def main(agent: Optional[ScoutAgent] = None):
             logger.warning(f"Schema validation failed for '{c.get('title', '?')[:30]}': {e}")
 
     # Step 7: Write to pending
-    _write_status("writing", 85, f"Writing {len(validated_final)} candidates to queue/pending/")
+    _write_status(ctx, "writing", 85, f"Writing {len(validated_final)} candidates to queue/pending/")
     if agent:
         agent.start_stage("write")
     try:
@@ -247,7 +253,7 @@ def main(agent: Optional[ScoutAgent] = None):
     # Step 8: Validate full output and write summary status
     try:
         ScoutOutput(
-            session=_SESSION,
+            session=ctx.session,
             topics=validated_final,
             total_collected=len(candidates),
             total_selected=len(validated_final),
@@ -260,12 +266,12 @@ def main(agent: Optional[ScoutAgent] = None):
         "agent": "scout",
         "stage": "completed",
         "progress_pct": 100,
-        "detail": f"{_SESSION} session: {len(validated_final)} candidates pushed (from {len(candidates)} raw)",
-        "started_at": _RUN_TIMESTAMP,
+        "detail": f"{ctx.session} session: {len(validated_final)} candidates pushed (from {len(candidates)} raw)",
+        "started_at": ctx.run_timestamp,
         "completed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "candidate_count": len(validated_final),
         "cold_start": cold_start,
-        "session": _SESSION,
+        "session": ctx.session,
         "error": None,
     }
 

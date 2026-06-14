@@ -54,6 +54,7 @@ export function useWebSocket(options: WebSocketOptions) {
         isConnected.value = true
         isReconnecting.value = false
         currentInterval = reconnectInterval
+        startPing()
         onConnect?.()
       }
 
@@ -68,6 +69,7 @@ export function useWebSocket(options: WebSocketOptions) {
 
       ws.onclose = () => {
         isConnected.value = false
+        stopPing()
         onDisconnect?.()
         if (!intentionalClose) {
           scheduleReconnect()
@@ -111,22 +113,31 @@ export function useWebSocket(options: WebSocketOptions) {
     }
   }
 
-  // Keep-alive ping every 30s
+  // Keep-alive ping every 30s (only when connected)
   let pingTimer: ReturnType<typeof setInterval> | null = null
-  pingTimer = setInterval(() => {
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send('ping')
+
+  function startPing() {
+    stopPing()
+    pingTimer = setInterval(() => {
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send('ping')
+      }
+    }, 30000)
+  }
+
+  function stopPing() {
+    if (pingTimer) {
+      clearInterval(pingTimer)
+      pingTimer = null
     }
-  }, 30000)
+  }
 
   // Auto-connect on creation
   connect()
 
   onUnmounted(() => {
     disconnect()
-    if (pingTimer) {
-      clearInterval(pingTimer)
-    }
+    stopPing()
   })
 
   return {

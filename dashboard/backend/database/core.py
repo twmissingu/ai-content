@@ -27,6 +27,10 @@ _thread_local = threading.local()
 _all_connections: set[sqlite3.Connection] = set()
 _connections_lock = threading.Lock()
 
+# Connection health management
+_CONN_MAX_AGE_SECONDS = 3600  # Recreate connections older than 1 hour
+_conn_created_at: dict[int, float] = {}  # conn id -> creation timestamp
+
 
 def shutdown_db_connections() -> None:
     """Close all tracked thread-local database connections."""
@@ -37,6 +41,7 @@ def shutdown_db_connections() -> None:
             except Exception:
                 pass
         _all_connections.clear()
+    _conn_created_at.clear()
     logger.info("All database connections closed")
 
 # Simple query cache (invalidated on writes, LRU-capped at 200 entries)
@@ -90,15 +95,51 @@ def _invalidate_cache() -> None:
         logger.debug("Cache invalidated")
 
 
+def _is_conn_healthy(conn: sqlite3.Connection) -> bool:
+    """Check if a connection is still usable."""
+    try:
+        conn.execute("SELECT 1").fetchone()
+        return True
+    except Exception:
+        return False
+
+
+def _close_thread_conn() -> None:
+    """Close and unregister the current thread's connection."""
+    conn = getattr(_thread_local, 'conn', None)
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        with _connections_lock:
+            _all_connections.discard(conn)
+        _conn_created_at.pop(id(conn), None)
+        _thread_local.conn = None
+
+
 @contextmanager
 def get_db(read_only: bool = False):
-    """Get database connection with WAL mode.
+    """Get database connection with WAL mode and health checks.
 
     Uses thread-local connections for better concurrency.
+    Connections are automatically recycled after _CONN_MAX_AGE_SECONDS.
     Args:
         read_only: If True, skip commit on exit (for SELECT-only queries).
     """
-    if not hasattr(_thread_local, 'conn') or _thread_local.conn is None:
+    conn = getattr(_thread_local, 'conn', None)
+
+    # Check if connection needs recycling (thread-safe)
+    needs_recycle = False
+    if conn is not None:
+        conn_id = id(conn)
+        with _connections_lock:
+            age = time.time() - _conn_created_at.get(conn_id, 0)
+        if age > _CONN_MAX_AGE_SECONDS or not _is_conn_healthy(conn):
+            needs_recycle = True
+
+    if conn is None or needs_recycle:
+        _close_thread_conn()
         conn = sqlite3.connect(str(DATABASE_PATH), timeout=10)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
@@ -107,14 +148,18 @@ def get_db(read_only: bool = False):
         _thread_local.conn = conn
         with _connections_lock:
             _all_connections.add(conn)
+            _conn_created_at[id(conn)] = time.time()
 
-    conn = _thread_local.conn
     try:
         yield conn
         if not read_only:
             conn.commit()
     except Exception:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            # Connection may be corrupted; force recycle on next access
+            _close_thread_conn()
         raise
 
 
@@ -261,6 +306,10 @@ def init_db():
                 ON token_usage(created_at, estimated_cost, input_tokens, output_tokens);
             CREATE INDEX IF NOT EXISTS idx_pv_status_session
                 ON platform_versions(status, session_id);
+            CREATE INDEX IF NOT EXISTS idx_pipeline_sessions_date_created
+                ON pipeline_sessions(date, created_at);
+            CREATE INDEX IF NOT EXISTS idx_approval_records_created
+                ON approval_records(created_at);
         """)
 
         # Create FTS5 virtual table for knowledge base search

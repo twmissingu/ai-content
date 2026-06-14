@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
@@ -25,9 +26,9 @@ router = APIRouter(prefix="/api/approval", tags=["approval"])
 
 def _safe_article_id(article_id: str) -> str:
     """Sanitize article_id to prevent path traversal."""
-    # Remove path separators and traversal sequences
-    safe = article_id.replace("/", "_").replace("\\", "_").replace("\0", "")
-    safe = safe.replace("..", "")
+    if any(c in article_id for c in ('/', '\\', '\0')):
+        return ""
+    safe = re.sub(r'\.\.', '', article_id)
     # Verify the resolved path stays within REVIEW_DIR
     target = REVIEW_DIR / f"{safe}.md"
     try:
@@ -42,22 +43,21 @@ def get_approval_queue(limit: int = Query(50, ge=1, le=200), offset: int = Query
     """List articles pending approval from queue/review/ and database."""
     articles = []
 
-    for f in sorted(REVIEW_DIR.glob("*.meta.json"), key=os.path.getmtime, reverse=True):
-        meta = read_json(f)
-        article_id = f.stem.replace(".meta", "")
-        # Read markdown content preview (first 500 chars)
-        md_path = REVIEW_DIR / f"{article_id}.md"
-        content_preview = ""
-        if md_path.exists():
-            try:
-                with md_path.open(encoding="utf-8") as fh:
-                    content_preview = fh.read(500)
-            except OSError:
-                pass
+    # Use scandir for efficient directory listing (single syscall)
+    meta_files = []
+    with os.scandir(REVIEW_DIR) as it:
+        for entry in it:
+            if entry.is_file() and entry.name.endswith(".meta.json"):
+                meta_files.append(entry)
+    meta_files.sort(key=lambda e: e.stat().st_mtime, reverse=True)
+
+    for entry in meta_files:
+        meta = read_json(Path(entry.path))
+        article_id = entry.name.replace(".meta.json", "")
         articles.append({
             "id": article_id,
             "meta": meta,
-            "content_preview": content_preview,
+            "content_preview": "",  # Skip .md read for performance; load on demand
             "source": "filesystem",
         })
 
