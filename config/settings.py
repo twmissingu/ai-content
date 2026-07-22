@@ -28,8 +28,6 @@ def _load_env_file(env_path: Path) -> None:
 
 def _load_env_dotfile() -> None:
     """Load .env from project root into os.environ (won't overwrite existing env vars)."""
-    # Load Hermes global config first (project .env takes precedence)
-    _load_env_file(Path.home() / ".hermes" / ".env")
     env_path = Path(__file__).resolve().parent.parent / ".env"
     _load_env_file(env_path)
 

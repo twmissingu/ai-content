@@ -316,7 +316,6 @@ class AgentBase:
             "start_time": time.monotonic(),
         }
         # Write start trail file
-        from skills.common import atomic_write_json
         atomic_write_json(
             TRAIL_DIR / f"{trail_id}.start.json",
             {
@@ -338,7 +337,6 @@ class AgentBase:
         # Complete trace via file
         if self._trace_ctx:
             from config.settings import TRAIL_DIR
-            from skills.common import atomic_write_json
             elapsed_ms = int((time.monotonic() - self._trace_ctx["start_time"]) * 1000)
             trail_id = self._trace_ctx["trail_id"]
             atomic_write_json(

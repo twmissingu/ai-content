@@ -369,8 +369,8 @@ def stage_critique(text: str, topic_title: str, round_num: int,
             issues=critic_issues[:3],
             suggestions=scorer_suggestions[:3],
         )
-    except Exception:
-        logging.getLogger("gaoding.writer_stages").warning("QualityGateResult validation failed")
+    except Exception as e:
+        logging.getLogger("gaoding.writer_stages").warning("QualityGateResult validation failed: %s", e)
 
     if score >= quality_gates["critique_threshold"] or \
        round_num >= quality_gates["max_rewrite_rounds"]:

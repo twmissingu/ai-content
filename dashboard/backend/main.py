@@ -22,6 +22,7 @@ from dashboard.backend.background import start_all_pollers, stop_all_pollers
 from dashboard.backend.database import init_db, import_prompts_from_files, shutdown_db_connections
 from dashboard.backend.search import auto_index_if_needed
 from dashboard.backend.ws import ws_manager
+from config.settings import ENVIRONMENT
 
 # Configure logging
 logging.basicConfig(
@@ -151,7 +152,7 @@ def _get_cors_origins() -> list[str]:
     if not env_value:
         return default_origins
     origins = [o.strip() for o in env_value.split(",") if o.strip()]
-    environment = os.getenv("ENV", os.getenv("NODE_ENV", "development"))
+    environment = ENVIRONMENT
     if "*" in origins:
         if environment == "production":
             logger.warning("CORS_ORIGINS='*' blocked in production — using default origins")
@@ -216,11 +217,11 @@ async def lifespan(app: FastAPI):
     logger.info("Background tasks stopped")
 
 
-_env = os.getenv("ENV", os.getenv("NODE_ENV", "development"))
+_env = ENVIRONMENT
 app = FastAPI(
     title="稿定 Dashboard",
     description="稿定 AI 内容生产系统 — 自动化从选题发现到多平台分发的完整流程",
-    version="0.9.9",
+    version="0.9.12",
     docs_url="/api/docs" if _env != "production" else None,
     redoc_url="/api/redoc" if _env != "production" else None,
     openapi_url="/api/openapi.json" if _env != "production" else None,

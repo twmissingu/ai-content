@@ -454,10 +454,10 @@ def chat(
     if data is None:
         raise LLMError(f"All {len(models_to_try)} models failed. Last error: {last_error}") from last_error
 
-    # Extract content
+    # Extract content (reasoning models may put output in "reasoning" field)
     try:
         choice = data["choices"][0]
-        content = choice["message"]["content"]
+        content = choice["message"].get("content") or choice["message"].get("reasoning", "")
     except (KeyError, IndexError) as e:
         raise LLMError(f"Unexpected LLM response format: {json.dumps(data, indent=2)[:300]}") from e
 

@@ -1,0 +1,32 @@
+{
+  "keywords": [
+    "文章标题",
+    "AI"
+  ],
+  "title_patterns": [
+    "数字型"
+  ],
+  "topic_directions": {
+    "话题1": {
+      "count": 20,
+      "avg_reads": 0
+    },
+    "话题0": {
+      "count": 20,
+      "avg_reads": 0
+    },
+    "话题4": {
+      "count": 20,
+      "avg_reads": 0
+    },
+    "话题3": {
+      "count": 20,
+      "avg_reads": 0
+    },
+    "话题2": {
+      "count": 20,
+      "avg_reads": 0
+    }
+  },
+  "last_updated": "2026-05-28"
+}

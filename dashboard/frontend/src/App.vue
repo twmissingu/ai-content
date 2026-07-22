@@ -196,13 +196,13 @@ watch(() => store.error, (newError) => {
       </aside>
 
       <div class="content-container">
-        <router-view v-slot="{ Component }">
-          <transition name="fade" mode="out-in">
-            <ErrorBoundary>
+        <ErrorBoundary>
+          <router-view v-slot="{ Component }">
+            <transition name="fade" mode="out-in">
               <component :is="Component" />
-            </ErrorBoundary>
-          </transition>
-        </router-view>
+            </transition>
+          </router-view>
+        </ErrorBoundary>
       </div>
 
       <!-- Right Panel: Quick Actions (three-column mode only) -->

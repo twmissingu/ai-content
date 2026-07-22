@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.9.12] - 2026-07-22
+
+### Fixed
+
+- **SSRF fail-closed**: DNS 解析失败时拒绝请求而非允许通过 (DEV-001)
+- **审批写入顺序修复**: action 文件在 DB 更新后写入，消除不一致窗口 (DEV-002)
+- **硬编码 Python 路径移除**: 改用 sys.executable 替代 .venv 硬编码 (DEV-003)
+- **自我 import 移除**: skills/common.py 中函数体内 self-import 删除 (DEV-005)
+- **QualityGate 日志增强**: 异常时记录具体错误上下文 (DEV-007)
+- **NODE_ENV 兜底修复**: main.py CORS/docs 两处使用 config.settings.ENVIRONMENT 替代 NODE_ENV 兜底 (DEV-010)
+- **API_BASE 去重**: 统一为 utils/api.ts 共享常量 (DEV-008)
+- **.env 加载去重**: 提取 _load_env_file 辅助函数 (DEV-009)
+- **Transition 警告消除**: ErrorBoundary 移出 Transition 包裹层 (R1)
+- **TopicsView 单根节点**: 兼容 Vue Transition 要求 (R1)
+
+### Security
+
+- **Prompt injection safety 恢复**: writer_stages 中去除明确的 injection_safety=False (DEV-006)
+
+### Changed
+
+- **pyproject.toml 版本同步**: 从 0.8.0 更新至 0.9.12
+
 ## [0.9.8] - 2026-06-06
 
 ### Monitoring (2)

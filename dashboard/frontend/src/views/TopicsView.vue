@@ -80,7 +80,8 @@ useKeyboardShortcut(handleKeydown)
 </script>
 
 <template>
-  <div class="topics-view">
+  <div class="topics-view-wrapper">
+    <div class="topics-view">
     <!-- Page Header -->
     <div class="page-header">
       <div>
@@ -239,6 +240,7 @@ useKeyboardShortcut(handleKeydown)
     :visible="readerVisible"
     @close="closeReader"
   />
+  </div>
 </template>
 
 <style scoped>
